@@ -1,0 +1,92 @@
+/* Hallmark · tokens · Texas Hold'em Arena · deep felt + aged brass */
+:root {
+  color-scheme: dark;
+
+  --color-paper: oklch(14.5% 0.018 155);
+  --color-paper-2: oklch(18.5% 0.022 155);
+  --color-paper-3: oklch(22.5% 0.025 155);
+  --color-surface-raised: oklch(25.5% 0.028 155);
+  --color-ink: oklch(94% 0.012 88);
+  --color-ink-2: oklch(82% 0.014 92);
+  --color-muted: oklch(72% 0.014 150);
+  --color-neutral: oklch(62% 0.016 150);
+  --color-rule: oklch(35% 0.025 155);
+  --color-rule-2: oklch(29% 0.023 155);
+  --color-accent: oklch(75% 0.11 78);
+  --color-accent-strong: oklch(82% 0.13 80);
+  --color-accent-ink: oklch(19% 0.025 155);
+  --color-focus: oklch(82% 0.15 82);
+  --color-felt: oklch(34% 0.078 156);
+  --color-felt-light: oklch(40% 0.082 156);
+  --color-felt-deep: oklch(23% 0.052 156);
+  --color-success: oklch(72% 0.11 151);
+  --color-success-ink: oklch(18% 0.025 155);
+  --color-warning: oklch(78% 0.12 82);
+  --color-warning-ink: oklch(20% 0.025 155);
+  --color-danger: oklch(66% 0.15 28);
+  --color-danger-ink: oklch(96% 0.01 82);
+  --color-card-paper: oklch(96% 0.018 88);
+  --color-card-ink: oklch(20% 0.012 155);
+  --color-card-red: oklch(55% 0.18 28);
+  --color-overlay: oklch(8% 0.014 155 / 0.82);
+  --color-shadow: oklch(5% 0.012 155 / 0.48);
+  --color-shadow-soft: oklch(5% 0.012 155 / 0.22);
+
+  --font-display: "Manrope", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-body: "Manrope", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Azeret Mono", "SFMono-Regular", monospace;
+  --font-card: "Cormorant Garamond", "Songti SC", serif;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-md: 1.125rem;
+  --text-lg: 1.375rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.25rem;
+  --text-3xl: 3rem;
+  --text-display-s: clamp(2.25rem, 4vw, 3.75rem);
+  --text-display: clamp(2.5rem, 5vw, 4.75rem);
+
+  --space-3xs: 0.25rem;
+  --space-2xs: 0.5rem;
+  --space-xs: 0.75rem;
+  --space-sm: 1rem;
+  --space-md: 1.5rem;
+  --space-lg: 2rem;
+  --space-xl: 3rem;
+  --space-2xl: 4.5rem;
+  --space-3xl: 6rem;
+  --space-4xl: 8rem;
+
+  --page-gutter: clamp(1rem, 3.2vw, 3.5rem);
+  --content-max: 92rem;
+  --content-reading: 68ch;
+  --control-height: 2.75rem;
+  --control-height-lg: 3rem;
+
+  --radius-xs: 0.25rem;
+  --radius-card: 0.5rem;
+  --radius-input: 0.5rem;
+  --radius-pill: 999px;
+  --rule-hair: 1px;
+  --rule-fine: 2px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 100ms;
+  --dur-short: 180ms;
+  --dur-long: 280ms;
+
+  --shadow-card: 0 1rem 2.5rem var(--color-shadow-soft);
+  --shadow-modal: 0 2rem 5rem var(--color-shadow);
+
+  --z-base: 1;
+  --z-raised: 10;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+}

@@ -1,0 +1,30 @@
+{
+  "version": "1.1.0",
+  "scannedAt": "2026-08-09T00:00:00+08:00",
+  "packageMtime": 1786277891,
+  "styleMtime": 1786282092,
+  "scope": "multi-page-app",
+  "framework": "React 19 + React Router 7 + Vite 7",
+  "fonts": [
+    "@fontsource/manrope",
+    "@fontsource/azeret-mono",
+    "@fontsource/cormorant-garamond"
+  ],
+  "palette": "Existing dark green, warm ivory, brass, danger red and status green were hard-coded in apps/web/src/styles.css",
+  "motion": "No motion library; existing CSS used page entrance, live pulse and component transitions",
+  "spacing": "Existing stylesheet used raw pixel values without a shared scale",
+  "preserve": [
+    "dark poker-table character",
+    "felt green and brass brand anchors",
+    "three installed font families",
+    "all routes, components and business behaviour"
+  ],
+  "introduce": [
+    "locked named tokens",
+    "Chinese-first copy",
+    "readable typography floor",
+    "Workbench and Index-First page families",
+    "8-state interaction discipline",
+    "320/375/414/768 responsive verification"
+  ]
+}
