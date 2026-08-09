@@ -177,12 +177,32 @@ export class ArenaService {
   }
 
   async listTournaments(): Promise<unknown[]> {
-    const result = await this.pool.query(
+    const result = await this.pool.query<{
+      id: string;
+      name: string;
+      status: string;
+      ruleset_version: string;
+      prompt_hash: string | null;
+      champion_player_id: string | null;
+      public_state: unknown;
+      created_at: Date;
+      updated_at: Date;
+    }>(
       `select id, name, status, ruleset_version, prompt_hash, champion_player_id,
               public_state, created_at, updated_at
          from tournaments order by created_at desc`,
     );
-    return result.rows;
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      status: row.status,
+      rulesetVersion: row.ruleset_version,
+      promptHash: row.prompt_hash,
+      championPlayerId: row.champion_player_id,
+      publicState: row.public_state,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
+    }));
   }
 
   async projectedEvents(
@@ -244,6 +264,14 @@ export class ArenaService {
       chain: await this.#store.verifyTournamentChain(tournamentId),
       state: await this.publicState(tournamentId),
     };
+  }
+
+  async latestEventSequence(tournamentId: string): Promise<number | null> {
+    const result = await this.pool.query<{ sequence: string }>(
+      "select (next_event_sequence - 1)::text as sequence from tournaments where id = $1",
+      [tournamentId],
+    );
+    return result.rows[0] ? Number(result.rows[0].sequence) : null;
   }
 
   async #providers(modelIds: readonly string[]): Promise<Map<string, ModelProvider>> {

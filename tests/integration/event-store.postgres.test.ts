@@ -8,18 +8,25 @@ import {
 } from "../../apps/api/src/persistence/event-store.js";
 import { recoverAggregate } from "../../apps/api/src/persistence/recovery.js";
 import { HistoryQueryService } from "../../apps/api/src/tournament/history-query-service.js";
+import {
+  createIsolatedPostgresSchema,
+  type IsolatedPostgresSchema,
+} from "./postgres-test-schema.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describePostgres = databaseUrl ? describe : describe.skip;
-const pool = databaseUrl ? new Pool({ connectionString: databaseUrl, max: 2 }) : null;
+let testSchema: IsolatedPostgresSchema | null = null;
+let pool: Pool | null = null;
 
 describePostgres("PostgreSQL authoritative event store", () => {
   beforeAll(async () => {
+    testSchema = await createIsolatedPostgresSchema(databaseUrl!, "event_store", 2);
+    pool = testSchema.pool;
     await runMigrations(pool!);
   });
 
   afterAll(async () => {
-    await pool?.end();
+    await testSchema?.dispose();
   });
 
   it("appends with CAS, decrypts private events, restores snapshots and detects tampering", async () => {

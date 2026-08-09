@@ -6,18 +6,25 @@ import { PgEventStore } from "../../apps/api/src/persistence/event-store.js";
 import { TournamentOrchestrator } from "../../apps/api/src/tournament/orchestrator.js";
 import { MockPolicyProvider } from "../../packages/providers/src/mock-scripted.js";
 import { ProviderCallError, type ModelProvider, type ProviderDecision } from "../../packages/providers/src/provider.js";
+import {
+  createIsolatedPostgresSchema,
+  type IsolatedPostgresSchema,
+} from "./postgres-test-schema.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describePostgres = databaseUrl ? describe : describe.skip;
-const pool = databaseUrl ? new Pool({ connectionString: databaseUrl, max: 3 }) : null;
+let testSchema: IsolatedPostgresSchema | null = null;
+let pool: Pool | null = null;
 
 describePostgres("persisted model tournament orchestration", () => {
   beforeAll(async () => {
+    testSchema = await createIsolatedPostgresSchema(databaseUrl!, "orchestrator", 3);
+    pool = testSchema.pool;
     await runMigrations(pool!);
   });
 
   afterAll(async () => {
-    await pool?.end();
+    await testSchema?.dispose();
   });
 
   it("runs two model seats through the decision outbox to one recoverable champion", async () => {

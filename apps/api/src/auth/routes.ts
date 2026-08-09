@@ -4,7 +4,10 @@ import type { AppConfig } from "../config.js";
 import { AuthService, type AdminSession } from "./auth-service.js";
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().min(3).max(320).refine(
+    (value) => z.email().safeParse(value).success || /^[^@\s]+@localhost$/i.test(value),
+    "A valid email or local administrator address is required",
+  ),
   password: z.string().min(1),
 }).strict();
 
@@ -58,8 +61,11 @@ export async function registerAuthRoutes(app: FastifyInstance, context: AdminAut
   });
 
   app.get("/api/auth/session", async (request, reply) => {
-    const session = await requireAdmin(request, reply, context);
-    return session ? { session, csrfToken: request.cookies[csrfCookie] ?? null } : undefined;
+    const session = await context.auth.session(request.cookies[sessionCookie]);
+    return {
+      session,
+      csrfToken: session ? request.cookies[csrfCookie] ?? null : null,
+    };
   });
 
   app.post("/api/auth/logout", async (request, reply) => {

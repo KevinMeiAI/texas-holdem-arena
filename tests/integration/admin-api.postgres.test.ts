@@ -2,10 +2,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { buildApp } from "../../apps/api/src/app.js";
 import { runMigrations } from "../../db/migrate.js";
+import {
+  createIsolatedPostgresSchema,
+  type IsolatedPostgresSchema,
+} from "./postgres-test-schema.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describePostgres = databaseUrl ? describe : describe.skip;
-const maintenancePool = databaseUrl ? new Pool({ connectionString: databaseUrl, max: 2 }) : null;
+let testSchema: IsolatedPostgresSchema | null = null;
+let maintenancePool: Pool | null = null;
 
 function cookiesFrom(header: string | string[] | undefined): string {
   const values = Array.isArray(header) ? header : header ? [header] : [];
@@ -14,26 +19,24 @@ function cookiesFrom(header: string | string[] | undefined): string {
 
 describePostgres("administrator auth and model configuration API", () => {
   beforeAll(async () => {
+    testSchema = await createIsolatedPostgresSchema(databaseUrl!, "admin_api", 2);
+    maintenancePool = testSchema.pool;
     await runMigrations(maintenancePool!);
-    await maintenancePool!.query("delete from audit_events");
-    await maintenancePool!.query("delete from model_configs");
-    await maintenancePool!.query("delete from provider_connections");
-    await maintenancePool!.query("delete from sessions");
-    await maintenancePool!.query("delete from admin_users");
   });
 
   afterAll(async () => {
-    await maintenancePool?.end();
+    await testSchema?.dispose();
   });
 
   it("bootstraps one admin, enforces CSRF and never returns a provider key", async () => {
     let tournamentId: string | undefined;
     let providerId: string | undefined;
+    let adminUserId: string | undefined;
     const modelIds: string[] = [];
     const { app } = await buildApp({
       host: "127.0.0.1",
       port: 0,
-      databaseUrl,
+      databaseUrl: testSchema!.databaseUrl,
       nodeEnv: "test",
       masterKeyBase64: Buffer.alloc(32, 51).toString("base64"),
       adminEmail: "admin@integration.test",
@@ -54,7 +57,8 @@ describePostgres("administrator auth and model configuration API", () => {
         payload: { email: "admin@integration.test", password: "integration-password" },
       });
       expect(login.statusCode).toBe(200);
-      const loginBody = login.json<{ csrfToken: string }>();
+      const loginBody = login.json<{ csrfToken: string; session: { adminUserId: string } }>();
+      adminUserId = loginBody.session.adminUserId;
       const cookie = cookiesFrom(login.headers["set-cookie"]);
       expect(cookie).toContain("arena_session=");
       expect(cookie).toContain("arena_csrf=");
@@ -211,6 +215,10 @@ describePostgres("administrator auth and model configuration API", () => {
       }
       if (providerId) {
         await maintenancePool!.query("delete from provider_connections where id = $1", [providerId]);
+      }
+      if (adminUserId) {
+        await maintenancePool!.query("delete from audit_events where admin_user_id = $1", [adminUserId]);
+        await maintenancePool!.query("delete from admin_users where id = $1", [adminUserId]);
       }
     }
   }, 30_000);

@@ -122,13 +122,19 @@ export async function registerTournamentRoutes(
     context.arena.fairness(request.params.id)
   ));
 
-  app.get<{ Params: { id: string } }>("/api/public/tournaments/:id/events", async (request, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { tail?: string } }>("/api/public/tournaments/:id/events", async (request, reply) => {
     if (!(await context.arena.publicState(request.params.id))) {
       return reply.code(404).send({ error: "tournament_not_found" });
     }
     const header = request.headers["last-event-id"];
     const requestedCursor = typeof header === "string" ? Number(header) : 0;
     let cursor = Number.isSafeInteger(requestedCursor) && requestedCursor >= 0 ? requestedCursor : 0;
+    if (typeof header !== "string" && request.query.tail !== undefined) {
+      const requestedTail = Number(request.query.tail);
+      const tail = Number.isSafeInteger(requestedTail) ? Math.min(Math.max(requestedTail, 1), 500) : 120;
+      const latest = await context.arena.latestEventSequence(request.params.id);
+      if (latest !== null) cursor = Math.max(0, latest - tail);
+    }
     reply.hijack();
     reply.raw.writeHead(200, {
       "content-type": "text/event-stream",

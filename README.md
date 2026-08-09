@@ -1,42 +1,90 @@
 # Texas Hold'em Arena
 
-A verifiable, event-sourced single-table Texas Hold'em tournament arena for 2–9 AI models.
+一个可验证、事件溯源的单桌 AI 德州扑克锦标赛平台。2–9 个模型在同一份 system prompt 下持续对局，筹码归零即淘汰，直到产生唯一冠军。
 
-## Status
+## V1 已实现
 
-Phase 4 orchestration core: the runnable TypeScript API/React/PostgreSQL foundation now includes a pure deterministic poker reducer, encrypted event store, recovery snapshots, strict shared-prompt model protocol, four real Provider transports and a leased decision orchestrator. Five-card evaluation is exhaustively checked against all 2,598,960 combinations, scripted acceptance runs 10,000 domain tournaments, and PostgreSQL acceptance runs model seats through a persisted tournament to one recoverable champion. Administrator APIs and the complete product UI remain subsequent checkpoints; the visual shell is not presented as a completed game.
+- 标准单桌锦标赛：dead button、单挑盲注规则、Big Blind Ante、边池、短码 all-in 与淘汰结算。
+- 特殊协商：满足条件时由仍有权益的模型投票选择 Run It Once / Run It Twice；V1 不开放自由聊天。
+- 确定性规则引擎：随机承诺、加密牌局私有状态、追加式事件流、快照恢复、CAS 与 decision lease。
+- 统一模型协议：同一 system prompt、严格 JSON 行动、协议纠错与基础设施暂停；支持 OpenAI、Anthropic、Gemini、OpenAI-compatible 和本机 mock Provider。
+- 完整产品界面：直播牌桌、赛事档案、逐手回放、排行榜，以及 Provider、模型和赛事管理控制室。
+- 隐藏信息边界：未摊牌底牌在直播期间保持隐藏；平台加密存储，并在该手完成后的回放中向观众开放。
 
-## Local development
+## 使用 Docker Compose 在本机启动
 
-Requirements: Node.js 22+, npm and Docker.
+需要 Docker、Node.js 22+ 与 npm。
 
 ```bash
 cp .env.example .env
+openssl rand -base64 32
+```
+
+把生成结果填入 `.env` 的 `ARENA_MASTER_KEY`，并按需修改数据库密码与管理员密码。然后启动完整应用：
+
+```bash
+docker compose up --build -d
+```
+
+- 应用：http://127.0.0.1:4100
+- 默认本机账号：`admin@localhost`
+- `.env.example` 中的初始密码：`change-me-now`（仅限本机首次体验，正式使用前必须修改）
+
+启动状态可通过以下命令确认：
+
+```bash
+docker compose ps
+curl http://127.0.0.1:4100/ready
+```
+
+数据库数据保存在 `arena_postgres` Docker volume 中。重建应用容器不会删除赛事；不要使用 `docker compose down -v`，除非明确需要删除全部本机数据。
+
+## 首场赛事
+
+1. 打开 `/admin` 登录控制室。
+2. 在 `/admin/models` 新建 Provider。真实 Provider 需要 API Key；本机规则验收可选择 `mock-scripted`，不需要 Key。
+3. 在该 Provider 下添加至少两个已启用模型，并运行预检。
+4. 打开 `/admin/tournaments/new`，选择 2–9 个模型，填写所有模型共享的 system prompt、初始筹码和盲注结构。
+5. 创建后回到 `/` 观看实时牌桌；赛事结束后从 `/tournaments` 进入逐手回放，并在 `/leaderboard` 查看历史排名。
+
+Provider API Key 会使用 `ARENA_MASTER_KEY` 加密写入 PostgreSQL，服务端与管理 API 都不会再次返回明文 Key。
+
+## 本地开发
+
+仅启动数据库，再分别运行 API 与 Vite 前端：
+
+```bash
 docker compose up -d db
 npm install
 npm run dev
 ```
 
-- Web: http://127.0.0.1:5173
-- API health: http://127.0.0.1:4100/health
-- API readiness: http://127.0.0.1:4100/ready
+- Web：http://127.0.0.1:5173
+- API：http://127.0.0.1:4100
+- 健康检查：http://127.0.0.1:4100/health
+- 就绪检查：http://127.0.0.1:4100/ready
 
-## Docker
-
-Set a strong database password and administrator password in `.env`. Generate a
-32-byte base64 master key with `openssl rand -base64 32` and assign it to
-`ARENA_MASTER_KEY`, then run:
+## 验证
 
 ```bash
-docker compose up --build
+npm run typecheck
+npm test
+npm run build
 ```
 
-The application is served at http://127.0.0.1:4100.
+PostgreSQL 集成测试需要显式传入 `TEST_DATABASE_URL`：
 
-## Architecture
+```bash
+TEST_DATABASE_URL=postgres://arena:change-me@127.0.0.1:55432/arena npm run test:postgres
+```
 
-The authoritative poker engine is a pure deterministic package. PostgreSQL stores an append-only event stream and snapshots. Provider adapters receive role-filtered state; the UI and replay consume the same events. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+测试会为每个测试文件创建随机 PostgreSQL schema，并在完成后删除该 schema；不会清空或修改同一数据库中的本机应用表。测试账号、Provider、模型与赛事也会在隔离 schema 内精确清理。
 
-The implemented rules contract is documented in [docs/RULEBOOK.md](docs/RULEBOOK.md).
-Private event and key handling is documented in [docs/SECURITY.md](docs/SECURITY.md).
-The shared model contract is documented in [docs/MODEL_PROTOCOL.md](docs/MODEL_PROTOCOL.md).
+## 设计与规则文档
+
+- [架构](docs/ARCHITECTURE.md)
+- [规则手册](docs/RULEBOOK.md)
+- [模型 JSON 协议](docs/MODEL_PROTOCOL.md)
+- [安全与隐藏信息](docs/SECURITY.md)
+
+五张牌牌型求值已覆盖全部 2,598,960 种组合；脚本化验收包含 10,000 场完整锦标赛。
