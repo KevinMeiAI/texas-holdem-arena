@@ -9,6 +9,9 @@ describe("loadConfig", () => {
       databaseUrl: undefined,
       nodeEnv: "development",
       masterKeyBase64: undefined,
+      adminEmail: "admin@localhost",
+      adminPassword: undefined,
+      cookieSecure: false,
     });
   });
 
@@ -20,6 +23,9 @@ describe("loadConfig", () => {
         DATABASE_URL: "postgres://arena:test@db/arena",
         NODE_ENV: "test",
         ARENA_MASTER_KEY: "test-master-key",
+        ARENA_ADMIN_EMAIL: "owner@example.com",
+        ARENA_ADMIN_PASSWORD: "secret",
+        ARENA_COOKIE_SECURE: "true",
       }),
     ).toEqual({
       host: "0.0.0.0",
@@ -27,6 +33,9 @@ describe("loadConfig", () => {
       databaseUrl: "postgres://arena:test@db/arena",
       nodeEnv: "test",
       masterKeyBase64: "test-master-key",
+      adminEmail: "owner@example.com",
+      adminPassword: "secret",
+      cookieSecure: true,
     });
   });
 });

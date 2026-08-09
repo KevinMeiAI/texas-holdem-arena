@@ -23,7 +23,7 @@ import { HistoryQueryService } from "./history-query-service.js";
 import { protocolFallbackAction, toDomainAction } from "./model-action.js";
 import { buildModelContext } from "./model-context.js";
 
-export type OperationalStatus = "READY" | "RUNNING" | "PAUSED_INFRA" | "COMPLETED";
+export type OperationalStatus = "READY" | "RUNNING" | "PAUSED_INFRA" | "COMPLETED" | "CANCELLED";
 
 export interface ArenaTournamentSetup {
   tournamentId?: string;
@@ -32,7 +32,9 @@ export interface ArenaTournamentSetup {
   sharedStrategyPrompt: string;
   tournament: TournamentConfig;
   providerIdByPlayer: Record<string, string>;
+  playerLabels?: Record<string, string>;
   masterSeed?: Uint8Array;
+  managedByArena?: boolean;
 }
 
 export interface OrchestratorRuntime {
@@ -44,6 +46,7 @@ export interface OrchestratorRuntime {
   domain: TournamentState;
   effectivePrompt: ReturnType<typeof buildEffectiveSystemPrompt>;
   providerIdByPlayer: Record<string, string>;
+  playerLabels: Record<string, string>;
   masterSeedBase64: string;
   seedCommitment: string;
   seedRevealed: boolean;
@@ -83,6 +86,7 @@ function publicState(runtime: OrchestratorRuntime): unknown {
       const handPlayer = hand?.players.find((candidate) => candidate.id === player.id);
       return {
         id: player.id,
+        displayName: runtime.playerLabels[player.id] ?? player.id,
         seat: player.seat,
         stack: handPlayer?.stack ?? player.stack,
         status: player.status,
@@ -114,6 +118,7 @@ function publicState(runtime: OrchestratorRuntime): unknown {
 function statusFor(runtime: OrchestratorRuntime): string {
   if (runtime.operationalStatus === "PAUSED_INFRA") return "PAUSED_INFRA";
   if (runtime.operationalStatus === "COMPLETED") return "COMPLETED";
+  if (runtime.operationalStatus === "CANCELLED") return "CANCELLED";
   return runtime.operationalStatus === "READY" ? "READY" : "RUNNING";
 }
 
@@ -173,6 +178,12 @@ export class TournamentOrchestrator {
       domain: createDomainTournament(setup.tournament),
       effectivePrompt,
       providerIdByPlayer: { ...setup.providerIdByPlayer },
+      playerLabels: Object.fromEntries(
+        setup.tournament.players.map((player) => [
+          player.id,
+          setup.playerLabels?.[player.id] ?? player.id,
+        ]),
+      ),
       masterSeedBase64: Buffer.from(masterSeed).toString("base64"),
       seedCommitment: seedCommitment(masterSeed, tournamentId, setup.rulesetVersion),
       seedRevealed: false,
@@ -185,7 +196,9 @@ export class TournamentOrchestrator {
       configuration: {
         tournament: setup.tournament,
         providerIdByPlayer: setup.providerIdByPlayer,
+        playerLabels: setup.playerLabels ?? {},
         promptVersion: effectivePrompt.version,
+        managedByArena: setup.managedByArena === true,
       },
       promptHash: effectivePrompt.sha256,
     });
@@ -220,6 +233,39 @@ export class TournamentOrchestrator {
         decisionId: runtime.pendingDecisionId,
       })],
       {},
+    );
+  }
+
+  async pause(runtime: OrchestratorRuntime): Promise<OrchestratorRuntime> {
+    if (runtime.operationalStatus !== "RUNNING" || !runtime.pendingDecisionId) {
+      throw new Error("Tournament is not running at a pausable decision");
+    }
+    return this.#append(
+      { ...runtime, operationalStatus: "PAUSED_INFRA" },
+      [publicArenaEvent("TOURNAMENT_PAUSED_ADMIN", {
+        decisionId: runtime.pendingDecisionId,
+      })],
+      {},
+    );
+  }
+
+  async cancel(runtime: OrchestratorRuntime): Promise<OrchestratorRuntime> {
+    if (runtime.operationalStatus === "COMPLETED" || runtime.operationalStatus === "CANCELLED") {
+      throw new Error("Tournament is already terminal");
+    }
+    const pendingDecisionId = runtime.pendingDecisionId;
+    return this.#append(
+      {
+        ...runtime,
+        operationalStatus: "CANCELLED",
+        seedRevealed: true,
+        pendingDecisionId: null,
+      },
+      [
+        publicArenaEvent("TOURNAMENT_CANCELLED", {}),
+        publicArenaEvent("RANDOMNESS_REVEALED", { masterSeedBase64: runtime.masterSeedBase64 }),
+      ],
+      pendingDecisionId ? { cancelDecisionId: pendingDecisionId } : {},
     );
   }
 
@@ -402,7 +448,7 @@ export class TournamentOrchestrator {
   async #append(
     runtime: OrchestratorRuntime,
     events: NewArenaEvent[],
-    options: Pick<AppendEventsInput, "decisionRequest" | "completeDecision" | "failDecisionInfrastructure">,
+    options: Pick<AppendEventsInput, "decisionRequest" | "completeDecision" | "failDecisionInfrastructure" | "cancelDecisionId">,
   ): Promise<OrchestratorRuntime> {
     const expectedVersion = runtime.aggregateVersion;
     const nextRuntime = {

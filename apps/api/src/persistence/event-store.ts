@@ -85,6 +85,7 @@ export interface AppendEventsInput {
   decisionRequest?: PendingDecisionRequest;
   completeDecision?: { id: string; workerId: string; finalResponse: unknown };
   failDecisionInfrastructure?: { id: string; workerId: string; errorClass: string };
+  cancelDecisionId?: string;
 }
 
 export interface AppendEventsResult {
@@ -362,6 +363,15 @@ export class PgEventStore {
         if (failed.rowCount !== 1) {
           throw new Error("Decision lease is no longer owned by this worker");
         }
+      }
+      if (input.cancelDecisionId) {
+        await client.query(
+          `update decision_requests
+              set status = 'CANCELLED', lease_owner = null, lease_expires_at = null,
+                  updated_at = now()
+            where id = $1 and status in ('PENDING', 'IN_FLIGHT', 'INFRA_FAILED')`,
+          [input.cancelDecisionId],
+        );
       }
 
       await client.query("commit");

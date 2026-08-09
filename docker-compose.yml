@@ -25,6 +25,7 @@ services:
       ARENA_MASTER_KEY: ${ARENA_MASTER_KEY:-}
       ARENA_ADMIN_EMAIL: ${ARENA_ADMIN_EMAIL:-admin@localhost}
       ARENA_ADMIN_PASSWORD: ${ARENA_ADMIN_PASSWORD:-change-me-now}
+      ARENA_COOKIE_SECURE: ${ARENA_COOKIE_SECURE:-false}
     depends_on:
       db:
         condition: service_healthy
