@@ -3,6 +3,7 @@ export interface AppConfig {
   port: number;
   databaseUrl: string | undefined;
   nodeEnv: string;
+  masterKeyBase64: string | undefined;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -11,5 +12,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: Number(env.PORT ?? 4100),
     databaseUrl: env.DATABASE_URL,
     nodeEnv: env.NODE_ENV ?? "development",
+    masterKeyBase64: env.ARENA_MASTER_KEY || undefined,
   };
 }

@@ -12,7 +12,9 @@
 
 1. Runnable TypeScript/PostgreSQL/React/Docker foundation.
 2. Poker rules engine, verifiable RNG and exhaustive rule tests.
-3. Event persistence, recovery and scripted full tournaments.
+3. Event persistence, recovery and scripted full tournaments. **Implemented:**
+   versioned event envelopes, AES-GCM private payloads, hash chain, snapshots,
+   optimistic concurrency and leased decision outbox.
 4. Provider protocol, preflight and real adapter smoke paths.
 5. Administrator control room, live arena, replay and leaderboard.
 6. Docker, browser, recovery and information-leak acceptance.

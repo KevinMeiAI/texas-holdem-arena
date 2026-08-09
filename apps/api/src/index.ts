@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { Pool } from "pg";
 import { runMigrations } from "../../../db/migrate.js";
 import { loadConfig } from "./config.js";
+import { decodeMasterKey } from "./security/encryption.js";
 
 const config = loadConfig();
 const app = Fastify({
@@ -27,6 +28,7 @@ const app = Fastify({
 const pool = config.databaseUrl
   ? new Pool({ connectionString: config.databaseUrl, max: 5 })
   : undefined;
+const masterKey = config.masterKeyBase64 ? decodeMasterKey(config.masterKeyBase64) : undefined;
 
 if (pool) {
   await runMigrations(pool);
@@ -42,6 +44,13 @@ app.get("/ready", async (_request, reply) => {
     });
   }
 
+  if (!masterKey) {
+    return reply.code(503).send({
+      status: "not_ready",
+      checks: { database: "ok", masterKey: "ARENA_MASTER_KEY is not configured" },
+    });
+  }
+
   try {
     await pool.query("select 1 as ready");
     const migration = await pool.query<{ count: string }>(
@@ -49,7 +58,11 @@ app.get("/ready", async (_request, reply) => {
     );
     return {
       status: "ready",
-      checks: { database: "ok", migrations: Number(migration.rows[0]?.count ?? 0) },
+      checks: {
+        database: "ok",
+        masterKey: "ok",
+        migrations: Number(migration.rows[0]?.count ?? 0),
+      },
     };
   } catch (error) {
     app.log.error({ err: error }, "database readiness check failed");
@@ -64,7 +77,7 @@ app.get("/api/public/meta", async () => ({
   name: "Texas Hold'em Arena",
   version: "0.1.0",
   mode: "single-table-tournament",
-  status: "foundation",
+  status: "rules-and-event-store",
 }));
 
 const webRoot = resolve(process.cwd(), "dist-web");

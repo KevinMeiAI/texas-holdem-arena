@@ -8,6 +8,7 @@ describe("loadConfig", () => {
       port: 4100,
       databaseUrl: undefined,
       nodeEnv: "development",
+      masterKeyBase64: undefined,
     });
   });
 
@@ -18,12 +19,14 @@ describe("loadConfig", () => {
         PORT: "5100",
         DATABASE_URL: "postgres://arena:test@db/arena",
         NODE_ENV: "test",
+        ARENA_MASTER_KEY: "test-master-key",
       }),
     ).toEqual({
       host: "0.0.0.0",
       port: 5100,
       databaseUrl: "postgres://arena:test@db/arena",
       nodeEnv: "test",
+      masterKeyBase64: "test-master-key",
     });
   });
 });
