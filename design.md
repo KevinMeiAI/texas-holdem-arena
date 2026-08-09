@@ -193,7 +193,7 @@ modern-minimal，偏实用工具。专注、清晰、稳重，保留真实牌桌
   --accent: 75% 0.11 78;
   --accent-foreground: 19% 0.025 155;
   --destructive: 66% 0.15 28;
-  --destructive-foreground: 96% 0.01 82;
+  --destructive-foreground: 19% 0.025 155;
   --border: 35% 0.025 155;
   --input: 35% 0.025 155;
   --ring: 82% 0.15 82;

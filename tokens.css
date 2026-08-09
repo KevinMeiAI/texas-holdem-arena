@@ -24,10 +24,11 @@
   --color-warning: oklch(78% 0.12 82);
   --color-warning-ink: oklch(20% 0.025 155);
   --color-danger: oklch(66% 0.15 28);
-  --color-danger-ink: oklch(96% 0.01 82);
+  --color-danger-ink: oklch(19% 0.025 155);
   --color-card-paper: oklch(96% 0.018 88);
   --color-card-ink: oklch(20% 0.012 155);
   --color-card-red: oklch(55% 0.18 28);
+  --color-transparent: transparent;
   --color-overlay: oklch(8% 0.014 155 / 0.82);
   --color-shadow: oklch(5% 0.012 155 / 0.48);
   --color-shadow-soft: oklch(5% 0.012 155 / 0.22);
@@ -78,6 +79,8 @@
   --dur-micro: 100ms;
   --dur-short: 180ms;
   --dur-long: 280ms;
+  --motion-lift: -0.0625rem;
+  --motion-press: 0.0625rem;
 
   --shadow-card: 0 1rem 2.5rem var(--color-shadow-soft);
   --shadow-modal: 0 2rem 5rem var(--color-shadow);
