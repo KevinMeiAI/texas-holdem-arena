@@ -83,6 +83,8 @@ export interface AppendEventsInput {
   publicState?: unknown;
   snapshot?: AppendSnapshot;
   decisionRequest?: PendingDecisionRequest;
+  completeDecision?: { id: string; workerId: string; finalResponse: unknown };
+  failDecisionInfrastructure?: { id: string; workerId: string; errorClass: string };
 }
 
 export interface AppendEventsResult {
@@ -183,6 +185,7 @@ export class PgEventStore {
       canonicalJson(input.snapshot.publicState);
       canonicalJson(input.snapshot.privateState);
     }
+    if (input.completeDecision) canonicalJson(input.completeDecision.finalResponse);
     const client = await this.pool.connect();
     try {
       await client.query("begin");
@@ -328,6 +331,39 @@ export class PgEventStore {
         );
       }
 
+      if (input.completeDecision) {
+        const completed = await client.query(
+          `update decision_requests
+              set status = 'SUCCEEDED', final_response = $3::jsonb,
+                  lease_owner = null, lease_expires_at = null, updated_at = now()
+            where id = $1 and status = 'IN_FLIGHT' and lease_owner = $2`,
+          [
+            input.completeDecision.id,
+            input.completeDecision.workerId,
+            JSON.stringify(input.completeDecision.finalResponse),
+          ],
+        );
+        if (completed.rowCount !== 1) {
+          throw new Error("Decision lease is no longer owned by this worker");
+        }
+      }
+      if (input.failDecisionInfrastructure) {
+        const failed = await client.query(
+          `update decision_requests
+              set status = 'INFRA_FAILED', last_error_class = $3,
+                  lease_owner = null, lease_expires_at = null, updated_at = now()
+            where id = $1 and status = 'IN_FLIGHT' and lease_owner = $2`,
+          [
+            input.failDecisionInfrastructure.id,
+            input.failDecisionInfrastructure.workerId,
+            input.failDecisionInfrastructure.errorClass,
+          ],
+        );
+        if (failed.rowCount !== 1) {
+          throw new Error("Decision lease is no longer owned by this worker");
+        }
+      }
+
       await client.query("commit");
       return { events: stored, aggregateVersion: version, nextSequence: sequence, finalHash: prevHash };
     } catch (error) {
@@ -351,12 +387,12 @@ export class PgEventStore {
     options: { afterSequence?: number; includePrivate?: boolean } = {},
   ): Promise<LoadedArenaEvent[]> {
     const result = await this.pool.query<EventRow>(
-      `select tournament_id, sequence::text, aggregate_version::text, event_type,
+      `select tournament_id, sequence, aggregate_version, event_type,
               actor_id, hand_no, public_payload, encrypted_private_payload,
               private_visibility, private_owner_id, prev_hash, event_hash, created_at
          from arena_events
         where tournament_id = $1 and sequence > $2
-        order by sequence`,
+        order by arena_events.sequence`,
       [tournamentId, options.afterSequence ?? 0],
     );
     return result.rows.map((row) => {
@@ -375,10 +411,10 @@ export class PgEventStore {
 
   async loadLatestSnapshot(tournamentId: string): Promise<LoadedSnapshot | null> {
     const result = await this.pool.query<SnapshotRow>(
-      `select tournament_id, event_sequence::text, aggregate_version::text,
+      `select tournament_id, event_sequence, aggregate_version,
               public_state, encrypted_private_state, checksum
          from state_snapshots where tournament_id = $1
-        order by event_sequence desc limit 1`,
+        order by state_snapshots.event_sequence desc limit 1`,
       [tournamentId],
     );
     const row = result.rows[0];

@@ -7,6 +7,7 @@ import {
   PgEventStore,
 } from "../../apps/api/src/persistence/event-store.js";
 import { recoverAggregate } from "../../apps/api/src/persistence/recovery.js";
+import { HistoryQueryService } from "../../apps/api/src/tournament/history-query-service.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describePostgres = databaseUrl ? describe : describe.skip;
@@ -79,7 +80,44 @@ describePostgres("PostgreSQL authoritative event store", () => {
         attemptCount: 1,
       });
       expect(await store.claimNextDecision(tournamentId, "worker-b", 10_000)).toBeNull();
-      await store.completeDecision(claimed!.id, "worker-a", { action: "check" });
+      await store.append({
+        tournamentId,
+        expectedVersion: 2,
+        events: [{
+          type: "ACTION_APPLIED",
+          actorId: "p1",
+          handNo: 1,
+          publicPayload: {
+            street: "PREFLOP",
+            command: { action: "check" },
+            paid: 0,
+            amountTo: 10,
+          },
+          privateVisibility: "NONE",
+          privateOwnerId: null,
+        }],
+        completeDecision: {
+          id: claimed!.id,
+          workerId: "worker-a",
+          finalResponse: { action: "check" },
+        },
+      });
+
+      const history = new HistoryQueryService(pool!);
+      expect(await history.execute(tournamentId, 2, {
+        kind: "player_actions",
+        player_id: "p1",
+        streets: ["PREFLOP"],
+        actions: ["check"],
+        limit: 10,
+      })).toEqual([
+        expect.objectContaining({ type: "ACTION_APPLIED", actorId: "p1", handNo: 1 }),
+      ]);
+      await expect(history.execute(tournamentId, 1, {
+        kind: "hand",
+        hand_no: 1,
+        limit: 10,
+      })).rejects.toThrow(/current or a future hand/);
 
       await expect(store.append({
         tournamentId,
@@ -95,11 +133,11 @@ describePostgres("PostgreSQL authoritative event store", () => {
       })).rejects.toBeInstanceOf(EventStoreConcurrencyError);
 
       const loaded = await store.loadEvents(tournamentId, { includePrivate: true });
-      expect(loaded).toHaveLength(2);
+      expect(loaded).toHaveLength(3);
       expect(loaded[1]?.privatePayload).toEqual({ cards: ["As", "Ah"] });
       expect(await store.verifyTournamentChain(tournamentId)).toMatchObject({
         valid: true,
-        verifiedEvents: 2,
+        verifiedEvents: 3,
       });
 
       const snapshot = await store.loadLatestSnapshot(tournamentId);
@@ -115,13 +153,20 @@ describePostgres("PostgreSQL authoritative event store", () => {
         restartedStore,
         tournamentId,
         () => ({ impossible: true }),
-        (state) => state,
+        (state, event) => ({
+          ...(state as Record<string, unknown>),
+          replayedType: event.event.type,
+        }),
       );
       expect(recovered).toMatchObject({
-        aggregateVersion: 2,
-        eventSequence: 2,
-        replayedEvents: 0,
-        state: { deck: ["hidden"], holeCards: { p1: ["As", "Ah"] } },
+        aggregateVersion: 3,
+        eventSequence: 3,
+        replayedEvents: 1,
+        state: {
+          deck: ["hidden"],
+          holeCards: { p1: ["As", "Ah"] },
+          replayedType: "ACTION_APPLIED",
+        },
       });
 
       await pool!.query(

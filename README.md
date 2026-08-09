@@ -4,7 +4,7 @@ A verifiable, event-sourced single-table Texas Hold'em tournament arena for 2–
 
 ## Status
 
-Phase 2 rules core: the runnable TypeScript API/React/PostgreSQL foundation now includes a pure deterministic poker and single-table tournament reducer. Five-card evaluation is exhaustively checked against all 2,598,960 combinations, and scripted acceptance runs 10,000 complete tournaments. Persistence, model orchestration and the product UI remain subsequent checkpoints; the visual shell is not presented as a completed game.
+Phase 4 orchestration core: the runnable TypeScript API/React/PostgreSQL foundation now includes a pure deterministic poker reducer, encrypted event store, recovery snapshots, strict shared-prompt model protocol, four real Provider transports and a leased decision orchestrator. Five-card evaluation is exhaustively checked against all 2,598,960 combinations, scripted acceptance runs 10,000 domain tournaments, and PostgreSQL acceptance runs model seats through a persisted tournament to one recoverable champion. Administrator APIs and the complete product UI remain subsequent checkpoints; the visual shell is not presented as a completed game.
 
 ## Local development
 
@@ -39,3 +39,4 @@ The authoritative poker engine is a pure deterministic package. PostgreSQL store
 
 The implemented rules contract is documented in [docs/RULEBOOK.md](docs/RULEBOOK.md).
 Private event and key handling is documented in [docs/SECURITY.md](docs/SECURITY.md).
+The shared model contract is documented in [docs/MODEL_PROTOCOL.md](docs/MODEL_PROTOCOL.md).

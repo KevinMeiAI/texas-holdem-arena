@@ -15,7 +15,9 @@
 3. Event persistence, recovery and scripted full tournaments. **Implemented:**
    versioned event envelopes, AES-GCM private payloads, hash chain, snapshots,
    optimistic concurrency and leased decision outbox.
-4. Provider protocol, preflight and real adapter smoke paths.
+4. Provider protocol, preflight and real adapter smoke paths. **Implemented:**
+   strict shared prompt/JSON union, bounded SQL history, four transport adapters,
+   one correction, infrastructure pause/resume and persisted mock tournament.
 5. Administrator control room, live arena, replay and leaderboard.
 6. Docker, browser, recovery and information-leak acceptance.
 
