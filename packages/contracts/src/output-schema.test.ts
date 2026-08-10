@@ -5,7 +5,7 @@ describe("platform-owned structured output schema", () => {
   it("keeps a strict object root for provider schema modes", () => {
     const action = arenaOutputSchema("ACTION_OR_HISTORY");
     expect(action).toMatchObject({
-      version: "arena-output-v1",
+      version: "arena-output-v2",
       name: "arena_action_or_history",
       sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
       schema: {
@@ -15,6 +15,10 @@ describe("platform-owned structured output schema", () => {
       },
     });
     expect(action.schema).not.toHaveProperty("anyOf");
+    expect(action.schema).toHaveProperty(
+      "properties.amount_to.description",
+      "Must be null for fold, check, call, and all_in; use a positive integer only for bet or raise.",
+    );
   });
 
   it("uses a distinct, stable runout-vote schema", () => {

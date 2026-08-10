@@ -93,7 +93,17 @@ function normalizeNullableEnvelope(parsed: unknown, expected: ExpectedModelOutpu
     if (value.query !== undefined && value.query !== null) return parsed;
     const normalized = { ...value };
     delete normalized.query;
-    if (normalized.amount_to === null) delete normalized.amount_to;
+    const fixedEnvelope = Object.hasOwn(value, "action")
+      && Object.hasOwn(value, "amount_to")
+      && Object.hasOwn(value, "decision_summary")
+      && Object.hasOwn(value, "query");
+    const engineComputedAmount = normalized.action === "fold"
+      || normalized.action === "check"
+      || normalized.action === "call"
+      || normalized.action === "all_in";
+    if (normalized.amount_to === null || (fixedEnvelope && engineComputedAmount)) {
+      delete normalized.amount_to;
+    }
     if (normalized.decision_summary === null) delete normalized.decision_summary;
     return normalized;
   }

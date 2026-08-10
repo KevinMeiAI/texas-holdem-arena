@@ -19,6 +19,17 @@ describe("strict model protocol", () => {
       query: null,
     }), "ACTION_OR_HISTORY")).toEqual({ type: "action", action: "check" });
     expect(parseModelJson(JSON.stringify({
+      type: "action",
+      action: "call",
+      amount_to: 700,
+      decision_summary: "Calling the engine-computed amount.",
+      query: null,
+    }), "ACTION_OR_HISTORY")).toEqual({
+      type: "action",
+      action: "call",
+      decision_summary: "Calling the engine-computed amount.",
+    });
+    expect(parseModelJson(JSON.stringify({
       type: "history_query",
       action: null,
       amount_to: null,
@@ -69,7 +80,7 @@ describe("strict model protocol", () => {
     const first = buildEffectiveSystemPrompt();
     const second = buildEffectiveSystemPrompt();
     expect(first).toEqual(second);
-    expect(first.version).toBe("arena-system-v4");
+    expect(first.version).toBe("arena-system-v5");
     expect(first.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(first.text).not.toContain("SHARED STRATEGY PROMPT");
     expect(first.text).not.toContain("shared strategy");
@@ -77,6 +88,7 @@ describe("strict model protocol", () => {
     expect(first.text).toContain('"kind":"player_actions"');
     expect(first.text).toContain("history_budget_remaining");
     expect(first.text).toContain("dead_button");
+    expect(first.text).toContain("For fold/check/call/all_in, amount_to must be null");
     expect(first.text).toContain(ARENA_PROMPT_VERSION);
   });
 });

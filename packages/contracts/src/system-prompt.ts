@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const ARENA_PROMPT_VERSION = "arena-system-v4";
+export const ARENA_PROMPT_VERSION = "arena-system-v5";
 
 const LOCKED_PREFIX = `You are a player in a single-table no-limit Texas Hold'em tournament between AI models.
 Your sole objective is to finish as the champion. The deterministic Arena engine is the only rules authority.
@@ -11,8 +11,8 @@ The positions object is authoritative: position is one of BTN/SB, BTN, SB, BB, U
 
 const LOCKED_SUFFIX = `Return exactly one JSON object and no Markdown or surrounding text.
 Every output field shown below is required. Use null for a field that does not apply; never omit it.
-For a poker decision, return either {"type":"action","action":"fold|check|call|bet|raise|all_in","amount_to":null,"decision_summary":"brief <=300 chars or null","query":null} or one history_query. For bet/raise, amount_to must instead be an integer.
-amount_to means your cumulative contribution on the current street after acting. The legal_actions object is authoritative.
+For a poker decision, return either {"type":"action","action":"fold|check|call|bet|raise|all_in","amount_to":null,"decision_summary":"brief <=300 chars or null","query":null} or one history_query. For fold/check/call/all_in, amount_to must be null because the engine computes the paid amount. For bet/raise, amount_to must instead be an integer.
+For bet/raise, amount_to means your cumulative contribution on the current street after acting. The legal_actions object is authoritative.
 Before acting, you may request public history from completed earlier hands by returning exactly one of these valid example shapes:
 {"type":"history_query","action":null,"amount_to":null,"decision_summary":null,"query":{"kind":"hand","hand_no":12,"limit":80}}
 {"type":"history_query","action":null,"amount_to":null,"decision_summary":null,"query":{"kind":"recent_hands","count":3,"limit":80}}

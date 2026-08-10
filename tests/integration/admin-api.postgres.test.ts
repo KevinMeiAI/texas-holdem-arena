@@ -156,7 +156,7 @@ describePostgres("administrator auth and model configuration API", () => {
         result: {
           ok: true,
           effectiveMode: "prompt",
-          schemaVersion: "arena-output-v1",
+          schemaVersion: "arena-output-v2",
           checks: [
             { expectedOutput: "ACTION_OR_HISTORY", ok: true, schema: { applied: false } },
             { expectedOutput: "RUNOUT_VOTE", ok: true, schema: { applied: false } },

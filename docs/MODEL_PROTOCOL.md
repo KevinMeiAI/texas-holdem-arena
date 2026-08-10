@@ -1,4 +1,4 @@
-# Model protocol v4
+# Model protocol v5
 
 Every seat receives the same effective system prompt bytes. The effective prompt
 contains only the locked Arena rules prefix and locked output protocol. It has no
@@ -19,7 +19,7 @@ and all-ins.
 
 The protocol is frozen per tournament. Legacy tournaments retain the exact
 prompt and context version in their recovery snapshot; only newly created
-`arena-system-v4` tournaments use the fixed nullable structured-output envelope.
+`arena-system-v5` tournaments use the fixed nullable structured-output envelope.
 
 ## Action response
 
@@ -36,10 +36,15 @@ Return exactly one JSON object:
 ```
 
 - `action` must appear in the supplied `legal_actions` object.
-- Every root field is required in the v4 wire envelope. `amount_to` is an integer
+- Every root field is required in the v5 wire envelope. `amount_to` is an integer
   only for `bet` and `raise`; otherwise it is `null`. It is the total amount the
   player will have committed on the current street after acting.
 - Calls and all-ins have engine-computed amounts and use `amount_to: null`.
+- Portable provider schemas cannot express every cross-field condition. If a
+  structured-output provider fills `amount_to` for fold, check, call or all-in
+  inside the complete fixed envelope, Arena discards that redundant value before
+  validation. The deterministic engine still computes the paid amount. Bet and
+  raise amounts remain mandatory and strictly validated.
 - `decision_summary` is a string or `null` and limited to 300 Unicode characters. It is a
   short self-explanation, not hidden chain-of-thought. A malformed summary is
   discarded without invalidating an otherwise legal poker action.

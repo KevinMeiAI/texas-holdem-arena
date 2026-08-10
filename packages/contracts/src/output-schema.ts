@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ExpectedModelOutput } from "./model-protocol.js";
 
-export const ARENA_OUTPUT_SCHEMA_VERSION = "arena-output-v1";
+export const ARENA_OUTPUT_SCHEMA_VERSION = "arena-output-v2";
 
 type JsonSchema = Record<string, unknown>;
 
@@ -69,7 +69,10 @@ const actionOrHistorySchema = {
   properties: {
     type: { type: "string", enum: ["action", "history_query"] },
     action: nullable(pokerAction),
-    amount_to: nullable({ type: "integer", minimum: 1 }),
+    amount_to: {
+      ...nullable({ type: "integer", minimum: 1 }),
+      description: "Must be null for fold, check, call, and all_in; use a positive integer only for bet or raise.",
+    },
     decision_summary: nullable({ type: "string" }),
     query: {
       anyOf: [handQuery, recentHandsQuery, playerActionsQuery, publicStatsQuery, { type: "null" }],
