@@ -20,7 +20,6 @@ export interface ArenaHand {
   pots: { index: number; amount: number; eligible: string[] }[];
   awards: { potIndex: number; boardIndex: number; playerId: string; amount: number }[];
   currentActorId: string | null;
-  currentVoterId: string | null;
 }
 
 export interface ArenaState {

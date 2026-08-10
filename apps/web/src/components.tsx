@@ -141,7 +141,7 @@ export function PokerTable({ state }: { state: ArenaState }) {
 
 function TableSeat({ player, state, style }: { player: ArenaPlayer; state: ArenaState; style: CSSProperties }) {
   const hand = state.hand;
-  const isActing = hand?.currentActorId === player.id || hand?.currentVoterId === player.id;
+  const isActing = hand?.currentActorId === player.id;
   const isChampion = state.championPlayerId === player.id;
   const position = hand?.positions.button === player.seat ? "D"
     : hand?.positions.smallBlind === player.seat ? "SB"

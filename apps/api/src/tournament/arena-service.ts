@@ -95,7 +95,7 @@ export class ArenaService {
     const runtime = await orchestrator.createAndStart({
       tournamentId,
       name: input.name,
-      rulesetVersion: "arena-rules-v1",
+      rulesetVersion: "arena-rules-v2",
       tournament: {
         seatCount: seated.length,
         players: seated.map((model, seat) => ({ id: model.id, seat })),

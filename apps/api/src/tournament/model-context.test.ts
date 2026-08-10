@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { cardCode, createDeck } from "../../../../packages/domain/src/cards.js";
-import { createTournament, startTournamentHand } from "../../../../packages/domain/src/tournament.js";
+import { createTournament, reduceTournament, startTournamentHand } from "../../../../packages/domain/src/tournament.js";
 import { ARENA_PROMPT_VERSION } from "../../../../packages/contracts/src/system-prompt.js";
+import type { ProjectedArenaEvent } from "../../../../packages/contracts/src/visibility.js";
 import { HistoryBudget } from "./history-budget.js";
 import { buildModelContext } from "./model-context.js";
 
@@ -63,7 +64,7 @@ describe("model-self context projection", () => {
       currentHandEvents: [],
       historyBudget: new HistoryBudget({ maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 }).state,
     }) as { schema_version: string; positions: Record<string, unknown> };
-    expect(context.schema_version).toBe("model-context-v2");
+    expect(context.schema_version).toBe("model-context-v3");
     expect(context.positions).toMatchObject({
       button_seat: 1,
       small_blind_seat: 1,
@@ -74,6 +75,81 @@ describe("model-self context projection", () => {
       preflop_action_order: ["hero", "villain"],
       postflop_action_order: ["villain", "hero"],
     });
+  });
+
+  it("provides exact pot, effective-stack, blind-clock and compact action context", () => {
+    let state = createTournament({
+      seatCount: 2,
+      players: [{ id: "hero", seat: 0 }, { id: "villain", seat: 1 }],
+      initialStack: 1_000,
+      initialButton: 0,
+      handsPerLevel: 10,
+      blindLevels: [{ smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 }],
+    });
+    state = startTournamentHand(state, createDeck()).state;
+    state = reduceTournament(state, {
+      type: "ACTION",
+      playerId: "hero",
+      action: { action: "call" },
+    }).state;
+    const base = {
+      tournamentId: "11111111-1111-4111-8111-111111111111",
+      aggregateVersion: 1,
+      handNo: 1,
+      eventHash: "a".repeat(64),
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const currentHandEvents: ProjectedArenaEvent[] = [
+      { ...base, sequence: 1, type: "FORCED_BET_POSTED", actorId: null, publicPayload: { playerId: "hero", kind: "SMALL_BLIND", amount: 5, live: true } },
+      { ...base, sequence: 2, type: "FORCED_BET_POSTED", actorId: null, publicPayload: { playerId: "villain", kind: "BIG_BLIND", amount: 10, live: true } },
+      { ...base, sequence: 3, type: "BETTING_ROUND_STARTED", actorId: null, publicPayload: { street: "PREFLOP", actorId: "hero", currentBet: 10 } },
+      { ...base, sequence: 4, type: "ACTION_APPLIED", actorId: "hero", publicPayload: { street: "PREFLOP", command: { action: "call" }, paid: 5, amountTo: 10 } },
+    ];
+    const context = buildModelContext({
+      tournamentId: base.tournamentId,
+      rulesetVersion: "arena-rules-v2",
+      promptVersion: ARENA_PROMPT_VERSION,
+      state,
+      playerId: "villain",
+      currentHandEvents,
+      historyBudget: new HistoryBudget({ maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 }).state,
+    }) as {
+      schema_version: string;
+      tournament: Record<string, unknown>;
+      pot: Record<string, unknown>;
+      betting: Record<string, unknown>;
+      action_history: Record<string, unknown>[];
+      current_hand_events?: unknown;
+    };
+    expect(context.schema_version).toBe("model-context-v3");
+    expect(context.tournament).toMatchObject({
+      objective: "CHAMPION_ONLY",
+      runout_policy: "SINGLE_BOARD",
+      players_remaining: 2,
+      total_chips: 2_000,
+      blind_level_number: 1,
+      hands_until_next_level: 10,
+      next_blind_level: { level_number: 2, small_blind: 10, big_blind: 20, big_blind_ante: 0 },
+    });
+    expect(context.pot).toMatchObject({
+      total_before_action: 20,
+      total_after_call: null,
+      effective_stack_by_opponent: { hero: 990 },
+      provisional_layers_if_closed_now: [{ index: 0, amount: 20, eligible_player_ids: ["hero", "villain"] }],
+    });
+    expect(context.betting).toMatchObject({ last_aggressor_id: null });
+    expect(context.action_history.at(-1)).toMatchObject({
+      type: "action",
+      player_id: "hero",
+      action: "call",
+      paid: 5,
+      amount_to: 10,
+      pot_after: 20,
+      stack_after: 990,
+    });
+    expect(context.current_hand_events).toBeUndefined();
+    expect(JSON.stringify(context)).not.toContain("eventHash");
+    expect(JSON.stringify(context)).not.toContain("createdAt");
   });
 
   it("preserves the frozen v1 context contract for an in-progress legacy tournament", () => {

@@ -1,4 +1,4 @@
-# Arena Ruleset v1
+# Arena Ruleset v2
 
 This document is the normative contract for the deterministic domain engine in
 `packages/domain`. A model may choose only among legal actions supplied by the

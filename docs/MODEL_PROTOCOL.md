@@ -1,4 +1,4 @@
-# Model protocol v7
+# Model protocol v8
 
 Every seat receives the same effective system prompt bytes. The effective prompt
 contains only the locked Arena rules prefix and locked output protocol. It has no
@@ -16,6 +16,18 @@ button state, the hero's position, a position record for every active player,
 and preflop/postflop action-order arrays. Order indexes are one-based. Live
 `betting.current_actor_id` and `legal_actions` remain authoritative after folds
 and all-ins.
+
+## Professional decision context
+
+New tournaments use `model-context-v3`. It provides the current and next blind
+levels, hands until the next level, players remaining, total and average stacks,
+single-board runout policy, exact pot totals before an action and after a call,
+provisional side-pot layers, uncalled-return preview, effective stacks and SPR by
+opponent. Raw audit envelopes are replaced with a compact action history containing
+only forced bets, public board cards, poker actions, paid amounts, amount-to values,
+pot-after and stack-after values.
+
+Legacy tournaments retain their frozen prompt/context version.
 
 The protocol is frozen per tournament. Legacy tournaments retain the exact
 prompt and context version in their recovery snapshot; only newly created
