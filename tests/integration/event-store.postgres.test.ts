@@ -87,6 +87,38 @@ describePostgres("PostgreSQL authoritative event store", () => {
         attemptCount: 1,
       });
       expect(await store.claimNextDecision(tournamentId, "worker-b", 10_000)).toBeNull();
+      const resumeState = {
+        historyResults: [],
+        protocolFailures: 0,
+        correction: null,
+        calls: [{ attempt: 1, outcome: "SUCCESS", errorKind: null, latencyMs: 12, usage: null }],
+      };
+      await store.saveDecisionResumeState(claimed!.id, resumeState);
+      expect(await store.loadDecisionResumeState(claimed!.id)).toEqual(resumeState);
+      await store.appendDecisionTurn({
+        decisionId: claimed!.id,
+        turnIndex: 1,
+        request: { systemPromptHash: "b".repeat(64), userPayload: { hole_cards: ["As", "Ah"] } },
+        response: { rawText: '{"type":"action","action":"check"}', parsed: { type: "action", action: "check" } },
+        outcome: "SUCCESS",
+        errorKind: null,
+        providerConfigHash: "c".repeat(64),
+        outputSchemaVersion: "arena-output-v2",
+        outputSchemaHash: "d".repeat(64),
+        latencyMs: 12,
+        usage: { totalTokens: 20 },
+      });
+      expect(await store.loadDecisionAudit(tournamentId, 1)).toEqual([
+        expect.objectContaining({
+          decision_id: claimed!.id,
+          player_id: "p1",
+          turn_index: 1,
+          request: expect.objectContaining({ userPayload: { hole_cards: ["As", "Ah"] } }),
+          response: expect.objectContaining({ parsed: { type: "action", action: "check" } }),
+          provider_config_hash: "c".repeat(64),
+          output_schema_hash: "d".repeat(64),
+        }),
+      ]);
       await store.append({
         tournamentId,
         expectedVersion: 2,

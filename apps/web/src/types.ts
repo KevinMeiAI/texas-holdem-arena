@@ -50,6 +50,24 @@ export interface ArenaEvent {
   createdAt: string;
 }
 
+export interface DecisionAuditTurn {
+  decision_id: string;
+  player_id: string;
+  turn_index: number;
+  request_hash: string;
+  request: Record<string, unknown>;
+  response_hash: string | null;
+  response: { rawText?: string; parsed?: Record<string, unknown>; providerRequestId?: string | null } | null;
+  outcome: "SUCCESS" | "PROTOCOL_ERROR" | "INFRA_ERROR";
+  error_kind: string | null;
+  provider_config_hash: string;
+  output_schema_version: string;
+  output_schema_hash: string;
+  latency_ms: number | null;
+  usage: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export interface TournamentSummary {
   id: string;
   name: string;

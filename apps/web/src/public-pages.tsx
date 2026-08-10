@@ -17,6 +17,7 @@ import {
 import type {
   ArenaEvent,
   ArenaState,
+  DecisionAuditTurn,
   HandSummary,
   LeaderboardEntry,
   TournamentSummary,
@@ -179,12 +180,17 @@ export function ReplayPage() {
   const tournament = useApiResource<{ state: ArenaState }>(id ? `/api/public/tournaments/${id}` : null);
   const hands = useApiResource<{ hands: HandSummary[] }>(id ? `/api/public/tournaments/${id}/hands` : null);
   const handNo = Number(routeHandNo ?? hands.data?.hands.at(-1)?.handNo ?? 0);
-  const replay = useApiResource<{ events: ArenaEvent[] }>(handNo > 0 ? `/api/public/tournaments/${id}/hands/${handNo}/replay` : null);
+  const replay = useApiResource<{
+    events: ArenaEvent[];
+    decisions: DecisionAuditTurn[];
+    decisionAuditAvailable: boolean;
+  }>(handNo > 0 ? `/api/public/tournaments/${id}/hands/${handNo}/replay` : null);
   if (tournament.loading || hands.loading) return <main className="page-shell"><LoadingBlock label="正在装载赛程回放" /></main>;
   if (tournament.error || hands.error) return <main className="page-shell"><ErrorBlock message={tournament.error ?? hands.error ?? "赛程回放暂时不可用"} /></main>;
   const state = tournament.data?.state;
   if (!state) return <main className="page-shell"><EmptyState title="赛事不存在" body="无法找到对应的赛事记录。" /></main>;
   const events = replay.data?.events ?? [];
+  const decisions = replay.data?.decisions ?? [];
   const boards = collectBoard(events);
   const holeCards = new Map<string, unknown[]>();
   for (const event of events) {
@@ -209,6 +215,38 @@ export function ReplayPage() {
           </section>
           <aside className="replay-events"><div className="panel-heading"><div><h2>逐事件记录</h2><p>按执行顺序完整保存</p></div><span>{events.length} 条事件</span></div><EventTape compact events={events} players={state.players} /></aside>
         </div>
+      )}
+      {decisions.length > 0 && (
+        <section className="decision-audit-panel">
+          <div className="decision-audit-heading">
+            <div><h2>模型决策审计</h2><p>牌局结束后公开每轮真实输入、原始输出与冻结配置凭证</p></div>
+            <span>{decisions.length} 次调用</span>
+          </div>
+          <div className="decision-audit-list">
+            {decisions.map((turn) => {
+              const player = state.players.find((item) => item.id === turn.player_id);
+              const parsed = turn.response?.parsed;
+              const summary = typeof parsed?.decision_summary === "string" ? parsed.decision_summary : null;
+              return (
+                <details key={`${turn.decision_id}:${turn.turn_index}`}>
+                  <summary>
+                    <span>{player?.displayName ?? turn.player_id}</span>
+                    <b>调用 {turn.turn_index}</b>
+                    <em>{turn.outcome === "SUCCESS" ? "成功" : turn.outcome === "PROTOCOL_ERROR" ? "协议纠错" : "基础设施错误"}</em>
+                    <i>{turn.latency_ms === null ? "—" : `${(turn.latency_ms / 1000).toFixed(1)} 秒`}</i>
+                  </summary>
+                  {summary && <p className="decision-audit-summary">决策说明：{summary}</p>}
+                  <div className="decision-proof-grid">
+                    <span>请求哈希 <code>{turn.request_hash}</code></span>
+                    <span>模型配置哈希 <code>{turn.provider_config_hash}</code></span>
+                    <span>输出协议 <code>{turn.output_schema_version} · {turn.output_schema_hash}</code></span>
+                  </div>
+                  <pre>{JSON.stringify({ request: turn.request, response: turn.response, error_kind: turn.error_kind, usage: turn.usage }, null, 2)}</pre>
+                </details>
+              );
+            })}
+          </div>
+        </section>
       )}
       <div className="fairness-callout"><h2>验证这场比赛没有被改写</h2><p>事件哈希链、随机承诺与赛后公开种子共同构成可审计证据。</p><Link to={`/api/public/tournaments/${id}/fairness`} target="_blank">查看公平性 JSON ↗</Link></div>
       <PageFooter />

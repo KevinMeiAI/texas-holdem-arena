@@ -101,6 +101,7 @@ export function inspectOutputPolicy(config: FrozenModelConfig): OutputPolicyInsp
 export function resolveOutputPolicy(
   config: FrozenModelConfig,
   expectedOutput: ExpectedModelOutput,
+  frozenSchema?: ArenaOutputSchema,
 ): ResolvedOutputPolicy {
   const inspection = inspectOutputPolicy(config);
   if (!inspection.supported) {
@@ -108,6 +109,6 @@ export function resolveOutputPolicy(
   }
   return {
     ...inspection,
-    schema: inspection.effectiveMode === "json_schema" ? arenaOutputSchema(expectedOutput) : null,
+    schema: inspection.effectiveMode === "json_schema" ? frozenSchema ?? arenaOutputSchema(expectedOutput) : null,
   };
 }

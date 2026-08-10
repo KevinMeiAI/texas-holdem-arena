@@ -149,6 +149,12 @@ export interface CanonicalModelRequest {
   expectedOutput: ExpectedModelOutput;
   systemPrompt: string;
   systemPromptHash: string;
+  outputSchema?: {
+    version: string;
+    name: string;
+    schema: Record<string, unknown>;
+    sha256: string;
+  };
   userPayload: unknown;
   timeoutMs: number;
 }

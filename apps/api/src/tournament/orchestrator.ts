@@ -1,7 +1,8 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import {
   buildEffectiveSystemPrompt,
+  arenaOutputSchema,
   projectArenaEvents,
   tournamentEventToArenaEvents,
   type CanonicalModelRequest,
@@ -10,7 +11,8 @@ import {
 import { cardCode, createDeck } from "../../../../packages/domain/src/cards.js";
 import { createTournament as createDomainTournament, reduceTournament, startTournamentHand, type TournamentConfig, type TournamentState, type TournamentTransition } from "../../../../packages/domain/src/tournament.js";
 import { deriveSeed, DeterministicRng, seedCommitment } from "../../../../packages/fairness/src/rng.js";
-import type { ModelProvider } from "../../../../packages/providers/src/provider.js";
+import { canonicalJson } from "../../../../packages/fairness/src/canonical-json.js";
+import type { FrozenModelConfig, ModelProvider } from "../../../../packages/providers/src/provider.js";
 import { ARENA_DECISION_TIMEOUT_MS } from "../model-runtime.js";
 import {
   type AppendEventsInput,
@@ -18,7 +20,11 @@ import {
   PgEventStore,
 } from "../persistence/event-store.js";
 import { recoverAggregate } from "../persistence/recovery.js";
-import { runModelDecision, type DecisionRunnerConfig } from "./decision-runner.js";
+import {
+  runModelDecision,
+  type DecisionResumeState,
+  type DecisionRunnerConfig,
+} from "./decision-runner.js";
 import { HistoryBudget } from "./history-budget.js";
 import { HistoryQueryService } from "./history-query-service.js";
 import { protocolFallbackAction, toDomainAction } from "./model-action.js";
@@ -32,6 +38,7 @@ export interface ArenaTournamentSetup {
   rulesetVersion: string;
   tournament: TournamentConfig;
   providerIdByPlayer: Record<string, string>;
+  frozenModelConfigByPlayer?: Record<string, FrozenModelConfig>;
   playerLabels?: Record<string, string>;
   masterSeed?: Uint8Array;
   managedByArena?: boolean;
@@ -45,12 +52,15 @@ export interface OrchestratorRuntime {
   aggregateVersion: number;
   domain: TournamentState;
   effectivePrompt: ReturnType<typeof buildEffectiveSystemPrompt>;
+  effectiveOutputSchema?: ReturnType<typeof arenaOutputSchema>;
   providerIdByPlayer: Record<string, string>;
+  frozenModelConfigByPlayer?: Record<string, FrozenModelConfig>;
   playerLabels: Record<string, string>;
   masterSeedBase64: string;
   seedCommitment: string;
   seedRevealed: boolean;
   pendingDecisionId: string | null;
+  decisionConfig?: DecisionRunnerConfig;
 }
 
 export interface OrchestratorDependencies {
@@ -70,6 +80,11 @@ function jsonSafe<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function modelConfigHash(config: FrozenModelConfig): string {
+  const { apiKey: _secret, ...auditable } = config;
+  return createHash("sha256").update(canonicalJson(auditable)).digest("hex");
+}
+
 function publicState(runtime: OrchestratorRuntime): unknown {
   const hand = runtime.domain.currentHand;
   return {
@@ -77,6 +92,7 @@ function publicState(runtime: OrchestratorRuntime): unknown {
     name: runtime.name,
     rulesetVersion: runtime.rulesetVersion,
     promptHash: runtime.effectivePrompt.sha256,
+    outputSchemaHash: runtime.effectiveOutputSchema?.sha256 ?? null,
     status: runtime.operationalStatus,
     completedHands: runtime.domain.completedHands,
     championPlayerId: runtime.domain.championPlayerId,
@@ -159,6 +175,7 @@ export class TournamentOrchestrator {
   async createAndStart(setup: ArenaTournamentSetup): Promise<OrchestratorRuntime> {
     const tournamentId = setup.tournamentId ?? randomUUID();
     const effectivePrompt = buildEffectiveSystemPrompt();
+    const effectiveOutputSchema = arenaOutputSchema("ACTION_OR_HISTORY");
     const masterSeed = setup.masterSeed ?? randomBytes(32);
     if (masterSeed.byteLength !== 32) throw new Error("Tournament master seed must be 256 bits");
     for (const player of setup.tournament.players) {
@@ -175,7 +192,11 @@ export class TournamentOrchestrator {
       aggregateVersion: 0,
       domain: createDomainTournament(setup.tournament),
       effectivePrompt,
+      effectiveOutputSchema,
       providerIdByPlayer: { ...setup.providerIdByPlayer },
+      ...(setup.frozenModelConfigByPlayer ? {
+        frozenModelConfigByPlayer: jsonSafe(setup.frozenModelConfigByPlayer),
+      } : {}),
       playerLabels: Object.fromEntries(
         setup.tournament.players.map((player) => [
           player.id,
@@ -186,6 +207,7 @@ export class TournamentOrchestrator {
       seedCommitment: seedCommitment(masterSeed, tournamentId, setup.rulesetVersion),
       seedRevealed: false,
       pendingDecisionId: null,
+      decisionConfig: jsonSafe(this.#decisionConfig),
     };
     await this.#store.createTournament({
       id: tournamentId,
@@ -196,6 +218,10 @@ export class TournamentOrchestrator {
         providerIdByPlayer: setup.providerIdByPlayer,
         playerLabels: setup.playerLabels ?? {},
         promptVersion: effectivePrompt.version,
+        outputSchemaVersion: effectiveOutputSchema.version,
+        outputSchemaHash: effectiveOutputSchema.sha256,
+        modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
+          .map(([playerId, config]) => [playerId, modelConfigHash(config)])),
         managedByArena: setup.managedByArena === true,
       },
       promptHash: effectivePrompt.sha256,
@@ -204,7 +230,11 @@ export class TournamentOrchestrator {
       publicArenaEvent("TOURNAMENT_CONFIG_FROZEN", {
         promptHash: effectivePrompt.sha256,
         promptVersion: effectivePrompt.version,
+        outputSchemaVersion: effectiveOutputSchema.version,
+        outputSchemaHash: effectiveOutputSchema.sha256,
         rulesetVersion: setup.rulesetVersion,
+        modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
+          .map(([playerId, config]) => [playerId, modelConfigHash(config)])),
       }),
       publicArenaEvent("RANDOMNESS_COMMITTED", { commitment: runtime.seedCommitment }),
     ], {});
@@ -294,7 +324,8 @@ export class TournamentOrchestrator {
         completedHandNos,
       },
     );
-    const historyBudget = new HistoryBudget(this.#decisionConfig.history);
+    const decisionConfig = runtime.decisionConfig ?? this.#decisionConfig;
+    const historyBudget = new HistoryBudget(decisionConfig.history);
     const context = buildModelContext({
       tournamentId: runtime.tournamentId,
       rulesetVersion: runtime.rulesetVersion,
@@ -304,17 +335,42 @@ export class TournamentOrchestrator {
       currentHandEvents,
       historyBudget: historyBudget.state,
     });
+    const outputSchema = runtime.effectiveOutputSchema ?? arenaOutputSchema("ACTION_OR_HISTORY");
     const request: CanonicalModelRequest = {
       requestId: claimed.id,
       expectedOutput: "ACTION_OR_HISTORY",
       systemPrompt: runtime.effectivePrompt.text,
       systemPromptHash: runtime.effectivePrompt.sha256,
-      userPayload: context,
-      timeoutMs: ARENA_DECISION_TIMEOUT_MS,
+      outputSchema,
+      // Provider transports serialize the payload as JSON, which omits optional
+      // legal-action keys whose values are undefined. Normalize once here so the
+      // encrypted audit record is byte-for-byte representative of that request.
+      userPayload: jsonSafe(context),
+      timeoutMs: runtime.frozenModelConfigByPlayer?.[claimed.playerId]?.timeoutMs ?? ARENA_DECISION_TIMEOUT_MS,
     };
+    const resumeState = await this.#store.loadDecisionResumeState<DecisionResumeState>(claimed.id);
+    const frozenModelConfig = runtime.frozenModelConfigByPlayer?.[claimed.playerId];
+    const providerConfigHash = frozenModelConfig
+      ? modelConfigHash(frozenModelConfig)
+      : createHash("sha256").update(`legacy-provider:${providerId}`).digest("hex");
     const decision = await runModelDecision({
       provider,
       request,
+      resumeState,
+      saveResumeState: (state) => this.#store.saveDecisionResumeState(claimed.id, state),
+      auditTurn: (turn) => this.#store.appendDecisionTurn({
+        decisionId: claimed.id,
+        turnIndex: turn.turnIndex,
+        request: turn.request,
+        ...(turn.response ? { response: turn.response } : {}),
+        outcome: turn.outcome,
+        errorKind: turn.errorKind,
+        providerConfigHash,
+        outputSchemaVersion: outputSchema.version,
+        outputSchemaHash: outputSchema.sha256,
+        latencyMs: turn.latencyMs,
+        usage: turn.usage,
+      }),
       validateAction: (response) => toDomainAction(hand, response),
       fallbackAction: () => protocolFallbackAction(hand),
       executeHistoryQuery: (query) => this.#history.execute(
@@ -322,7 +378,7 @@ export class TournamentOrchestrator {
         hand.handNo,
         query,
       ),
-    }, this.#decisionConfig);
+    }, decisionConfig);
 
     if (decision.status === "PAUSED_INFRA") {
       runtime = {

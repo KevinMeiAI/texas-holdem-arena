@@ -95,6 +95,20 @@ export interface AppendEventsResult {
   finalHash: string;
 }
 
+export interface DecisionTurnAuditInput {
+  decisionId: string;
+  turnIndex: number;
+  request: unknown;
+  response?: unknown;
+  outcome: "SUCCESS" | "PROTOCOL_ERROR" | "INFRA_ERROR";
+  errorKind: string | null;
+  providerConfigHash: string;
+  outputSchemaVersion: string;
+  outputSchemaHash: string;
+  latencyMs: number | null;
+  usage: unknown | null;
+}
+
 export interface LoadedSnapshot {
   tournamentId: string;
   eventSequence: number;
@@ -117,6 +131,18 @@ function eventAad(tournamentId: string, sequence: number, version: number, type:
 
 function snapshotAad(tournamentId: string, sequence: number, version: number): string {
   return `arena:snapshot:${tournamentId}:${sequence}:${version}`;
+}
+
+function decisionStateAad(decisionId: string): string {
+  return `arena:decision-state:${decisionId}`;
+}
+
+function decisionTurnAad(decisionId: string, turnIndex: number, kind: "request" | "response"): string {
+  return `arena:decision-turn:${decisionId}:${turnIndex}:${kind}`;
+}
+
+function canonicalHash(value: unknown): string {
+  return createHash("sha256").update(canonicalJson(value)).digest("hex");
 }
 
 function iso(value: Date | string): string {
@@ -154,6 +180,139 @@ function snapshotChecksum(input: {
 export class PgEventStore {
   constructor(private readonly pool: Pool, private readonly masterKey: Uint8Array) {
     if (masterKey.byteLength !== 32) throw new Error("Event store requires a 32-byte master key");
+  }
+
+  async saveDecisionResumeState(decisionId: string, state: unknown): Promise<void> {
+    canonicalJson(state);
+    const encrypted = encryptJson(state, this.masterKey, decisionStateAad(decisionId));
+    await this.pool.query(
+      `insert into decision_resume_states (decision_id, encrypted_state, state_hash)
+       values ($1, $2::jsonb, $3)
+       on conflict (decision_id) do update
+         set encrypted_state = excluded.encrypted_state,
+             state_hash = excluded.state_hash,
+             updated_at = now()`,
+      [decisionId, JSON.stringify(encrypted), canonicalHash(state)],
+    );
+  }
+
+  async loadDecisionResumeState<T>(decisionId: string): Promise<T | null> {
+    const result = await this.pool.query<{ encrypted_state: unknown; state_hash: string }>(
+      "select encrypted_state, state_hash from decision_resume_states where decision_id = $1",
+      [decisionId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    const state = decryptJson(
+      encryptedPayloadSchema.parse(row.encrypted_state),
+      this.masterKey,
+      decisionStateAad(decisionId),
+    );
+    if (canonicalHash(state) !== row.state_hash) throw new Error("Decision resume state hash mismatch");
+    return state as T;
+  }
+
+  async appendDecisionTurn(input: DecisionTurnAuditInput): Promise<void> {
+    if (!Number.isSafeInteger(input.turnIndex) || input.turnIndex < 1) {
+      throw new Error("Decision turn index must be positive");
+    }
+    canonicalJson(input.request);
+    if (input.response !== undefined) canonicalJson(input.response);
+    const encryptedRequest = encryptJson(
+      input.request,
+      this.masterKey,
+      decisionTurnAad(input.decisionId, input.turnIndex, "request"),
+    );
+    const encryptedResponse = input.response === undefined ? null : encryptJson(
+      input.response,
+      this.masterKey,
+      decisionTurnAad(input.decisionId, input.turnIndex, "response"),
+    );
+    await this.pool.query(
+      `insert into decision_turns
+        (decision_id, turn_index, request_hash, encrypted_request, response_hash,
+         encrypted_response, outcome, error_kind, provider_config_hash,
+         output_schema_version, output_schema_hash, latency_ms, usage)
+       values ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13::jsonb)
+       on conflict (decision_id, turn_index) do nothing`,
+      [
+        input.decisionId,
+        input.turnIndex,
+        canonicalHash(input.request),
+        JSON.stringify(encryptedRequest),
+        input.response === undefined ? null : canonicalHash(input.response),
+        encryptedResponse ? JSON.stringify(encryptedResponse) : null,
+        input.outcome,
+        input.errorKind,
+        input.providerConfigHash,
+        input.outputSchemaVersion,
+        input.outputSchemaHash,
+        input.latencyMs,
+        input.usage === null ? null : JSON.stringify(input.usage),
+      ],
+    );
+  }
+
+  async loadDecisionAudit(tournamentId: string, handNo: number): Promise<unknown[]> {
+    const result = await this.pool.query<{
+      decision_id: string;
+      player_id: string;
+      turn_index: number;
+      request_hash: string;
+      encrypted_request: unknown;
+      response_hash: string | null;
+      encrypted_response: unknown | null;
+      outcome: string;
+      error_kind: string | null;
+      provider_config_hash: string;
+      output_schema_version: string;
+      output_schema_hash: string;
+      latency_ms: number | null;
+      usage: unknown | null;
+      created_at: Date | string;
+    }>(
+      `select d.id as decision_id, d.player_id, t.turn_index, t.request_hash,
+              t.encrypted_request, t.response_hash, t.encrypted_response, t.outcome,
+              t.error_kind, t.provider_config_hash, t.output_schema_version,
+              t.output_schema_hash, t.latency_ms, t.usage, t.created_at
+         from decision_requests d join decision_turns t on t.decision_id = d.id
+        where d.tournament_id = $1 and d.hand_no = $2
+        order by d.created_at, t.turn_index`,
+      [tournamentId, handNo],
+    );
+    return result.rows.map((row) => {
+      const request = decryptJson(
+        encryptedPayloadSchema.parse(row.encrypted_request),
+        this.masterKey,
+        decisionTurnAad(row.decision_id, row.turn_index, "request"),
+      );
+      if (canonicalHash(request) !== row.request_hash) throw new Error("Decision request audit hash mismatch");
+      const response = row.encrypted_response === null ? null : decryptJson(
+        encryptedPayloadSchema.parse(row.encrypted_response),
+        this.masterKey,
+        decisionTurnAad(row.decision_id, row.turn_index, "response"),
+      );
+      if (response !== null && canonicalHash(response) !== row.response_hash) {
+        throw new Error("Decision response audit hash mismatch");
+      }
+      return {
+        decision_id: row.decision_id,
+        player_id: row.player_id,
+        turn_index: row.turn_index,
+        request_hash: row.request_hash,
+        request,
+        response_hash: row.response_hash,
+        response,
+        outcome: row.outcome,
+        error_kind: row.error_kind,
+        provider_config_hash: row.provider_config_hash,
+        output_schema_version: row.output_schema_version,
+        output_schema_hash: row.output_schema_hash,
+        latency_ms: row.latency_ms,
+        usage: row.usage,
+        created_at: iso(row.created_at),
+      };
+    });
   }
 
   async createTournament(input: CreateTournamentRecord): Promise<void> {

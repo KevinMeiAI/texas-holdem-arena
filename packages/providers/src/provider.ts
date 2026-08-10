@@ -50,6 +50,7 @@ export class ProviderCallError extends Error {
     message: string,
     readonly retryable: boolean,
     readonly status: number | null = null,
+    readonly rawResponseText?: string,
   ) {
     super(message);
     this.name = "ProviderCallError";
@@ -75,7 +76,7 @@ export function parseProviderOutput(text: string, expected: ExpectedModelOutput)
   try {
     return parseModelJson(text, expected);
   } catch {
-    throw new ProviderCallError("INVALID_RESPONSE", "Model returned invalid Arena JSON", false);
+    throw new ProviderCallError("INVALID_RESPONSE", "Model returned invalid Arena JSON", false, null, text);
   }
 }
 

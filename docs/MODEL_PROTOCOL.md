@@ -30,8 +30,9 @@ pot-after and stack-after values.
 Legacy tournaments retain their frozen prompt/context version.
 
 The protocol is frozen per tournament. Legacy tournaments retain the exact
-prompt and context version in their recovery snapshot; only newly created
-`arena-system-v5` tournaments use the fixed nullable structured-output envelope.
+prompt and context version in their recovery snapshot. Newly created
+`arena-system-v10` tournaments use the fixed nullable structured-output envelope,
+`model-context-v3`, and a frozen output-schema snapshot.
 
 ## Action response
 
@@ -48,7 +49,7 @@ Return exactly one JSON object:
 ```
 
 - `action` must appear in the supplied `legal_actions` object.
-- Every root field is required in the v5 wire envelope. `amount_to` is an integer
+- Every root field is required in the v10 wire envelope. `amount_to` is an integer
   only for `bet` and `raise`; otherwise it is `null`. It is the total amount the
   player will have committed on the current street after acting.
 - Calls and all-ins have engine-computed amounts and use `amount_to: null`.
@@ -114,8 +115,7 @@ engine deals the remaining streets once and proceeds directly to showdown.
 Protocol errors include invalid JSON, invalid schema, unavailable action,
 out-of-range amount and excess history queries. The model receives one corrected
 request using the same state. A second protocol failure executes `check` when
-legal, otherwise `fold`. Invalid runout voting after correction means Run It
-Once.
+legal, otherwise `fold`.
 
 Infrastructure errors include timeouts, network failure, 429 and provider 5xx.
 Tournament decisions allow 120 seconds per attempt and retry against the same
@@ -124,6 +124,19 @@ first failure and 8 seconds after the second. Model preflight allows 60 seconds
 per check. Authentication and configuration errors still pause immediately;
 they are not retried. Exhaustion pauses the tournament; it never spends a
 player's chips. Resume reclaims the same decision ID from the PostgreSQL outbox.
+
+For new tournaments, the effective prompt, output schema, decision policy, model,
+provider transport, output mode, timeout and generation parameters are frozen in
+the encrypted recovery snapshot. Provider API keys never enter public events or
+replay responses. Public configuration events contain only non-secret SHA-256
+commitments.
+
+Each provider turn is also encrypted and persisted with the exact canonical
+request, raw and parsed response when available, usage, latency, error class,
+prompt/schema commitment and non-secret model-configuration commitment. These
+records restore history-query and correction state after an infrastructure pause.
+They are withheld during the live hand and become readable in spectator replay
+only after `HAND_COMPLETED`.
 
 ## Provider transports
 

@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { projectArenaEvent, type ProjectionRole } from "../../../../packages/contracts/src/visibility.js";
 import { deriveSeed, DeterministicRng } from "../../../../packages/fairness/src/rng.js";
 import { createProvider } from "../../../../packages/providers/src/provider-factory.js";
-import type { ModelProvider } from "../../../../packages/providers/src/provider.js";
+import type { FrozenModelConfig, ModelProvider } from "../../../../packages/providers/src/provider.js";
 import { ModelConfigService } from "../admin/model-service.js";
 import { PgEventStore } from "../persistence/event-store.js";
 import {
@@ -49,17 +49,16 @@ export class ArenaService {
     const result = await this.pool.query<{
       id: string;
       status: string;
-      configuration: {
-        providerIdByPlayer?: Record<string, string>;
-      };
     }>(
-      `select id, status, configuration from tournaments
+      `select id, status from tournaments
         where status in ('RUNNING', 'PAUSED_INFRA')
           and configuration @> '{"managedByArena":true}'::jsonb`,
     );
     for (const row of result.rows) {
-      const ids = Object.values(row.configuration.providerIdByPlayer ?? {});
-      const providers = await this.#providers(ids);
+      const snapshot = await this.#store.loadLatestSnapshot(row.id);
+      if (!snapshot) throw new Error(`Active tournament has no recovery snapshot: ${row.id}`);
+      const snapshotRuntime = snapshot.privateState as OrchestratorRuntime;
+      const providers = await this.#providersForRuntime(snapshotRuntime);
       const orchestrator = new TournamentOrchestrator({
         eventStore: this.#store,
         pool: this.pool,
@@ -86,7 +85,10 @@ export class ArenaService {
       if (!model) throw new Error(`Model configuration not found: ${id}`);
       return model;
     }));
-    const providers = await this.#providers(input.modelConfigIds);
+    const frozenConfigByModelId = Object.fromEntries(await Promise.all(input.modelConfigIds.map(async (id) => (
+      [id, await this.models.runtimeConfig(id)] as const
+    ))));
+    const providers = this.#providersFromFrozen(frozenConfigByModelId);
     const masterSeed = randomBytes(32);
     const seatingRng = new DeterministicRng(deriveSeed(masterSeed, "tournament:seating"));
     const seated = seatingRng.shuffle(models);
@@ -105,6 +107,10 @@ export class ArenaService {
         blindLevels: input.blindLevels,
       },
       providerIdByPlayer: Object.fromEntries(seated.map((model) => [model.id, model.id])),
+      frozenModelConfigByPlayer: Object.fromEntries(seated.map((model) => [
+        model.id,
+        frozenConfigByModelId[model.id]!,
+      ])),
       playerLabels: Object.fromEntries(seated.map((model) => [model.id, model.displayName])),
       masterSeed,
       managedByArena: true,
@@ -262,6 +268,10 @@ export class ArenaService {
     };
   }
 
+  async decisionAudit(tournamentId: string, handNo: number): Promise<unknown[]> {
+    return this.#store.loadDecisionAudit(tournamentId, handNo);
+  }
+
   async latestEventSequence(tournamentId: string): Promise<number | null> {
     const result = await this.pool.query<{ sequence: string }>(
       "select (next_event_sequence - 1)::text as sequence from tournaments where id = $1",
@@ -278,13 +288,33 @@ export class ArenaService {
     return providers;
   }
 
+  #providersFromFrozen(configByProviderId: Readonly<Record<string, FrozenModelConfig>>): Map<string, ModelProvider> {
+    return new Map(Object.entries(configByProviderId).map(([providerId, config]) => [
+      providerId,
+      createProvider(config),
+    ]));
+  }
+
+  async #providersForRuntime(runtime: OrchestratorRuntime): Promise<Map<string, ModelProvider>> {
+    if (runtime.frozenModelConfigByPlayer) {
+      const configByProviderId: Record<string, FrozenModelConfig> = {};
+      for (const [playerId, providerId] of Object.entries(runtime.providerIdByPlayer)) {
+        const config = runtime.frozenModelConfigByPlayer[playerId];
+        if (!config) return this.#providers(Object.values(runtime.providerIdByPlayer));
+        configByProviderId[providerId] = config;
+      }
+      return this.#providersFromFrozen(configByProviderId);
+    }
+    return this.#providers(Object.values(runtime.providerIdByPlayer));
+  }
+
   async #record(tournamentId: string): Promise<ActiveArena> {
     const existing = this.#records.get(tournamentId);
     if (existing) return existing;
     const snapshot = await this.#store.loadLatestSnapshot(tournamentId);
     if (!snapshot) throw new Error("Tournament not found");
     const runtime = snapshot.privateState as OrchestratorRuntime;
-    const providers = await this.#providers(Object.values(runtime.providerIdByPlayer));
+    const providers = await this.#providersForRuntime(runtime);
     const orchestrator = new TournamentOrchestrator({ eventStore: this.#store, pool: this.pool, providers });
     const record: ActiveArena = {
       orchestrator,

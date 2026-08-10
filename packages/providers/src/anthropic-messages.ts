@@ -12,7 +12,7 @@ export class AnthropicMessagesProvider implements ModelProvider {
 
   async decide(request: CanonicalModelRequest): Promise<ProviderDecision> {
     if (!this.config.apiKey) throw new ProviderCallError("CONFIG", "Anthropic API key is required", false);
-    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput);
+    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput, request.outputSchema);
     const outputConfig = outputPolicy.effectiveMode === "json_schema"
       ? { format: { type: "json_schema", schema: outputPolicy.schema!.schema } }
       : undefined;

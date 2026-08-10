@@ -57,4 +57,18 @@ describe("provider output policy", () => {
       .toMatchObject({ version: "arena-output-v2", name: "arena_action_or_history" });
     expect(resolveOutputPolicy(config({ outputMode: "json_object" }), "ACTION_OR_HISTORY").schema).toBeNull();
   });
+
+  it("uses the tournament-frozen schema instead of regenerating it from current code", () => {
+    const frozen = {
+      version: "arena-output-frozen",
+      name: "frozen_action_schema",
+      schema: { type: "object", properties: { frozen: { type: "boolean" } } },
+      sha256: "f".repeat(64),
+    };
+    expect(resolveOutputPolicy(
+      config({ provider: "google-gemini" }),
+      "ACTION_OR_HISTORY",
+      frozen,
+    ).schema).toBe(frozen);
+  });
 });

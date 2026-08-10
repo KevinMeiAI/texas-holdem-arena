@@ -32,6 +32,9 @@ export interface DecisionRunnerInput {
   validateAction?: (response: ActionResponse) => ActionCommand;
   fallbackAction?: () => ActionCommand;
   executeHistoryQuery?: (query: HistoryQuery) => Promise<unknown[]>;
+  resumeState?: DecisionResumeState | null;
+  saveResumeState?: (state: DecisionResumeState) => Promise<void>;
+  auditTurn?: (turn: DecisionTurnAudit) => Promise<void>;
 }
 
 export interface CallAudit {
@@ -40,6 +43,27 @@ export interface CallAudit {
   errorKind: ProviderErrorKind | null;
   latencyMs: number | null;
   usage: ProviderDecision["usage"] | null;
+}
+
+export interface DecisionResumeState {
+  historyResults: HistoryQueryResult[];
+  protocolFailures: number;
+  correction: string | null;
+  calls: CallAudit[];
+}
+
+export interface DecisionTurnAudit {
+  turnIndex: number;
+  request: CanonicalModelRequest;
+  outcome: CallAudit["outcome"];
+  errorKind: ProviderErrorKind | null;
+  latencyMs: number | null;
+  usage: ProviderDecision["usage"] | null;
+  response?: {
+    rawText: string;
+    parsed?: ProviderDecision["parsed"];
+    providerRequestId: string | null;
+  };
 }
 
 export type DecisionRunnerResult =
@@ -99,61 +123,101 @@ export async function runModelDecision(
   }
   const budget = new HistoryBudget(config.history);
   const historyResults: HistoryQueryResult[] = [];
-  const calls: CallAudit[] = [];
-  let protocolFailures = 0;
-  let correction: string | null = null;
+  for (const result of input.resumeState?.historyResults ?? []) {
+    historyResults.push(budget.consume(result.query, result.records));
+  }
+  const calls: CallAudit[] = [...(input.resumeState?.calls ?? [])];
+  let protocolFailures = input.resumeState?.protocolFailures ?? 0;
+  let correction: string | null = input.resumeState?.correction ?? null;
+  const saveResumeState = async () => input.saveResumeState?.({
+    historyResults: [...historyResults],
+    protocolFailures,
+    correction,
+    calls: [...calls],
+  });
 
   while (true) {
     let decision: ProviderDecision | null = null;
     for (let infrastructureAttempt = 1; infrastructureAttempt <= config.maxInfrastructureAttempts; infrastructureAttempt += 1) {
+      const turnRequest = withFeedback(input.request, historyResults, correction, budget);
+      let providerError: unknown = null;
       try {
-        decision = await input.provider.decide(withFeedback(
-          input.request,
-          historyResults,
-          correction,
-          budget,
-        ));
-        calls.push({
+        decision = await input.provider.decide(turnRequest);
+      } catch (error) {
+        providerError = error;
+      }
+      if (decision) {
+        const call: CallAudit = {
           attempt: calls.length + 1,
           outcome: "SUCCESS",
           errorKind: null,
           latencyMs: decision.latencyMs,
           usage: decision.usage,
+        };
+        calls.push(call);
+        await input.auditTurn?.({
+          turnIndex: call.attempt,
+          request: turnRequest,
+          outcome: call.outcome,
+          errorKind: null,
+          latencyMs: call.latencyMs,
+          usage: call.usage,
+          response: {
+            rawText: decision.rawText,
+            parsed: decision.parsed,
+            providerRequestId: decision.providerRequestId,
+          },
         });
+        await saveResumeState();
         break;
-      } catch (error) {
-        const classified = input.provider.classifyError(error);
-        if (classified.kind === "INVALID_RESPONSE") {
-          calls.push({
-            attempt: calls.length + 1,
-            outcome: "PROTOCOL_ERROR",
-            errorKind: classified.kind,
-            latencyMs: null,
-            usage: null,
-          });
-          correction = classified.message;
-          break;
-        }
-        calls.push({
-          attempt: calls.length + 1,
-          outcome: "INFRA_ERROR",
-          errorKind: classified.kind,
-          latencyMs: null,
-          usage: null,
-        });
-        if (!classified.retryable || infrastructureAttempt === config.maxInfrastructureAttempts) {
-          return {
-            status: "PAUSED_INFRA",
-            errorKind: classified.kind,
-            message: classified.message,
-            protocolFailures,
-            historyResults,
-            calls,
-          };
-        }
-        const retryDelayMs = config.infrastructureRetryDelaysMs[infrastructureAttempt - 1] ?? 0;
-        if (retryDelayMs > 0) await wait(retryDelayMs);
       }
+      const classified = input.provider.classifyError(providerError);
+      const call: CallAudit = classified.kind === "INVALID_RESPONSE" ? {
+        attempt: calls.length + 1,
+        outcome: "PROTOCOL_ERROR",
+        errorKind: classified.kind,
+        latencyMs: null,
+        usage: null,
+      } : {
+        attempt: calls.length + 1,
+        outcome: "INFRA_ERROR",
+        errorKind: classified.kind,
+        latencyMs: null,
+        usage: null,
+      };
+      calls.push(call);
+      await input.auditTurn?.({
+        turnIndex: call.attempt,
+        request: turnRequest,
+        outcome: call.outcome,
+        errorKind: call.errorKind,
+        latencyMs: null,
+        usage: null,
+        ...(classified.rawResponseText ? {
+          response: {
+            rawText: classified.rawResponseText,
+            providerRequestId: null,
+          },
+        } : {}),
+      });
+      if (classified.kind === "INVALID_RESPONSE") {
+        correction = classified.message;
+        await saveResumeState();
+        break;
+      }
+      await saveResumeState();
+      if (!classified.retryable || infrastructureAttempt === config.maxInfrastructureAttempts) {
+        return {
+          status: "PAUSED_INFRA",
+          errorKind: classified.kind,
+          message: classified.message,
+          protocolFailures,
+          historyResults,
+          calls,
+        };
+      }
+      const retryDelayMs = config.infrastructureRetryDelaysMs[infrastructureAttempt - 1] ?? 0;
+      if (retryDelayMs > 0) await wait(retryDelayMs);
     }
 
     try {
@@ -163,6 +227,7 @@ export async function runModelDecision(
         const records = await input.executeHistoryQuery(decision.parsed.query);
         historyResults.push(budget.consume(decision.parsed.query, records));
         correction = null;
+        await saveResumeState();
         continue;
       }
       if (decision.parsed.type !== "action" || !input.validateAction) {
@@ -181,6 +246,7 @@ export async function runModelDecision(
       protocolFailures += 1;
       if (protocolFailures <= 1) {
         correction = error instanceof Error ? error.message : "Protocol validation failed";
+        await saveResumeState();
         continue;
       }
       if (!input.fallbackAction) throw new Error("Poker fallback action is not configured");

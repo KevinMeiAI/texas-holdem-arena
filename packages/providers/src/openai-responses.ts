@@ -30,7 +30,7 @@ export class OpenAIResponsesProvider implements ModelProvider {
 
   async decide(request: CanonicalModelRequest): Promise<ProviderDecision> {
     if (!this.config.apiKey) throw new ProviderCallError("CONFIG", "OpenAI API key is required", false);
-    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput);
+    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput, request.outputSchema);
     const text = outputPolicy.effectiveMode === "json_schema"
       ? {
           format: {

@@ -112,7 +112,13 @@ export async function registerTournamentRoutes(
       }
       const events = (await context.arena.projectedEvents(request.params.id, "SPECTATOR_REPLAY"))
         .filter((event) => event.handNo === handNo);
-      return events.length > 0 ? { events } : reply.code(404).send({ error: "hand_not_found" });
+      if (events.length === 0) return reply.code(404).send({ error: "hand_not_found" });
+      const completed = events.some((event) => event.type === "HAND_COMPLETED");
+      return {
+        events,
+        decisions: completed ? await context.arena.decisionAudit(request.params.id, handNo) : [],
+        decisionAuditAvailable: completed,
+      };
     },
   );
   app.get("/api/public/leaderboard", async () => ({ leaderboard: await context.arena.leaderboard() }));

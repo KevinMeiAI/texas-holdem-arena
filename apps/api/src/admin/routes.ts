@@ -93,6 +93,7 @@ function preflightRequest(expectedOutput: ExpectedModelOutput): CanonicalModelRe
     expectedOutput,
     systemPrompt: prompt.text,
     systemPromptHash: prompt.sha256,
+    outputSchema: arenaOutputSchema(expectedOutput),
     userPayload: {
       arena_state: {
         schema_version: "arena-preflight-v2",

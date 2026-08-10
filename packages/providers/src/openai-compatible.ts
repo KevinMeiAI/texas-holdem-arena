@@ -12,7 +12,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   async decide(request: CanonicalModelRequest): Promise<ProviderDecision> {
     if (!this.config.baseUrl) throw new ProviderCallError("CONFIG", "OpenAI-compatible base URL is required", false);
-    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput);
+    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput, request.outputSchema);
     const responseFormat = outputPolicy.effectiveMode === "json_schema"
       ? {
           type: "json_schema",

@@ -7,6 +7,7 @@ import { PgEventStore } from "../../apps/api/src/persistence/event-store.js";
 import { TournamentOrchestrator } from "../../apps/api/src/tournament/orchestrator.js";
 import { MockPolicyProvider } from "../../packages/providers/src/mock-scripted.js";
 import { ProviderCallError, type ModelProvider, type ProviderDecision } from "../../packages/providers/src/provider.js";
+import type { FrozenModelConfig } from "../../packages/providers/src/provider.js";
 import {
   createIsolatedPostgresSchema,
   type IsolatedPostgresSchema,
@@ -16,6 +17,18 @@ const databaseUrl = process.env.TEST_DATABASE_URL;
 const describePostgres = databaseUrl ? describe : describe.skip;
 let testSchema: IsolatedPostgresSchema | null = null;
 let pool: Pool | null = null;
+
+function frozenMock(model: string): FrozenModelConfig {
+  return {
+    provider: "mock-scripted",
+    providerProfile: "auto",
+    providerDefaultOutputMode: "auto",
+    outputMode: "inherit",
+    model,
+    timeoutMs: ARENA_DECISION_TIMEOUT_MS,
+    parameters: {},
+  };
+}
 
 describePostgres("persisted model tournament orchestration", () => {
   beforeAll(async () => {
@@ -55,6 +68,7 @@ describePostgres("persisted model tournament orchestration", () => {
           ],
         },
         providerIdByPlayer: { alpha: "policy-a", beta: "policy-b" },
+        frozenModelConfigByPlayer: { alpha: frozenMock("policy-a"), beta: frozenMock("policy-b") },
         masterSeed: new Uint8Array(32).fill(5),
       });
 
@@ -72,6 +86,10 @@ describePostgres("persisted model tournament orchestration", () => {
         aggregateVersion: midVersion,
         pendingDecisionId: midDecision,
         operationalStatus: "RUNNING",
+        frozenModelConfigByPlayer: {
+          alpha: { model: "policy-a" },
+          beta: { model: "policy-b" },
+        },
       });
       runtime = recoveredMidGame;
 
@@ -110,6 +128,17 @@ describePostgres("persisted model tournament orchestration", () => {
         [tournamentId],
       );
       expect(Number(unfinished.rows[0]?.count)).toBe(0);
+      const decisionAudit = await store.loadDecisionAudit(tournamentId, 1);
+      expect(decisionAudit.length).toBeGreaterThan(0);
+      expect(decisionAudit[0]).toMatchObject({
+        request: expect.objectContaining({
+          systemPromptHash: runtime.effectivePrompt.sha256,
+          outputSchema: expect.objectContaining({ sha256: runtime.effectiveOutputSchema?.sha256 }),
+        }),
+        response: expect.objectContaining({ rawText: expect.any(String), parsed: expect.any(Object) }),
+        provider_config_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        output_schema_hash: runtime.effectiveOutputSchema?.sha256,
+      });
 
       const restarted = new TournamentOrchestrator({
         eventStore: new PgEventStore(pool!, key),

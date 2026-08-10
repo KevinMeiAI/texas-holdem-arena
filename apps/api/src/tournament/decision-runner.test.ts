@@ -7,6 +7,7 @@ import {
   type ProviderDecision,
 } from "../../../../packages/providers/src/provider.js";
 import { runModelDecision } from "./decision-runner.js";
+import type { DecisionResumeState } from "./decision-runner.js";
 
 const request: CanonicalModelRequest = {
   requestId: "request-1",
@@ -201,5 +202,73 @@ describe("uniform model decision policy", () => {
     }, config);
     expect(result).toMatchObject({ status: "PAUSED_INFRA", errorKind: "SERVER" });
     expect(result.calls).toHaveLength(3);
+  });
+
+  it("resumes with the same history conversation after an infrastructure pause", async () => {
+    let saved: DecisionResumeState | null = null;
+    let firstCall = true;
+    const interrupted: ModelProvider = {
+      kind: "mock-scripted",
+      classifyError: (error) => error as ProviderCallError,
+      decide: async (): Promise<ProviderDecision> => {
+        if (firstCall) {
+          firstCall = false;
+          const parsed = { type: "history_query" as const, query: { kind: "recent_hands" as const, count: 1, limit: 10 } };
+          return {
+            parsed,
+            rawText: JSON.stringify(parsed),
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            latencyMs: 1,
+            providerRequestId: "history-call",
+          };
+        }
+        throw new ProviderCallError("SERVER", "interrupted", true, 503);
+      },
+    };
+    const paused = await runModelDecision({
+      provider: interrupted,
+      request,
+      validateAction: () => ({ action: "check" }),
+      fallbackAction: () => ({ action: "fold" }),
+      executeHistoryQuery: async () => [{ kind: "hand_summary", hand_no: 1, complete: true }],
+      saveResumeState: async (state) => { saved = structuredClone(state); },
+    }, config);
+    expect(paused).toMatchObject({ status: "PAUSED_INFRA" });
+    expect(saved).toMatchObject({
+      historyResults: [{ records: [{ kind: "hand_summary", hand_no: 1, complete: true }] }],
+    });
+    expect((saved as DecisionResumeState | null)?.calls).toHaveLength(4);
+    expect((saved as DecisionResumeState | null)?.calls[0]?.outcome).toBe("SUCCESS");
+    expect((saved as DecisionResumeState | null)?.calls.at(-1)?.outcome).toBe("INFRA_ERROR");
+
+    const resumedPayloads: unknown[] = [];
+    const resumedProvider: ModelProvider = {
+      kind: "mock-scripted",
+      classifyError: (error) => error as ProviderCallError,
+      decide: async (nextRequest): Promise<ProviderDecision> => {
+        resumedPayloads.push(nextRequest.userPayload);
+        return {
+          parsed: { type: "action", action: "check" },
+          rawText: '{"type":"action","action":"check"}',
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          latencyMs: 1,
+          providerRequestId: "resumed-call",
+        };
+      },
+    };
+    const resumed = await runModelDecision({
+      provider: resumedProvider,
+      request,
+      resumeState: saved,
+      validateAction: () => ({ action: "check" }),
+      fallbackAction: () => ({ action: "fold" }),
+      executeHistoryQuery: async () => { throw new Error("History query must not run again"); },
+    }, config);
+    expect(resumed).toMatchObject({ status: "ACTION", action: { action: "check" } });
+    expect(resumedPayloads[0]).toMatchObject({
+      history_results: [{ records: [{ kind: "hand_summary", hand_no: 1, complete: true }] }],
+      history_budget_remaining: { queries: 1 },
+    });
+    if (resumed.status === "ACTION") expect(resumed.calls.at(-1)?.attempt).toBe(5);
   });
 });

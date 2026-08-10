@@ -8,6 +8,8 @@
 - 单次发牌：全下锁定后由裁判自动补齐唯一公共牌面并结算；V1 不开放自由聊天。
 - 确定性规则引擎：随机承诺、加密牌局私有状态、追加式事件流、快照恢复、CAS 与 decision lease。
 - 统一模型协议：同一 system prompt、严格 JSON 行动、协议纠错与基础设施暂停；支持 OpenAI、Anthropic、Gemini、OpenAI-compatible 和本机 mock Provider。
+- 冻结决策环境：赛事创建时锁定 prompt、输出 Schema、重试/历史预算，以及每个座位的 Provider、模型、输出模式、超时和生成参数，进行中修改控制室配置不会改变该赛事。
+- 逐轮决策审计：加密保存每次真实请求、历史查询/纠错上下文、原始与解析响应、耗时、用量和错误类型；仅在该手结束后的回放中公开。
 - 完整产品界面：直播牌桌、赛事档案、逐手回放、排行榜，以及 Provider、模型和赛事管理控制室。
 - 隐藏信息边界：未摊牌底牌在直播期间保持隐藏；平台加密存储，并在该手完成后的回放中向观众开放。
 
@@ -47,7 +49,7 @@ curl http://127.0.0.1:4100/ready
 4. 打开 `/admin/tournaments/new`，选择 2–9 个模型，设置初始筹码和盲注结构；平台会冻结统一的 Arena system prompt。
 5. 创建后回到 `/` 观看实时牌桌；赛事结束后从 `/tournaments` 进入逐手回放，并在 `/leaderboard` 查看历史排名。
 
-Provider API Key 会使用 `ARENA_MASTER_KEY` 加密写入 PostgreSQL，服务端与管理 API 都不会再次返回明文 Key。
+Provider API Key 会使用 `ARENA_MASTER_KEY` 加密写入 PostgreSQL；新赛事还会把当时的 Key 放入加密恢复快照，以保证重启后仍使用同一份冻结配置。明文 Key 不会进入公开事件、决策审计响应或管理 API；公开事件只记录不含 Key 的配置哈希。
 
 ## 结构化输出策略
 

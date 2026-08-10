@@ -12,7 +12,7 @@ export class GoogleGeminiProvider implements ModelProvider {
 
   async decide(request: CanonicalModelRequest): Promise<ProviderDecision> {
     if (!this.config.apiKey) throw new ProviderCallError("CONFIG", "Gemini API key is required", false);
-    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput);
+    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput, request.outputSchema);
     const structuredConfig = outputPolicy.effectiveMode === "json_schema"
       ? {
           responseMimeType: "application/json",

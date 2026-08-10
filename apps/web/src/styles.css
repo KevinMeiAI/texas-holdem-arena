@@ -1168,6 +1168,102 @@ button:disabled {
   border-top: 0;
 }
 
+.decision-audit-panel {
+  margin-top: var(--space-md);
+  background: var(--color-paper-2);
+  border: var(--rule-hair) solid var(--color-rule);
+}
+
+.decision-audit-heading {
+  padding: var(--space-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+}
+
+.decision-audit-heading h2,
+.decision-audit-heading p {
+  margin: 0;
+}
+
+.decision-audit-heading h2 {
+  font-size: var(--text-md);
+}
+
+.decision-audit-heading p,
+.decision-audit-heading > span {
+  margin-top: var(--space-3xs);
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.decision-audit-list details + details {
+  border-top: var(--rule-hair) solid var(--color-rule-2);
+}
+
+.decision-audit-list summary {
+  min-height: 3.75rem;
+  padding: var(--space-xs) var(--space-sm);
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+.decision-audit-list summary em,
+.decision-audit-list summary i {
+  color: var(--color-muted);
+  font-style: normal;
+}
+
+.decision-audit-list summary em {
+  grid-column: 1;
+}
+
+.decision-audit-summary {
+  margin: 0;
+  padding: 0 var(--space-sm) var(--space-sm);
+  font-size: var(--text-md);
+}
+
+.decision-proof-grid {
+  padding: var(--space-sm);
+  display: grid;
+  gap: var(--space-2xs);
+  background: var(--color-paper);
+  border-block: var(--rule-hair) solid var(--color-rule-2);
+}
+
+.decision-proof-grid span {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  gap: var(--space-xs);
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.decision-proof-grid code,
+.decision-audit-list pre {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.decision-audit-list pre {
+  max-height: 32rem;
+  margin: 0;
+  padding: var(--space-sm);
+  overflow: auto;
+  color: var(--color-ink);
+  background: var(--color-paper);
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
 .replay-stage {
   min-width: 0;
   padding: var(--space-lg) var(--space-sm);
@@ -2503,6 +2599,14 @@ select[aria-invalid="true"] {
 }
 
 @media (min-width: 40rem) {
+  .decision-audit-list summary {
+    grid-template-columns: minmax(8rem, 1fr) auto auto auto;
+  }
+
+  .decision-audit-list summary em {
+    grid-column: auto;
+  }
+
   .brand-copy {
     display: flex;
   }
