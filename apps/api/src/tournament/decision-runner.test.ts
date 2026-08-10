@@ -73,6 +73,50 @@ describe("uniform model decision policy", () => {
     if (result.status === "ACTION") expect(result.historyResults).toHaveLength(2);
   });
 
+  it("returns history results and remaining budget in the next model request", async () => {
+    const payloads: unknown[] = [];
+    let call = 0;
+    const provider: ModelProvider = {
+      kind: "mock-scripted",
+      classifyError: (error) => error as ProviderCallError,
+      decide: async (nextRequest): Promise<ProviderDecision> => {
+        payloads.push(nextRequest.userPayload);
+        call += 1;
+        const parsed = call === 1
+          ? { type: "history_query" as const, query: { kind: "recent_hands" as const, count: 1, limit: 10 } }
+          : { type: "action" as const, action: "check" as const };
+        return {
+          parsed,
+          rawText: JSON.stringify(parsed),
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          latencyMs: 1,
+          providerRequestId: null,
+        };
+      },
+    };
+    const result = await runModelDecision({
+      provider,
+      request,
+      validateAction: () => ({ action: "check" }),
+      fallbackAction: () => ({ action: "fold" }),
+      executeHistoryQuery: async () => [{ handNo: 1, type: "ACTION_APPLIED" }],
+    }, config);
+    expect(result).toMatchObject({ status: "ACTION", usedFallback: false });
+    expect(payloads[0]).toMatchObject({
+      arena_state: request.userPayload,
+      history_results: [],
+      history_budget_remaining: { queries: 2, approximate_tokens: 4_000 },
+    });
+    expect(payloads[1]).toMatchObject({
+      arena_state: request.userPayload,
+      history_results: [{
+        query: { kind: "recent_hands", count: 1, limit: 10 },
+        events: [{ handNo: 1, type: "ACTION_APPLIED" }],
+      }],
+      history_budget_remaining: { queries: 1 },
+    });
+  });
+
   it("retries infrastructure failures without consuming protocol correction", async () => {
     let attempts = 0;
     const provider: ModelProvider = {

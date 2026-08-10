@@ -1,4 +1,4 @@
-# Model protocol v1
+# Model protocol v2
 
 Every seat receives the same effective system prompt bytes. The effective prompt
 is the locked Arena rules prefix, the administrator's shared strategy prompt and
@@ -7,6 +7,19 @@ stored with every decision request.
 
 Provider adapters may translate transport fields, but they may not add strategy
 instructions or change the model-visible state.
+
+## Position context
+
+Every decision includes canonical position metadata rather than requiring models
+to infer positions from raw seats alone. It contains the button, blind and dead
+button state, the hero's position, a position record for every active player,
+and preflop/postflop action-order arrays. Order indexes are one-based. Live
+`betting.current_actor_id` and `legal_actions` remain authoritative after folds
+and all-ins.
+
+The protocol is frozen per tournament. A tournament created under
+`arena-system-v1` continues to receive `model-context-v1` after process recovery;
+only newly created `arena-system-v2` tournaments receive this position context.
 
 ## Action response
 
@@ -52,6 +65,11 @@ Supported kinds are `player_actions`, `hand`, `recent_hands` and
 `public_stats`. Defaults are at most two queries per decision, 80 events per
 query and about 4,000 cumulative input tokens. SQL results are deterministic and
 contain only public events from hands strictly earlier than the current hand.
+
+The complete query JSON shapes are part of the locked system prompt. A query is
+not a poker action: the engine executes it and calls the same model again with
+the unchanged `arena_state`, accumulated `history_results`, and an updated
+`history_budget_remaining`. The model must eventually return an action.
 
 The budget is identical for every seat and frozen with tournament configuration.
 After the budget is exhausted, another query is a protocol error.

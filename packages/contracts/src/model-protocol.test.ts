@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseModelJson } from "./model-protocol.js";
-import { buildEffectiveSystemPrompt } from "./system-prompt.js";
+import { ARENA_PROMPT_VERSION, buildEffectiveSystemPrompt } from "./system-prompt.js";
 
 describe("strict model protocol", () => {
   it("accepts exact legal shapes and amount_to semantics", () => {
@@ -45,7 +45,13 @@ describe("strict model protocol", () => {
     const first = buildEffectiveSystemPrompt("Play a disciplined tournament strategy.");
     const second = buildEffectiveSystemPrompt("Play a disciplined tournament strategy.");
     expect(first).toEqual(second);
+    expect(first.version).toBe("arena-system-v2");
     expect(first.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(buildEffectiveSystemPrompt("Different strategy").sha256).not.toBe(first.sha256);
+    expect(first.text).toContain('"kind":"recent_hands"');
+    expect(first.text).toContain('"kind":"player_actions"');
+    expect(first.text).toContain("history_budget_remaining");
+    expect(first.text).toContain("dead_button");
+    expect(first.text).toContain(ARENA_PROMPT_VERSION);
   });
 });

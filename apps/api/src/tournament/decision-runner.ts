@@ -75,7 +75,7 @@ function withFeedback(
     ...request,
     userPayload: {
       arena_state: request.userPayload,
-      history_results: historyResults,
+      history_results: [...historyResults],
       history_budget_remaining: {
         queries: budget.state.maxQueries - budget.state.usedQueries,
         approximate_tokens: budget.state.maxApproxTokens - budget.state.usedApproxTokens,
