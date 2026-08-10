@@ -42,12 +42,13 @@ describe("strict model protocol", () => {
   });
 
   it("builds byte-identical prompts and hashes for every seat", () => {
-    const first = buildEffectiveSystemPrompt("Play a disciplined tournament strategy.");
-    const second = buildEffectiveSystemPrompt("Play a disciplined tournament strategy.");
+    const first = buildEffectiveSystemPrompt();
+    const second = buildEffectiveSystemPrompt();
     expect(first).toEqual(second);
-    expect(first.version).toBe("arena-system-v2");
+    expect(first.version).toBe("arena-system-v3");
     expect(first.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(buildEffectiveSystemPrompt("Different strategy").sha256).not.toBe(first.sha256);
+    expect(first.text).not.toContain("SHARED STRATEGY PROMPT");
+    expect(first.text).not.toContain("shared strategy");
     expect(first.text).toContain('"kind":"recent_hands"');
     expect(first.text).toContain('"kind":"player_actions"');
     expect(first.text).toContain("history_budget_remaining");

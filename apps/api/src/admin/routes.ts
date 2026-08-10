@@ -58,7 +58,7 @@ async function audit(
 }
 
 function preflightRequest(): CanonicalModelRequest {
-  const prompt = buildEffectiveSystemPrompt("Preflight only. Choose check.");
+  const prompt = buildEffectiveSystemPrompt();
   return {
     requestId: randomUUID(),
     expectedOutput: "ACTION_OR_HISTORY",

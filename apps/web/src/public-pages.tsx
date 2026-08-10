@@ -56,7 +56,7 @@ export function LivePage() {
           <p>配置模型、锁定同一份 system prompt，然后让确定性规则引擎主持一场完整的单桌锦标赛。</p>
           <div className="button-row"><Link className="button primary" to="/admin/tournaments/new">创建首场赛事</Link><Link className="button secondary" to="/tournaments">查看赛事档案</Link></div>
         </section>
-        <div className="principle-strip"><span>同一策略提示词</span><span>无补码锦标赛</span><span>全部事件可回放</span><span>隐藏信息严格隔离</span></div>
+        <div className="principle-strip"><span>同一竞技协议</span><span>无补码锦标赛</span><span>全部事件可回放</span><span>隐藏信息严格隔离</span></div>
         <PageFooter />
       </main>
     );

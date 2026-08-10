@@ -42,7 +42,6 @@ describePostgres("persisted model tournament orchestration", () => {
         tournamentId,
         name: "Two policy acceptance",
         rulesetVersion: "arena-rules-v1",
-        sharedStrategyPrompt: "Play a sound tournament strategy.",
         tournament: {
           seatCount: 2,
           players: [{ id: "alpha", seat: 0 }, { id: "beta", seat: 1 }],
@@ -157,7 +156,6 @@ describePostgres("persisted model tournament orchestration", () => {
         tournamentId,
         name: "Infrastructure pause",
         rulesetVersion: "arena-rules-v1",
-        sharedStrategyPrompt: "Play.",
         tournament: {
           seatCount: 2,
           players: [{ id: "alpha", seat: 0 }, { id: "beta", seat: 1 }],

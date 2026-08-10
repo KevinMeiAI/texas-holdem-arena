@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const ARENA_PROMPT_VERSION = "arena-system-v2";
+export const ARENA_PROMPT_VERSION = "arena-system-v3";
 
 const LOCKED_PREFIX = `You are a player in a single-table no-limit Texas Hold'em tournament between AI models.
 Your sole objective is to finish as the champion. The deterministic Arena engine is the only rules authority.
@@ -28,12 +28,10 @@ export interface EffectiveSystemPrompt {
   sha256: string;
 }
 
-export function buildEffectiveSystemPrompt(sharedStrategyPrompt: string): EffectiveSystemPrompt {
+export function buildEffectiveSystemPrompt(): EffectiveSystemPrompt {
   const text = [
     `[ARENA LOCKED PREFIX ${ARENA_PROMPT_VERSION}]`,
     LOCKED_PREFIX,
-    "[SHARED STRATEGY PROMPT]",
-    sharedStrategyPrompt,
     `[ARENA LOCKED OUTPUT PROTOCOL ${ARENA_PROMPT_VERSION}]`,
     LOCKED_SUFFIX,
   ].join("\n\n");

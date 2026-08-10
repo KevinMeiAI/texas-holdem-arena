@@ -15,7 +15,6 @@ import {
 export interface CreateArenaTournamentInput {
   name: string;
   modelConfigIds: string[];
-  sharedStrategyPrompt: string;
   initialStack: number;
   handsPerLevel: number;
   blindLevels: { smallBlind: number; bigBlind: number; bigBlindAnte: number }[];
@@ -98,7 +97,6 @@ export class ArenaService {
       tournamentId,
       name: input.name,
       rulesetVersion: "arena-rules-v1",
-      sharedStrategyPrompt: input.sharedStrategyPrompt,
       tournament: {
         seatCount: seated.length,
         players: seated.map((model, seat) => ({ id: model.id, seat })),

@@ -29,7 +29,6 @@ export interface ArenaTournamentSetup {
   tournamentId?: string;
   name: string;
   rulesetVersion: string;
-  sharedStrategyPrompt: string;
   tournament: TournamentConfig;
   providerIdByPlayer: Record<string, string>;
   playerLabels?: Record<string, string>;
@@ -160,7 +159,7 @@ export class TournamentOrchestrator {
 
   async createAndStart(setup: ArenaTournamentSetup): Promise<OrchestratorRuntime> {
     const tournamentId = setup.tournamentId ?? randomUUID();
-    const effectivePrompt = buildEffectiveSystemPrompt(setup.sharedStrategyPrompt);
+    const effectivePrompt = buildEffectiveSystemPrompt();
     const masterSeed = setup.masterSeed ?? randomBytes(32);
     if (masterSeed.byteLength !== 32) throw new Error("Tournament master seed must be 256 bits");
     for (const player of setup.tournament.players) {

@@ -1,9 +1,9 @@
-# Model protocol v2
+# Model protocol v3
 
 Every seat receives the same effective system prompt bytes. The effective prompt
-is the locked Arena rules prefix, the administrator's shared strategy prompt and
-the locked output suffix. Its SHA-256 hash is frozen before the tournament and
-stored with every decision request.
+contains only the locked Arena rules prefix and locked output protocol. It has no
+administrator-supplied strategy section. Its SHA-256 hash is frozen before the
+tournament and stored with every decision request.
 
 Provider adapters may translate transport fields, but they may not add strategy
 instructions or change the model-visible state.

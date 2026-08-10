@@ -147,6 +147,23 @@ describePostgres("administrator auth and model configuration API", () => {
       expect(preflight.statusCode).toBe(200);
       expect(preflight.json()).toMatchObject({ result: { ok: true } });
 
+      const rejectedSharedPrompt = await app.inject({
+        method: "POST",
+        url: "/api/admin/tournaments",
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+        payload: {
+          name: "Deprecated prompt field",
+          modelConfigIds: [modelId, secondModelId],
+          sharedStrategyPrompt: "This field must no longer be accepted.",
+          initialStack: 100,
+          handsPerLevel: 1,
+          blindLevels: [{ smallBlind: 25, bigBlind: 50, bigBlindAnte: 0 }],
+          runItTwiceEnabled: true,
+        },
+      });
+      expect(rejectedSharedPrompt.statusCode).toBe(400);
+      expect(rejectedSharedPrompt.json()).toMatchObject({ error: "invalid_tournament" });
+
       const tournamentResponse = await app.inject({
         method: "POST",
         url: "/api/admin/tournaments",
@@ -154,7 +171,6 @@ describePostgres("administrator auth and model configuration API", () => {
         payload: {
           name: "API acceptance table",
           modelConfigIds: [modelId, secondModelId],
-          sharedStrategyPrompt: "Play to win.",
           initialStack: 100,
           handsPerLevel: 1,
           blindLevels: [

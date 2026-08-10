@@ -17,7 +17,6 @@ const createTournamentSchema = z.object({
     (ids) => new Set(ids).size === ids.length,
     "Model configurations must be unique",
   ),
-  sharedStrategyPrompt: z.string().max(20_000).default(""),
   initialStack: z.number().int().min(100).max(10_000_000).default(20_000),
   handsPerLevel: z.number().int().min(1).max(1_000).default(10),
   blindLevels: z.array(blindLevelSchema).min(1).max(100).default([
