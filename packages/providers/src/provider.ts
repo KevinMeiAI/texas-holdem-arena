@@ -1,7 +1,6 @@
 import type {
   ActionDecisionResponse,
   CanonicalModelRequest,
-  RunoutVoteResponse,
 } from "../../contracts/src/model-protocol.js";
 import { parseModelJson, type ExpectedModelOutput } from "../../contracts/src/model-protocol.js";
 
@@ -29,7 +28,7 @@ export interface ProviderUsage {
 }
 
 export interface ProviderDecision {
-  parsed: ActionDecisionResponse | RunoutVoteResponse;
+  parsed: ActionDecisionResponse;
   rawText: string;
   usage: ProviderUsage;
   latencyMs: number;

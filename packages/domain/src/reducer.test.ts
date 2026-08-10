@@ -16,7 +16,6 @@ function threeHand() {
     smallBlind: 50,
     bigBlind: 100,
     bigBlindAnte: 0,
-    runItTwiceEnabled: true,
     deck: createDeck(),
   });
 }
@@ -39,7 +38,6 @@ describe("pure hand reducer", () => {
       smallBlind: 50,
       bigBlind: 100,
       bigBlindAnte: 100,
-      runItTwiceEnabled: true,
       deck: createDeck(),
     });
     expect(transition.state.players.find((player) => player.id === "c")).toMatchObject({
@@ -69,7 +67,6 @@ describe("pure hand reducer", () => {
       smallBlind: 50,
       bigBlind: 100,
       bigBlindAnte: 50,
-      runItTwiceEnabled: false,
       deck: createDeck(),
     });
     state = act(state, { type: "ACTION", playerId: "a", action: { action: "all_in" } });
@@ -95,7 +92,7 @@ describe("pure hand reducer", () => {
     expect(state.players.find((player) => player.id === "b")?.holeCards).toHaveLength(2);
   });
 
-  it("runs two complete boards sequentially after unanimous preflop all-in consent", () => {
+  it("runs one complete board immediately after a preflop all-in call", () => {
     let { state } = startHand({
       handNo: 1,
       seatCount: 2,
@@ -107,69 +104,23 @@ describe("pure hand reducer", () => {
       smallBlind: 5,
       bigBlind: 10,
       bigBlindAnte: 0,
-      runItTwiceEnabled: true,
       deck: createDeck(),
     });
     state = act(state, { type: "ACTION", playerId: "a", action: { action: "all_in" } });
     state = act(state, { type: "ACTION", playerId: "b", action: { action: "call" } });
-    expect(state.phase).toBe("RUNOUT_VOTE");
-    expect(state.runoutVote?.order).toEqual(["b", "a"]);
-    state = reduceHand(state, {
-      type: "RUNOUT_VOTE",
-      playerId: "b",
-      vote: { acceptRunItTwice: true, message: "twice" },
-    }).state;
-    state = reduceHand(state, {
-      type: "RUNOUT_VOTE",
-      playerId: "a",
-      vote: { acceptRunItTwice: true },
-    }).state;
     expect(state.phase).toBe("HAND_COMPLETE");
-    expect(state.boards).toHaveLength(2);
+    expect(state.boards).toHaveLength(1);
     expect(state.boards[0]).toHaveLength(5);
-    expect(state.boards[1]).toHaveLength(5);
-    expect(state.burnCards).toHaveLength(6);
-    expect(state.nextCardIndex).toBe(20);
+    expect(state.burnCards).toHaveLength(3);
+    expect(state.nextCardIndex).toBe(12);
     expect(Object.values(state.result?.stacks ?? {}).reduce((sum, stack) => sum + stack, 0)).toBe(200);
     expect(state.awards.reduce((sum, award) => sum + award.amount, 0)).toBe(200);
   });
 
-  it("uses one board after any runout rejection", () => {
-    let { state } = startHand({
-      handNo: 1,
-      seatCount: 2,
-      players: [
-        { id: "a", seat: 0, stack: 100 },
-        { id: "b", seat: 1, stack: 100 },
-      ],
-      positions: initialPositions(0, [0, 1], 2),
-      smallBlind: 5,
-      bigBlind: 10,
-      bigBlindAnte: 0,
-      runItTwiceEnabled: true,
-      deck: createDeck(),
-    });
-    state = act(state, { type: "ACTION", playerId: "a", action: { action: "all_in" } });
-    state = act(state, { type: "ACTION", playerId: "b", action: { action: "call" } });
-    state = reduceHand(state, {
-      type: "RUNOUT_VOTE",
-      playerId: "b",
-      vote: { acceptRunItTwice: false },
-    }).state;
-    state = reduceHand(state, {
-      type: "RUNOUT_VOTE",
-      playerId: "a",
-      vote: { acceptRunItTwice: true },
-    }).state;
-    expect(state.phase).toBe("HAND_COMPLETE");
-    expect(state.boards).toHaveLength(1);
-    expect(state.burnCards).toHaveLength(3);
-  });
-
   it.each([
-    { street: "FLOP", checks: 0, shared: 3, burns: 5, consumed: 16 },
-    { street: "TURN", checks: 1, shared: 4, burns: 4, consumed: 14 },
-  ] as const)("shares the already-dealt $street before completing two runouts", ({ checks, shared, burns, consumed }) => {
+    { checks: 0, boardBeforeAllIn: 3, pendingBurns: 2 },
+    { checks: 1, boardBeforeAllIn: 4, pendingBurns: 1 },
+  ])("preserves the dealt board and completes the remaining streets once", ({ checks, boardBeforeAllIn, pendingBurns }) => {
     let { state } = startHand({
       handNo: 1,
       seatCount: 2,
@@ -181,7 +132,6 @@ describe("pure hand reducer", () => {
       smallBlind: 5,
       bigBlind: 10,
       bigBlindAnte: 0,
-      runItTwiceEnabled: true,
       deck: createDeck(),
     });
     state = act(state, { type: "ACTION", playerId: "a", action: { action: "call" } });
@@ -190,35 +140,21 @@ describe("pure hand reducer", () => {
       state = act(state, { type: "ACTION", playerId: "b", action: { action: "check" } });
       state = act(state, { type: "ACTION", playerId: "a", action: { action: "check" } });
     }
-    expect(state.boards[0]).toHaveLength(shared);
+    expect(state.boards[0]).toHaveLength(boardBeforeAllIn);
+    const burnsBeforeAllIn = state.burnCards.length;
     const actor = state.betting?.currentActorId;
     if (!actor) throw new Error("Missing all-in actor");
     state = act(state, { type: "ACTION", playerId: actor, action: { action: "all_in" } });
     const caller = state.betting?.currentActorId;
     if (!caller) throw new Error("Missing all-in caller");
     state = act(state, { type: "ACTION", playerId: caller, action: { action: "call" } });
-    const firstVoter = state.runoutVote?.currentVoterId;
-    if (!firstVoter) throw new Error("Missing first voter");
-    state = reduceHand(state, {
-      type: "RUNOUT_VOTE",
-      playerId: firstVoter,
-      vote: { acceptRunItTwice: true },
-    }).state;
-    const secondVoter = state.runoutVote?.currentVoterId;
-    if (!secondVoter) throw new Error("Missing second voter");
-    state = reduceHand(state, {
-      type: "RUNOUT_VOTE",
-      playerId: secondVoter,
-      vote: { acceptRunItTwice: true },
-    }).state;
     expect(state.phase).toBe("HAND_COMPLETE");
-    expect(state.sharedBoardCount).toBe(shared);
-    expect(state.boards[0]?.slice(0, shared)).toEqual(state.boards[1]?.slice(0, shared));
-    expect(state.burnCards).toHaveLength(burns);
-    expect(state.nextCardIndex).toBe(consumed);
+    expect(state.boards).toHaveLength(1);
+    expect(state.boards[0]).toHaveLength(5);
+    expect(state.burnCards).toHaveLength(burnsBeforeAllIn + pendingBurns);
   });
 
-  it("never negotiates runouts after the river is already dealt", () => {
+  it("settles immediately after an all-in call on the river", () => {
     let { state } = startHand({
       handNo: 1,
       seatCount: 2,
@@ -230,7 +166,6 @@ describe("pure hand reducer", () => {
       smallBlind: 5,
       bigBlind: 10,
       bigBlindAnte: 0,
-      runItTwiceEnabled: true,
       deck: createDeck(),
     });
     state = act(state, { type: "ACTION", playerId: "a", action: { action: "call" } });
@@ -253,6 +188,5 @@ describe("pure hand reducer", () => {
     state = act(state, { type: "ACTION", playerId: second, action: { action: "call" } });
     expect(state.phase).toBe("HAND_COMPLETE");
     expect(state.boards).toHaveLength(1);
-    expect(state.runoutVote).toBeNull();
   });
 });

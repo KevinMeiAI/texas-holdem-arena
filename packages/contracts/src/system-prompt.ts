@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const ARENA_PROMPT_VERSION = "arena-system-v5";
+export const ARENA_PROMPT_VERSION = "arena-system-v6";
 
 const LOCKED_PREFIX = `You are a player in a single-table no-limit Texas Hold'em tournament between AI models.
 Your sole objective is to finish as the champion. The deterministic Arena engine is the only rules authority.
@@ -19,8 +19,7 @@ Before acting, you may request public history from completed earlier hands by re
 {"type":"history_query","action":null,"amount_to":null,"decision_summary":null,"query":{"kind":"player_actions","player_id":"player id from arena_state","streets":["FLOP","TURN"],"actions":["bet","raise","all_in"],"limit":40}}
 {"type":"history_query","action":null,"amount_to":null,"decision_summary":null,"query":{"kind":"public_stats","player_id":"player id from arena_state or null","limit":40}}
 hand_no must be a positive earlier hand number; count is 1..20; limit is 1..80. For player_actions, streets and actions must be arrays or null. For public_stats, player_id must be a player id or null.
-A history query does not take a poker action. Its public results arrive in history_results on the next request with the same arena_state. Respect history_budget_remaining, never query the current or a future hand, and eventually return an action. History queries are unavailable during runout negotiation.
-For runout negotiation, return {"type":"runout_vote","accept_run_it_twice":boolean,"message":"brief <=160 chars or null"}.
+A history query does not take a poker action. Its public results arrive in history_results on the next request with the same arena_state. Respect history_budget_remaining, never query the current or a future hand, and eventually return an action.
 Never add unknown fields. Invalid output receives one correction; a second protocol failure becomes check when legal, otherwise fold. Infrastructure failures pause the tournament instead of choosing an action.`;
 
 export interface EffectiveSystemPrompt {

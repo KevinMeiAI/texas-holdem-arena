@@ -93,21 +93,12 @@ function preflightRequest(expectedOutput: ExpectedModelOutput): CanonicalModelRe
     expectedOutput,
     systemPrompt: prompt.text,
     systemPromptHash: prompt.sha256,
-    userPayload: expectedOutput === "RUNOUT_VOTE" ? {
-      schema_version: "arena-preflight-v1",
-      preflight: true,
-      phase: "RUNOUT_VOTE",
-      hero: { player_id: "preflight-player", stack: 1_000, hole_cards: ["As", "Kh"] },
-      legal_actions: null,
-      runout_negotiation: { current_voter_id: "preflight-player", prior_messages: [] },
-      history_budget: { remaining_queries: 0 },
-    } : {
+    userPayload: {
       schema_version: "arena-preflight-v1",
       preflight: true,
       phase: "FLOP",
       hero: { player_id: "preflight-player", stack: 1_000, hole_cards: ["As", "Kh"] },
       legal_actions: { check: true },
-      runout_negotiation: null,
       history_budget: { remaining_queries: 0 },
     },
     timeoutMs: 60_000,
@@ -117,7 +108,7 @@ function preflightRequest(expectedOutput: ExpectedModelOutput): CanonicalModelRe
 async function runPreflight(config: FrozenModelConfig) {
   const provider = createProvider(config);
   const policy = inspectOutputPolicy(config);
-  const expectedOutputs: ExpectedModelOutput[] = ["ACTION_OR_HISTORY", "RUNOUT_VOTE"];
+  const expectedOutputs: ExpectedModelOutput[] = ["ACTION_OR_HISTORY"];
   const checks = [];
   for (const expectedOutput of expectedOutputs) {
     const schema = arenaOutputSchema(expectedOutput);
@@ -125,11 +116,6 @@ async function runPreflight(config: FrozenModelConfig) {
       provider,
       preflightRequest(expectedOutput),
       (decision) => {
-        if (expectedOutput === "RUNOUT_VOTE") {
-          return decision.parsed.type === "runout_vote"
-            ? null
-            : "Provider did not return a runout vote";
-        }
         return decision.parsed.type === "action" && decision.parsed.action === "check"
           ? null
           : "Provider did not return the requested legal check action";

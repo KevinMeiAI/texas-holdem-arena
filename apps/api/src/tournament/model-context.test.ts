@@ -23,7 +23,6 @@ describe("model-self context projection", () => {
       initialButton: 0,
       handsPerLevel: 10,
       blindLevels: [{ smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 }],
-      runItTwiceEnabled: true,
     });
     state = startTournamentHand(state, createDeck()).state;
     const hand = state.currentHand!;
@@ -53,7 +52,6 @@ describe("model-self context projection", () => {
       initialButton: 1,
       handsPerLevel: 10,
       blindLevels: [{ smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 }],
-      runItTwiceEnabled: true,
     });
     state = startTournamentHand(state, createDeck()).state;
     const context = buildModelContext({
@@ -86,7 +84,6 @@ describe("model-self context projection", () => {
       initialButton: 0,
       handsPerLevel: 10,
       blindLevels: [{ smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 }],
-      runItTwiceEnabled: true,
     });
     state = startTournamentHand(state, createDeck()).state;
     const context = buildModelContext({
@@ -117,7 +114,6 @@ describe("model-self context projection", () => {
       initialButton: 1,
       handsPerLevel: 10,
       blindLevels: [{ smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 }],
-      runItTwiceEnabled: true,
     });
     state = startTournamentHand(state, createDeck()).state;
     const context = buildModelContext({
@@ -163,7 +159,6 @@ describe("model-self context projection", () => {
             initialButton: button,
             handsPerLevel: 10,
             blindLevels: [{ smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 }],
-            runItTwiceEnabled: true,
           });
           state = startTournamentHand(state, createDeck()).state;
           const context = buildModelContext({

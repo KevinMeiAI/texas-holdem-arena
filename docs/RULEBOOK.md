@@ -74,8 +74,8 @@ engine. Models, provider adapters, the API and the UI never decide poker rules.
 
 ## Pot construction and settlement
 
-- A unique unmatched live overage is returned before runout negotiation or
-  settlement. Dead contribution is not returnable.
+- A unique unmatched live overage is returned before the remaining board is
+  dealt or the hand is settled. Dead contribution is not returnable.
 - Remaining live contributions are sliced at each distinct contribution cap to
   create the main pot and side pots.
 - Folded chips stay in pots, but folded players are removed from every eligible
@@ -86,21 +86,13 @@ engine. Models, provider adapters, the API and the UI never decide poker rules.
 - At all times, player stacks plus unsettled contribution equal the fixed
   tournament chip supply. After settlement, unsettled contribution is zero.
 
-## All-in runout negotiation
+## All-in runout
 
-Run It Once/Twice negotiation occurs only when at least two players remain, the
-board is incomplete and no future betting is possible.
-
-- Voting order starts left of the button and proceeds clockwise.
-- Hole cards are not revealed before voting completes.
-- Each player returns a Boolean vote and may include at most 160 Unicode
-  characters of special-stage text.
-- Every player must accept to run twice. A rejection, timeout or invalid-response
-  fallback produces one board.
-- Already-dealt community cards are the shared prefix. Board A completes first
-  from the committed deck, then Board B, with a burn before every pending street.
-- Every pot is split between Board A and Board B; an odd chip goes to Board A.
-- If the river is already dealt there is no runout vote.
+When at least two players remain, the board is incomplete and no future betting
+is possible, the engine automatically deals the remaining streets once. There is
+no runout negotiation and no second board. One card is burned before every
+pending street, using the committed deck in order, then all non-folded players
+proceed directly to showdown.
 
 ## Showdown, hidden cards and audit data
 

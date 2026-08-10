@@ -42,17 +42,13 @@ export class MockPolicyProvider implements ModelProvider {
   classifyError = classifyProviderError;
 
   async decide(request: CanonicalModelRequest): Promise<ProviderDecision> {
+    const state = findArenaState(request.userPayload);
+    const legal = state.legal_actions as Record<string, unknown> | null | undefined;
     let response: object;
-    if (request.expectedOutput === "RUNOUT_VOTE") {
-      response = { type: "runout_vote", accept_run_it_twice: true, message: "twice" };
-    } else {
-      const state = findArenaState(request.userPayload);
-      const legal = state.legal_actions as Record<string, unknown> | null | undefined;
-      if (legal?.check) response = { type: "action", action: "check", decision_summary: "No bet to call." };
-      else if (legal?.call) response = { type: "action", action: "call", decision_summary: "Continue at the offered price." };
-      else if (legal?.allIn) response = { type: "action", action: "all_in", decision_summary: "Only stack-sized action remains." };
-      else response = { type: "action", action: "fold", decision_summary: "No continuing action is available." };
-    }
+    if (legal?.check) response = { type: "action", action: "check", decision_summary: "No bet to call." };
+    else if (legal?.call) response = { type: "action", action: "call", decision_summary: "Continue at the offered price." };
+    else if (legal?.allIn) response = { type: "action", action: "all_in", decision_summary: "Only stack-sized action remains." };
+    else response = { type: "action", action: "fold", decision_summary: "No continuing action is available." };
     const rawText = JSON.stringify(response);
     return {
       parsed: parseProviderOutput(rawText, request.expectedOutput),

@@ -53,13 +53,6 @@ export function handEventToArenaEvent(handNo: number, event: HandEvent): NewAren
       amountTo: event.amountTo,
     }, event.playerId);
   }
-  if (event.type === "RUNOUT_VOTE_CAST") {
-    return publicEvent(event.type, handNo, {
-      acceptRunItTwice: event.acceptRunItTwice,
-      message: event.message,
-      source: event.source,
-    }, event.playerId);
-  }
   const { type, ...payload } = event;
   return publicEvent(type, handNo, payload);
 }

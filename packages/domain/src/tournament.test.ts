@@ -41,7 +41,6 @@ describe("single-table tournament reducer", () => {
         { smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 },
         { smallBlind: 10, bigBlind: 20, bigBlindAnte: 20 },
       ],
-      runItTwiceEnabled: true,
     });
     state = startTournamentHand(state, createDeck()).state;
     state = reduceTournament(state, {
@@ -71,7 +70,6 @@ describe("single-table tournament reducer", () => {
       initialButton: 0,
       handsPerLevel: 10,
       blindLevels: [{ smallBlind: 1, bigBlind: 2, bigBlindAnte: 0 }],
-      runItTwiceEnabled: false,
     });
     state = startTournamentHand(state, deckWithPrefix(
       "Kc Qc As Kd Qd Ah 3h 2h 4c 7d 8c 9s Ts Jc",
@@ -118,7 +116,6 @@ describe("single-table tournament reducer", () => {
           { smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 },
           { smallBlind: 10, bigBlind: 20, bigBlindAnte: 20 },
         ],
-        runItTwiceEnabled: true,
       });
       let commandCount = 0;
       while (state.status !== "COMPLETED") {
@@ -126,22 +123,12 @@ describe("single-table tournament reducer", () => {
           state = startTournamentHand(state, rng.shuffle(createDeck())).state;
           continue;
         }
-        if (state.currentHand.phase === "RUNOUT_VOTE") {
-          const playerId = state.currentHand.runoutVote?.currentVoterId;
-          if (!playerId) throw new Error("Missing runout voter");
-          state = reduceTournament(state, {
-            type: "RUNOUT_VOTE",
-            playerId,
-            vote: { acceptRunItTwice: rng.int(3) !== 0 },
-          }).state;
-        } else {
-          const playerId = state.currentHand.betting?.currentActorId;
-          if (!playerId) throw new Error("Missing betting actor");
-          const options = actionOptions(state);
-          const action = options[rng.int(options.length)];
-          if (!action) throw new Error("No scripted action available");
-          state = reduceTournament(state, { type: "ACTION", playerId, action }).state;
-        }
+        const playerId = state.currentHand.betting?.currentActorId;
+        if (!playerId) throw new Error("Missing betting actor");
+        const options = actionOptions(state);
+        const action = options[rng.int(options.length)];
+        if (!action) throw new Error("No scripted action available");
+        state = reduceTournament(state, { type: "ACTION", playerId, action }).state;
         commandCount += 1;
         if (commandCount > 2_000) throw new Error(`Tournament ${tournamentNo} did not terminate`);
       }

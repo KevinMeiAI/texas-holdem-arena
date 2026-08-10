@@ -159,7 +159,6 @@ describePostgres("administrator auth and model configuration API", () => {
           schemaVersion: "arena-output-v2",
           checks: [
             { expectedOutput: "ACTION_OR_HISTORY", ok: true, schema: { applied: false } },
-            { expectedOutput: "RUNOUT_VOTE", ok: true, schema: { applied: false } },
           ],
         },
       });
@@ -175,7 +174,6 @@ describePostgres("administrator auth and model configuration API", () => {
           initialStack: 100,
           handsPerLevel: 1,
           blindLevels: [{ smallBlind: 25, bigBlind: 50, bigBlindAnte: 0 }],
-          runItTwiceEnabled: true,
         },
       });
       expect(rejectedSharedPrompt.statusCode).toBe(400);
@@ -194,7 +192,6 @@ describePostgres("administrator auth and model configuration API", () => {
             { smallBlind: 25, bigBlind: 50, bigBlindAnte: 0 },
             { smallBlind: 50, bigBlind: 100, bigBlindAnte: 100 },
           ],
-          runItTwiceEnabled: true,
         },
       });
       expect(tournamentResponse.statusCode).toBe(201);

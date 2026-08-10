@@ -2,7 +2,6 @@ import type {
   ActionResponse,
   CanonicalModelRequest,
   HistoryQuery,
-  RunoutVoteResponse,
 } from "../../../../packages/contracts/src/model-protocol.js";
 import type { ActionCommand } from "../../../../packages/domain/src/betting.js";
 import {
@@ -51,14 +50,6 @@ export type DecisionRunnerResult =
     usedFallback: boolean;
     protocolFailures: number;
     historyResults: HistoryQueryResult[];
-    calls: CallAudit[];
-  }
-  | {
-    status: "RUNOUT_VOTE";
-    response: RunoutVoteResponse;
-    usedFallback: boolean;
-    protocolFailures: number;
-    historyResults: [];
     calls: CallAudit[];
   }
   | {
@@ -166,17 +157,6 @@ export async function runModelDecision(
 
     try {
       if (!decision) throw new ProviderCallError("INVALID_RESPONSE", correction ?? "Invalid model response", false);
-      if (input.request.expectedOutput === "RUNOUT_VOTE") {
-        if (decision.parsed.type !== "runout_vote") throw new Error("Expected a runout_vote response");
-        return {
-          status: "RUNOUT_VOTE",
-          response: decision.parsed,
-          usedFallback: false,
-          protocolFailures,
-          historyResults: [],
-          calls,
-        };
-      }
       if (decision.parsed.type === "history_query") {
         if (!input.executeHistoryQuery) throw new Error("History queries are not available");
         const events = await input.executeHistoryQuery(decision.parsed.query);
@@ -201,16 +181,6 @@ export async function runModelDecision(
       if (protocolFailures <= 1) {
         correction = error instanceof Error ? error.message : "Protocol validation failed";
         continue;
-      }
-      if (input.request.expectedOutput === "RUNOUT_VOTE") {
-        return {
-          status: "RUNOUT_VOTE",
-          response: { type: "runout_vote", accept_run_it_twice: false, message: "" },
-          usedFallback: true,
-          protocolFailures,
-          historyResults: [],
-          calls,
-        };
       }
       if (!input.fallbackAction) throw new Error("Poker fallback action is not configured");
       return {

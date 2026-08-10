@@ -13,7 +13,6 @@ function hand() {
     smallBlind: 5,
     bigBlind: 10,
     bigBlindAnte: 0,
-    runItTwiceEnabled: true,
     deck: createDeck(),
   }).state;
 }

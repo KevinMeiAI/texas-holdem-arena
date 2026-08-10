@@ -11,14 +11,7 @@ import {
 import { compareHandRanks, evaluateBest, type HandRank } from "./evaluator.js";
 import { assertHandInvariants } from "./invariants.js";
 import { awardPots, buildPots, type PotAward, type PotLayer, type RankedPlayer } from "./pots.js";
-import {
-  castRunoutVote,
-  createRunoutVote,
-  type RunoutVoteCommand,
-  type RunoutVoteState,
-} from "./runouts.js";
-
-export type HandPhase = Street | "RUNOUT_VOTE" | "SHOWDOWN" | "HAND_COMPLETE";
+export type HandPhase = Street | "SHOWDOWN" | "HAND_COMPLETE";
 
 export interface HandPlayerInput {
   id: string;
@@ -44,7 +37,6 @@ export interface HandConfig {
   smallBlind: number;
   bigBlind: number;
   bigBlindAnte: number;
-  runItTwiceEnabled: boolean;
   deck: Card[];
 }
 
@@ -67,16 +59,13 @@ export interface HandState {
   smallBlind: number;
   bigBlind: number;
   bigBlindAnte: number;
-  runItTwiceEnabled: boolean;
   phase: HandPhase;
   players: HandPlayer[];
   deck: Card[];
   nextCardIndex: number;
   burnCards: Card[];
   boards: Card[][];
-  sharedBoardCount: number;
   betting: BettingRound | null;
-  runoutVote: RunoutVoteState | null;
   pots: PotLayer[];
   returned: { playerId: string; amount: number }[];
   awards: PotAward[];
@@ -91,9 +80,6 @@ export type HandEvent =
   | { type: "BETTING_ROUND_STARTED"; street: Street; actorId: string; currentBet: number }
   | { type: "ACTION_APPLIED"; street: Street; playerId: string; command: ActionCommand; paid: number; amountTo: number }
   | { type: "STREET_DEALT"; boardIndex: number; street: Exclude<Street, "PREFLOP">; burn: Card; cards: Card[] }
-  | { type: "RUNOUT_VOTE_STARTED"; order: string[] }
-  | { type: "RUNOUT_VOTE_CAST"; playerId: string; acceptRunItTwice: boolean; message: string; source: "model" | "timeout" | "invalid_fallback" }
-  | { type: "RUNOUT_DECIDED"; runCount: 1 | 2 }
   | { type: "SHOWDOWN_REVEALED"; players: { playerId: string; cards: [Card, Card] }[] }
   | { type: "UNCALLED_BET_RETURNED"; playerId: string; amount: number }
   | { type: "POT_CREATED"; pot: PotLayer }
@@ -105,9 +91,7 @@ export interface HandTransition {
   events: HandEvent[];
 }
 
-export type HandCommand =
-  | { type: "ACTION"; playerId: string; action: ActionCommand }
-  | { type: "RUNOUT_VOTE"; playerId: string; vote: RunoutVoteCommand };
+export type HandCommand = { type: "ACTION"; playerId: string; action: ActionCommand };
 
 function assertPositiveChipAmount(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${label} must be a positive integer`);
@@ -251,7 +235,6 @@ function completeSettlement(
   };
   state.phase = "HAND_COMPLETE";
   state.betting = null;
-  state.runoutVote = null;
   state.result = result;
   events.push({ type: "HAND_COMPLETED", result });
 }
@@ -306,38 +289,18 @@ function settleShowdown(state: HandState, events: HandEvent[]): void {
   completeSettlement(state, events, awards);
 }
 
-function completeRunouts(state: HandState, events: HandEvent[], runCount: 1 | 2): void {
-  if (runCount === 2) {
-    state.sharedBoardCount = state.boards[0]!.length;
-    state.boards.push([...state.boards[0]!]);
-  }
-  for (let boardIndex = 0; boardIndex < runCount; boardIndex += 1) {
-    while ((state.boards[boardIndex]?.length ?? 5) < 5) dealNextStreet(state, events, boardIndex);
-  }
+function completeSingleRunout(state: HandState, events: HandEvent[]): void {
+  while (state.boards[0]!.length < 5) dealNextStreet(state, events, 0);
   settleShowdown(state, events);
 }
 
-function enterRunoutOrShowdown(state: HandState, events: HandEvent[]): void {
+function runOutBoardAndShowDown(state: HandState, events: HandEvent[]): void {
   normalizeUncalledContribution(state, events);
   if (state.boards[0]!.length === 5) {
     settleShowdown(state, events);
     return;
   }
-  if (!state.runItTwiceEnabled) {
-    events.push({ type: "RUNOUT_DECIDED", runCount: 1 });
-    completeRunouts(state, events, 1);
-    return;
-  }
-  const contenders = state.players.filter((player) => !player.folded);
-  const order = actionOrderAfter(
-    state.positions.button,
-    contenders.map((player) => player.seat),
-    state.seatCount,
-  ).map((seat) => contenders.find((player) => player.seat === seat)!.id);
-  state.phase = "RUNOUT_VOTE";
-  state.betting = null;
-  state.runoutVote = createRunoutVote(order);
-  events.push({ type: "RUNOUT_VOTE_STARTED", order });
+  completeSingleRunout(state, events);
 }
 
 function advanceAfterBetting(state: HandState, events: HandEvent[]): void {
@@ -350,7 +313,7 @@ function advanceAfterBetting(state: HandState, events: HandEvent[]): void {
     return;
   }
   if (actionableContenders(state).length < 2) {
-    enterRunoutOrShowdown(state, events);
+    runOutBoardAndShowDown(state, events);
     return;
   }
   resetStreetContributions(state);
@@ -391,7 +354,6 @@ export function startHand(config: HandConfig): HandTransition {
     smallBlind: config.smallBlind,
     bigBlind: config.bigBlind,
     bigBlindAnte: config.bigBlindAnte,
-    runItTwiceEnabled: config.runItTwiceEnabled,
     phase: "PREFLOP",
     players: config.players.map((player) => ({
       ...player,
@@ -407,9 +369,7 @@ export function startHand(config: HandConfig): HandTransition {
     nextCardIndex: 0,
     burnCards: [],
     boards: [[]],
-    sharedBoardCount: 0,
     betting: null,
-    runoutVote: null,
     pots: [],
     returned: [],
     awards: [],
@@ -444,7 +404,7 @@ export function startHand(config: HandConfig): HandTransition {
   }
 
   if (actionableContenders(state).length < 2) {
-    enterRunoutOrShowdown(state, events);
+    runOutBoardAndShowDown(state, events);
   } else {
     beginBettingRound(state, events, "PREFLOP", state.positions.bigBlind, state.bigBlind);
   }
@@ -457,62 +417,41 @@ export function reduceHand(state: HandState, command: HandCommand): HandTransiti
   const next = structuredClone(state);
   const events: HandEvent[] = [];
 
-  if (command.type === "ACTION") {
-    if (!next.betting || next.betting.currentActorId !== command.playerId) {
-      throw new Error("Player is not the current betting actor");
-    }
-    const before = next.betting;
-    const available = legalActions(before);
-    const priorPlayer = before.players.find((player) => player.id === command.playerId)!;
-    const updated = applyAction(before, command.action);
-    const updatedPlayer = updated.players.find((player) => player.id === command.playerId)!;
-    const paid = updatedPlayer.committed - priorPlayer.committed;
-    next.betting = updated;
-    for (const bettingPlayer of updated.players) {
-      const handPlayer = playerById(next, bettingPlayer.id);
-      const committedDelta = bettingPlayer.committed - handPlayer.streetCommitted;
-      handPlayer.stack = bettingPlayer.stack;
-      handPlayer.streetCommitted = bettingPlayer.committed;
-      handPlayer.totalCommitted += committedDelta;
-      handPlayer.folded = bettingPlayer.folded;
-      handPlayer.allIn = bettingPlayer.allIn;
-    }
-    const amountTo = updatedPlayer.committed;
-    // Reading legal actions here also guarantees the all-in classification was
-    // computed from the exact pre-action state, even though the event remains
-    // transport-neutral.
-    if (command.action.action === "all_in" && !available.allIn) {
-      throw new Error("All-in classification is missing");
-    }
-    events.push({
-      type: "ACTION_APPLIED",
-      street: before.street,
-      playerId: command.playerId,
-      command: command.action,
-      paid,
-      amountTo,
-    });
-    if (updated.complete) advanceAfterBetting(next, events);
-  } else {
-    if (next.phase !== "RUNOUT_VOTE" || !next.runoutVote) {
-      throw new Error("Hand is not accepting runout votes");
-    }
-    const voteState = castRunoutVote(next.runoutVote, command.playerId, command.vote);
-    next.runoutVote = voteState;
-    const vote = voteState.votes.at(-1)!;
-    events.push({
-      type: "RUNOUT_VOTE_CAST",
-      playerId: vote.playerId,
-      acceptRunItTwice: vote.acceptRunItTwice,
-      message: vote.message,
-      source: vote.source,
-    });
-    if (voteState.complete) {
-      const runCount = voteState.runCount!;
-      events.push({ type: "RUNOUT_DECIDED", runCount });
-      completeRunouts(next, events, runCount);
-    }
+  if (!next.betting || next.betting.currentActorId !== command.playerId) {
+    throw new Error("Player is not the current betting actor");
   }
+  const before = next.betting;
+  const available = legalActions(before);
+  const priorPlayer = before.players.find((player) => player.id === command.playerId)!;
+  const updated = applyAction(before, command.action);
+  const updatedPlayer = updated.players.find((player) => player.id === command.playerId)!;
+  const paid = updatedPlayer.committed - priorPlayer.committed;
+  next.betting = updated;
+  for (const bettingPlayer of updated.players) {
+    const handPlayer = playerById(next, bettingPlayer.id);
+    const committedDelta = bettingPlayer.committed - handPlayer.streetCommitted;
+    handPlayer.stack = bettingPlayer.stack;
+    handPlayer.streetCommitted = bettingPlayer.committed;
+    handPlayer.totalCommitted += committedDelta;
+    handPlayer.folded = bettingPlayer.folded;
+    handPlayer.allIn = bettingPlayer.allIn;
+  }
+  const amountTo = updatedPlayer.committed;
+  // Reading legal actions here also guarantees the all-in classification was
+  // computed from the exact pre-action state, even though the event remains
+  // transport-neutral.
+  if (command.action.action === "all_in" && !available.allIn) {
+    throw new Error("All-in classification is missing");
+  }
+  events.push({
+    type: "ACTION_APPLIED",
+    street: before.street,
+    playerId: command.playerId,
+    command: command.action,
+    paid,
+    amountTo,
+  });
+  if (updated.complete) advanceAfterBetting(next, events);
 
   assertHandInvariants(next);
   return { state: next, events };

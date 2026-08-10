@@ -5,7 +5,7 @@
 ## V1 已实现
 
 - 标准单桌锦标赛：dead button、单挑盲注规则、Big Blind Ante、边池、短码 all-in 与淘汰结算。
-- 特殊协商：满足条件时由仍有权益的模型投票选择 Run It Once / Run It Twice；V1 不开放自由聊天。
+- 单次发牌：全下锁定后由裁判自动补齐唯一公共牌面并结算；V1 不开放自由聊天。
 - 确定性规则引擎：随机承诺、加密牌局私有状态、追加式事件流、快照恢复、CAS 与 decision lease。
 - 统一模型协议：同一 system prompt、严格 JSON 行动、协议纠错与基础设施暂停；支持 OpenAI、Anthropic、Gemini、OpenAI-compatible 和本机 mock Provider。
 - 完整产品界面：直播牌桌、赛事档案、逐手回放、排行榜，以及 Provider、模型和赛事管理控制室。
@@ -60,7 +60,7 @@ Provider API Key 会使用 `ARENA_MASTER_KEY` 加密写入 PostgreSQL，服务�
 | DeepSeek、智谱 GLM、通用 OpenAI-compatible | JSON Object |
 | 本机 mock | 仅提示词约束 |
 
-Gemini 当前使用 `generateContent`，结构化请求写入 `generationConfig.responseMimeType` 与 `responseSchema`。无论供应商是否提供结构化输出，返回值仍须经过 Arena 本地 Zod 协议和德扑裁判校验。模型预检会分别验证常规行动/历史查询与 Run It Twice 投票。
+Gemini 当前使用 `generateContent`，结构化请求写入 `generationConfig.responseMimeType` 与 `responseSchema`。无论供应商是否提供结构化输出，返回值仍须经过 Arena 本地 Zod 协议和德扑裁判校验。模型预检验证常规行动与历史查询协议。
 
 ## 本地开发
 

@@ -27,7 +27,6 @@ const createTournamentSchema = z.object({
     { smallBlind: 400, bigBlind: 800, bigBlindAnte: 800 },
     { smallBlind: 600, bigBlind: 1200, bigBlindAnte: 1200 },
   ]),
-  runItTwiceEnabled: z.boolean().default(true),
 }).strict();
 
 async function audit(

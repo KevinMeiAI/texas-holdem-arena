@@ -27,7 +27,6 @@ export interface TournamentConfig {
   initialButton: number;
   handsPerLevel: number;
   blindLevels: BlindLevel[];
-  runItTwiceEnabled: boolean;
 }
 
 export type TournamentPlayerStatus = "ACTIVE" | "ELIMINATED" | "CHAMPION";
@@ -50,7 +49,6 @@ export interface TournamentState {
   initialButton: number;
   handsPerLevel: number;
   blindLevels: BlindLevel[];
-  runItTwiceEnabled: boolean;
   totalChips: number;
   completedHands: number;
   currentHand: HandState | null;
@@ -180,7 +178,6 @@ export function createTournament(config: TournamentConfig): TournamentState {
     initialButton: config.initialButton,
     handsPerLevel: config.handsPerLevel,
     blindLevels: config.blindLevels.map((level) => ({ ...level })),
-    runItTwiceEnabled: config.runItTwiceEnabled,
     totalChips: config.initialStack * config.players.length,
     completedHands: 0,
     currentHand: null,
@@ -279,7 +276,6 @@ export function startTournamentHand(state: TournamentState, deck: readonly Card[
     players: active.map((player) => ({ id: player.id, seat: player.seat, stack: player.stack })),
     positions,
     ...level,
-    runItTwiceEnabled: next.runItTwiceEnabled,
     deck: [...deck],
   });
   next.currentHand = transition.state;

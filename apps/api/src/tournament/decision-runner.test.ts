@@ -202,17 +202,4 @@ describe("uniform model decision policy", () => {
     expect(result).toMatchObject({ status: "PAUSED_INFRA", errorKind: "SERVER" });
     expect(result.calls).toHaveLength(3);
   });
-
-  it("defaults an invalid runout negotiation to one board after one correction", async () => {
-    const result = await runModelDecision({
-      provider: new MockScriptedProvider(["bad", "bad again"]),
-      request: { ...request, expectedOutput: "RUNOUT_VOTE" },
-    }, config);
-    expect(result).toMatchObject({
-      status: "RUNOUT_VOTE",
-      response: { accept_run_it_twice: false },
-      usedFallback: true,
-      protocolFailures: 2,
-    });
-  });
 });

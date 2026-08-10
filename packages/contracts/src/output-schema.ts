@@ -82,17 +82,6 @@ const actionOrHistorySchema = {
   additionalProperties: false,
 };
 
-const runoutVoteSchema = {
-  type: "object",
-  properties: {
-    type: { type: "string", enum: ["runout_vote"] },
-    accept_run_it_twice: { type: "boolean" },
-    message: nullable({ type: "string" }),
-  },
-  required: ["type", "accept_run_it_twice", "message"],
-  additionalProperties: false,
-};
-
 export interface ArenaOutputSchema {
   version: string;
   name: string;
@@ -101,8 +90,8 @@ export interface ArenaOutputSchema {
 }
 
 export function arenaOutputSchema(expected: ExpectedModelOutput): ArenaOutputSchema {
-  const name = expected === "RUNOUT_VOTE" ? "arena_runout_vote" : "arena_action_or_history";
-  const schema = expected === "RUNOUT_VOTE" ? runoutVoteSchema : actionOrHistorySchema;
+  const name = "arena_action_or_history";
+  const schema = actionOrHistorySchema;
   const serialized = JSON.stringify(schema);
   return {
     version: ARENA_OUTPUT_SCHEMA_VERSION,

@@ -20,12 +20,4 @@ describe("platform-owned structured output schema", () => {
       "Must be null for fold, check, call, and all_in; use a positive integer only for bet or raise.",
     );
   });
-
-  it("uses a distinct, stable runout-vote schema", () => {
-    const first = arenaOutputSchema("RUNOUT_VOTE");
-    const second = arenaOutputSchema("RUNOUT_VOTE");
-    expect(first).toEqual(second);
-    expect(first.name).toBe("arena_runout_vote");
-    expect(first.sha256).not.toBe(arenaOutputSchema("ACTION_OR_HISTORY").sha256);
-  });
 });

@@ -18,7 +18,6 @@ export interface CreateArenaTournamentInput {
   initialStack: number;
   handsPerLevel: number;
   blindLevels: { smallBlind: number; bigBlind: number; bigBlindAnte: number }[];
-  runItTwiceEnabled: boolean;
 }
 
 interface ActiveArena {
@@ -104,7 +103,6 @@ export class ArenaService {
         initialButton: seatingRng.int(seated.length),
         handsPerLevel: input.handsPerLevel,
         blindLevels: input.blindLevels,
-        runItTwiceEnabled: input.runItTwiceEnabled,
       },
       providerIdByPlayer: Object.fromEntries(seated.map((model) => [model.id, model.id])),
       playerLabels: Object.fromEntries(seated.map((model) => [model.id, model.displayName])),

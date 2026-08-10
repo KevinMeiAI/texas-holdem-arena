@@ -56,7 +56,7 @@ beforeEach(() => {
     if (url.includes("/gemini/models/gemini-test:generateContent")) {
       return jsonResponse({
         responseId: "gem_1",
-        candidates: [{ content: { parts: [{ text: '{"type":"runout_vote","accept_run_it_twice":true}' }] } }],
+        candidates: [{ content: { parts: [{ text: '{"type":"action","action":"check"}' }] } }],
         usageMetadata: { promptTokenCount: 9, candidatesTokenCount: 3, totalTokenCount: 12 },
       });
     }
@@ -130,15 +130,15 @@ describe("real provider transport adapters", () => {
     });
   });
 
-  it("maps Gemini and keeps runout output separate", async () => {
+  it("maps Gemini structured action output", async () => {
     const provider = new GoogleGeminiProvider({
       ...common,
       provider: "google-gemini",
       model: "gemini-test",
       baseUrl: "https://provider.test/gemini",
     });
-    const result = await provider.decide(request("RUNOUT_VOTE"));
-    expect(result.parsed).toEqual({ type: "runout_vote", accept_run_it_twice: true });
+    const result = await provider.decide(request());
+    expect(result.parsed).toEqual({ type: "action", action: "check" });
     expect(result.usage.totalTokens).toBe(12);
     expect(captured.at(-1)?.body).toMatchObject({
       generationConfig: {

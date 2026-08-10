@@ -13,7 +13,6 @@ export interface ModelContextInput {
   playerId: string;
   currentHandEvents: ProjectedArenaEvent[];
   historyBudget: HistoryBudgetState;
-  priorRunoutMessages?: { playerId: string; message: string }[];
 }
 
 const NON_BLIND_POSITION_LABELS: Readonly<Record<number, readonly string[]>> = {
@@ -134,10 +133,6 @@ export function buildModelContext(input: ModelContextInput): unknown {
       call_amount: legal?.call?.amount ?? 0,
     } : null,
     legal_actions: legal,
-    runout_negotiation: hand.phase === "RUNOUT_VOTE" ? {
-      current_voter_id: hand.runoutVote?.currentVoterId,
-      prior_messages: input.priorRunoutMessages ?? [],
-    } : null,
     current_hand_events: input.currentHandEvents,
     history_budget: input.historyBudget,
   };

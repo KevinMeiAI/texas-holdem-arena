@@ -1,4 +1,4 @@
-# Model protocol v5
+# Model protocol v6
 
 Every seat receives the same effective system prompt bytes. The effective prompt
 contains only the locked Arena rules prefix and locked output protocol. It has no
@@ -83,22 +83,10 @@ the unchanged `arena_state`, accumulated `history_results`, and an updated
 The budget is identical for every seat and frozen with tournament configuration.
 After the budget is exhausted, another query is a protocol error.
 
-## Runout vote
+## All-in runout
 
-When betting is locked by all-ins and community cards remain, return:
-
-```json
-{
-  "type": "runout_vote",
-  "accept_run_it_twice": true,
-  "message": "Twice reduces single-board variance."
-}
-```
-
-The required `message` field is a string of at most 160 Unicode characters or
-`null`. It is untrusted data and
-is visible only to later voters during that negotiation plus spectators/audit.
-It cannot alter rules, reopen betting or enter later normal-decision prompts.
+There is no model decision after betting is locked by all-ins. The deterministic
+engine deals the remaining streets once and proceeds directly to showdown.
 
 ## Error policy
 

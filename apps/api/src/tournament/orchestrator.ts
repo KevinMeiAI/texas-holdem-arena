@@ -111,7 +111,6 @@ function publicState(runtime: OrchestratorRuntime): unknown {
       pots: hand.pots,
       awards: hand.awards,
       currentActorId: hand.betting?.currentActorId ?? null,
-      currentVoterId: hand.runoutVote?.currentVoterId ?? null,
     } : null,
   };
 }
@@ -126,11 +125,9 @@ function statusFor(runtime: OrchestratorRuntime): string {
 function nextDecision(runtime: OrchestratorRuntime): PendingDecisionRequest | null {
   const hand = runtime.domain.currentHand;
   if (!hand) return null;
-  const playerId = hand.phase === "RUNOUT_VOTE"
-    ? hand.runoutVote?.currentVoterId
-    : hand.betting?.currentActorId;
+  const playerId = hand.betting?.currentActorId;
   if (!playerId) return null;
-  const requestKind = hand.phase === "RUNOUT_VOTE" ? "RUNOUT_VOTE" : "ACTION";
+  const requestKind = "ACTION" as const;
   const id = randomUUID();
   return {
     id,
@@ -305,13 +302,10 @@ export class TournamentOrchestrator {
       playerId: claimed.playerId,
       currentHandEvents,
       historyBudget: historyBudget.state,
-      priorRunoutMessages: hand.runoutVote?.votes
-        .filter((vote) => vote.message.length > 0)
-        .map((vote) => ({ playerId: vote.playerId, message: vote.message })) ?? [],
     });
     const request: CanonicalModelRequest = {
       requestId: claimed.id,
-      expectedOutput: claimed.requestKind === "RUNOUT_VOTE" ? "RUNOUT_VOTE" : "ACTION_OR_HISTORY",
+      expectedOutput: "ACTION_OR_HISTORY",
       systemPrompt: runtime.effectivePrompt.text,
       systemPromptHash: runtime.effectivePrompt.sha256,
       userPayload: context,
@@ -348,17 +342,7 @@ export class TournamentOrchestrator {
     }
 
     const priorHandNo = hand.handNo;
-    const command = decision.status === "ACTION"
-      ? { type: "ACTION" as const, playerId: claimed.playerId, action: decision.action }
-      : {
-        type: "RUNOUT_VOTE" as const,
-        playerId: claimed.playerId,
-        vote: {
-          acceptRunItTwice: decision.response.accept_run_it_twice,
-          message: decision.response.message ?? "",
-          source: decision.usedFallback ? "invalid_fallback" as const : "model" as const,
-        },
-      };
+    const command = { type: "ACTION" as const, playerId: claimed.playerId, action: decision.action };
     const transition = reduceTournament(runtime.domain, command);
     runtime = {
       ...runtime,
@@ -367,7 +351,7 @@ export class TournamentOrchestrator {
       operationalStatus: transition.state.status === "COMPLETED" ? "COMPLETED" : "RUNNING",
       seedRevealed: transition.state.status === "COMPLETED",
     };
-    const decisionSummary = decision.status === "ACTION" ? decision.response?.decision_summary ?? null : null;
+    const decisionSummary = decision.response?.decision_summary ?? null;
     const events = [
       publicArenaEvent("MODEL_DECISION_RECORDED", {
         playerId: claimed.playerId,
@@ -401,7 +385,7 @@ export class TournamentOrchestrator {
           status: decision.status,
           usedFallback: decision.usedFallback,
           protocolFailures: decision.protocolFailures,
-          response: decision.status === "ACTION" ? decision.response : decision.response,
+          response: decision.response,
         },
       },
     });

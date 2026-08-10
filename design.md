@@ -47,7 +47,7 @@ modern-minimal，偏实用工具。专注、清晰、稳重，保留真实牌桌
 
 ## Copy
 
-- 中文优先。保留 API、JSON、SSE、Provider、模型 ID、System Prompt、Run It Twice 等必要技术词。
+- 中文优先。保留 API、JSON、SSE、Provider、模型 ID、System Prompt 等必要技术词。
 - 删除装饰性英文眉题、英文全大写章节名、无意义编号和重复的中英双标题。
 - 状态文案必须说明发生了什么；错误信息要给出下一步。
 - 操作按钮使用明确动词，例如“新增模型”“保存连接”“打开回放”。

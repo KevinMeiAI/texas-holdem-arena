@@ -6,8 +6,6 @@ describe("strict model protocol", () => {
   it("accepts exact legal shapes and amount_to semantics", () => {
     expect(parseModelJson('{"type":"action","action":"raise","amount_to":1200}', "ACTION_OR_HISTORY"))
       .toMatchObject({ action: "raise", amount_to: 1200 });
-    expect(parseModelJson('{"type":"runout_vote","accept_run_it_twice":true,"message":"twice"}', "RUNOUT_VOTE"))
-      .toMatchObject({ accept_run_it_twice: true });
   });
 
   it("normalizes the fixed nullable envelope used by structured-output providers", () => {
@@ -39,10 +37,6 @@ describe("strict model protocol", () => {
       type: "history_query",
       query: { kind: "player_actions", player_id: "p1", limit: 20 },
     });
-    expect(parseModelJson(
-      '{"type":"runout_vote","accept_run_it_twice":false,"message":null}',
-      "RUNOUT_VOTE",
-    )).toEqual({ type: "runout_vote", accept_run_it_twice: false });
   });
 
   it("rejects fences, unknown fields and invalid amount placement", () => {
@@ -64,23 +58,18 @@ describe("strict model protocol", () => {
     }), "ACTION_OR_HISTORY")).toEqual({ type: "action", action: "check" });
   });
 
-  it("enforces query and Unicode message budgets", () => {
+  it("enforces history query budgets", () => {
     expect(() => parseModelJson(
       '{"type":"history_query","query":{"kind":"recent_hands","count":21,"limit":80}}',
       "ACTION_OR_HISTORY",
     )).toThrow();
-    expect(() => parseModelJson(JSON.stringify({
-      type: "runout_vote",
-      accept_run_it_twice: true,
-      message: "🂡".repeat(161),
-    }), "RUNOUT_VOTE")).toThrow(/160/);
   });
 
   it("builds byte-identical prompts and hashes for every seat", () => {
     const first = buildEffectiveSystemPrompt();
     const second = buildEffectiveSystemPrompt();
     expect(first).toEqual(second);
-    expect(first.version).toBe("arena-system-v5");
+    expect(first.version).toBe("arena-system-v6");
     expect(first.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(first.text).not.toContain("SHARED STRATEGY PROMPT");
     expect(first.text).not.toContain("shared strategy");

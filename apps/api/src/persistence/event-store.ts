@@ -70,7 +70,7 @@ export interface PendingDecisionRequest {
   id: string;
   handNo: number;
   playerId: string;
-  requestKind: "ACTION" | "RUNOUT_VOTE";
+  requestKind: "ACTION";
   promptHash: string;
   idempotencyKey: string;
 }
@@ -468,7 +468,7 @@ export class PgEventStore {
     handNo: number;
     playerId: string;
     expectedAggregateVersion: number;
-    requestKind: "ACTION" | "RUNOUT_VOTE";
+    requestKind: "ACTION";
     promptHash: string;
     idempotencyKey: string;
     attemptCount: number;
@@ -481,7 +481,7 @@ export class PgEventStore {
       hand_no: number;
       player_id: string;
       expected_aggregate_version: string;
-      request_kind: "ACTION" | "RUNOUT_VOTE";
+      request_kind: "ACTION";
       prompt_hash: string;
       idempotency_key: string;
       attempt_count: number;

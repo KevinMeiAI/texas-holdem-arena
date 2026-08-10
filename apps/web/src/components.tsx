@@ -54,7 +54,6 @@ export function formatArenaPhase(phase: string): string {
     TURN: "转牌圈",
     RIVER: "河牌圈",
     SHOWDOWN: "摊牌",
-    RUNOUT_VOTE: "发牌次数协商",
     HAND_COMPLETE: "本手结束",
   };
   return labels[phase] ?? phase;
@@ -170,9 +169,6 @@ const eventLabels: Record<string, string> = {
   MODEL_DECISION_RECORDED: "模型完成决策",
   ACTION_APPLIED: "行动执行",
   STREET_DEALT: "公共牌发出",
-  RUNOUT_VOTE_STARTED: "发牌次数协商",
-  RUNOUT_VOTE_CAST: "协商投票",
-  RUNOUT_DECIDED: "发牌次数确定",
   SHOWDOWN_REVEALED: "摊牌",
   POT_CREATED: "底池形成",
   POT_AWARDED: "底池结算",
@@ -218,7 +214,6 @@ function actionText(event: ArenaEvent, playerNames?: Map<string, string>): strin
     const award = payload.award as { playerId?: string; amount?: number } | undefined;
     return `${playerNames?.get(award?.playerId ?? "") ?? award?.playerId ?? "玩家"} · +${formatChips(award?.amount)}`;
   }
-  if (event.type === "RUNOUT_VOTE_CAST") return `${actor ?? "玩家"} · ${payload.acceptRunItTwice ? "同意发两次" : "只发一次"}`;
   return actor ? actor : `事件 ${String(event.sequence).padStart(4, "0")}`;
 }
 

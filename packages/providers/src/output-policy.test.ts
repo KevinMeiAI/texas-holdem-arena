@@ -53,8 +53,8 @@ describe("provider output policy", () => {
   });
 
   it("attaches the platform-owned schema only in JSON Schema mode", () => {
-    expect(resolveOutputPolicy(config({ provider: "google-gemini" }), "RUNOUT_VOTE").schema)
-      .toMatchObject({ version: "arena-output-v2", name: "arena_runout_vote" });
+    expect(resolveOutputPolicy(config({ provider: "google-gemini" }), "ACTION_OR_HISTORY").schema)
+      .toMatchObject({ version: "arena-output-v2", name: "arena_action_or_history" });
     expect(resolveOutputPolicy(config({ outputMode: "json_object" }), "ACTION_OR_HISTORY").schema).toBeNull();
   });
 });

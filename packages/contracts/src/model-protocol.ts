@@ -60,12 +60,6 @@ export const historyQueryResponseSchema = z.object({
   query: historyQuerySchema,
 }).strict();
 
-export const runoutVoteResponseSchema = z.object({
-  type: z.literal("runout_vote"),
-  accept_run_it_twice: z.boolean(),
-  message: unicodeText(160).optional(),
-}).strict();
-
 export const actionDecisionResponseSchema = z.union([
   actionResponseSchema,
   historyQueryResponseSchema,
@@ -74,20 +68,13 @@ export const actionDecisionResponseSchema = z.union([
 export type ActionResponse = z.infer<typeof actionResponseSchema>;
 export type HistoryQuery = z.infer<typeof historyQuerySchema>;
 export type HistoryQueryResponse = z.infer<typeof historyQueryResponseSchema>;
-export type RunoutVoteResponse = z.infer<typeof runoutVoteResponseSchema>;
 export type ActionDecisionResponse = z.infer<typeof actionDecisionResponseSchema>;
 
-export type ExpectedModelOutput = "ACTION_OR_HISTORY" | "RUNOUT_VOTE";
+export type ExpectedModelOutput = "ACTION_OR_HISTORY";
 
 function normalizeNullableEnvelope(parsed: unknown, expected: ExpectedModelOutput): unknown {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed;
   const value = parsed as Record<string, unknown>;
-
-  if (expected === "RUNOUT_VOTE") {
-    if (value.message !== null) return parsed;
-    const { message: _message, ...normalized } = value;
-    return normalized;
-  }
 
   if (value.type === "action") {
     if (value.query !== undefined && value.query !== null) return parsed;
@@ -130,7 +117,7 @@ function normalizeNullableEnvelope(parsed: unknown, expected: ExpectedModelOutpu
   return parsed;
 }
 
-export function parseModelJson(text: string, expected: ExpectedModelOutput): ActionDecisionResponse | RunoutVoteResponse {
+export function parseModelJson(text: string, expected: ExpectedModelOutput): ActionDecisionResponse {
   const trimmed = text.trim();
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
     throw new Error("Model response must be one JSON object with no surrounding text or code fence");
@@ -142,7 +129,6 @@ export function parseModelJson(text: string, expected: ExpectedModelOutput): Act
     throw new Error("Model response is not valid JSON");
   }
   const normalized = normalizeNullableEnvelope(parsed, expected);
-  if (expected === "RUNOUT_VOTE") return runoutVoteResponseSchema.parse(normalized);
   const result = actionDecisionResponseSchema.safeParse(normalized);
   if (result.success) return result.data;
   // A malformed optional self-summary must not invalidate an otherwise legal
