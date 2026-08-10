@@ -110,7 +110,7 @@ function preflightRequest(expectedOutput: ExpectedModelOutput): CanonicalModelRe
       runout_negotiation: null,
       history_budget: { remaining_queries: 0 },
     },
-    timeoutMs: 15_000,
+    timeoutMs: 60_000,
   };
 }
 

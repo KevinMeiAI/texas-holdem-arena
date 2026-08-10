@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CanonicalModelRequest } from "../../../../packages/contracts/src/model-protocol.js";
 import { MockScriptedProvider } from "../../../../packages/providers/src/mock-scripted.js";
 import {
@@ -19,6 +19,7 @@ const request: CanonicalModelRequest = {
 
 const config = {
   maxInfrastructureAttempts: 3,
+  infrastructureRetryDelaysMs: [0, 0],
   history: { maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 },
 };
 
@@ -142,6 +143,46 @@ describe("uniform model decision policy", () => {
     }, config);
     expect(result).toMatchObject({ status: "ACTION", protocolFailures: 0 });
     expect(attempts).toBe(3);
+  });
+
+  it("waits for the configured infrastructure retry intervals", async () => {
+    vi.useFakeTimers();
+    try {
+      let attempts = 0;
+      const provider: ModelProvider = {
+        kind: "mock-scripted",
+        classifyError: (error) => error as ProviderCallError,
+        decide: async (): Promise<ProviderDecision> => {
+          attempts += 1;
+          if (attempts < 3) throw new ProviderCallError("TIMEOUT", "slow", true);
+          return {
+            parsed: { type: "action", action: "check" },
+            rawText: '{"type":"action","action":"check"}',
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            latencyMs: 1,
+            providerRequestId: null,
+          };
+        },
+      };
+      const pending = runModelDecision({
+        provider,
+        request,
+        validateAction: () => ({ action: "check" }),
+        fallbackAction: () => ({ action: "fold" }),
+      }, { ...config, infrastructureRetryDelaysMs: [2_000, 8_000] });
+
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(attempts).toBe(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(attempts).toBe(2);
+      await vi.advanceTimersByTimeAsync(7_999);
+      expect(attempts).toBe(2);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toMatchObject({ status: "ACTION" });
+      expect(attempts).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("pauses instead of taking chips after exhausted infrastructure retries", async () => {

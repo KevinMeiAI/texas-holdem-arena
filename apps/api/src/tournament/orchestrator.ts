@@ -61,6 +61,7 @@ export interface OrchestratorDependencies {
 
 const defaultDecisionConfig: DecisionRunnerConfig = {
   maxInfrastructureAttempts: 3,
+  infrastructureRetryDelaysMs: [2_000, 8_000],
   history: { maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 },
 };
 
@@ -313,7 +314,7 @@ export class TournamentOrchestrator {
       systemPrompt: runtime.effectivePrompt.text,
       systemPromptHash: runtime.effectivePrompt.sha256,
       userPayload: context,
-      timeoutMs: 30_000,
+      timeoutMs: 90_000,
     };
     const decision = await runModelDecision({
       provider,

@@ -15,11 +15,16 @@ import { HistoryBudget, type HistoryQueryResult } from "./history-budget.js";
 
 export interface DecisionRunnerConfig {
   maxInfrastructureAttempts: number;
+  infrastructureRetryDelaysMs: readonly number[];
   history: {
     maxQueries: number;
     maxEventsPerQuery: number;
     maxApproxTokens: number;
   };
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 export interface DecisionRunnerInput {
@@ -97,6 +102,9 @@ export async function runModelDecision(
   if (!Number.isSafeInteger(config.maxInfrastructureAttempts) || config.maxInfrastructureAttempts < 1) {
     throw new Error("maxInfrastructureAttempts must be positive");
   }
+  if (config.infrastructureRetryDelaysMs.some((delay) => !Number.isSafeInteger(delay) || delay < 0)) {
+    throw new Error("infrastructureRetryDelaysMs must contain non-negative integers");
+  }
   const budget = new HistoryBudget(config.history);
   const historyResults: HistoryQueryResult[] = [];
   const calls: CallAudit[] = [];
@@ -151,6 +159,8 @@ export async function runModelDecision(
             calls,
           };
         }
+        const retryDelayMs = config.infrastructureRetryDelaysMs[infrastructureAttempt - 1] ?? 0;
+        if (retryDelayMs > 0) await wait(retryDelayMs);
       }
     }
 

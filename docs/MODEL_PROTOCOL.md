@@ -104,9 +104,12 @@ legal, otherwise `fold`. Invalid runout voting after correction means Run It
 Once.
 
 Infrastructure errors include timeouts, network failure, 429 and provider 5xx.
-They retry against the same decision request and state up to the frozen limit.
-Exhaustion pauses the tournament; it never spends a player's chips. Resume
-reclaims the same decision ID from the PostgreSQL outbox.
+Tournament decisions allow 90 seconds per attempt and retry against the same
+decision request and state at most three times, waiting 2 seconds after the
+first failure and 8 seconds after the second. Model preflight allows 60 seconds
+per check. Authentication and configuration errors still pause immediately;
+they are not retried. Exhaustion pauses the tournament; it never spends a
+player's chips. Resume reclaims the same decision ID from the PostgreSQL outbox.
 
 ## Provider transports
 
