@@ -60,6 +60,7 @@ export interface OrchestratorRuntime {
   seedCommitment: string;
   seedRevealed: boolean;
   pendingDecisionId: string | null;
+  decisionTimeoutMs: number;
   decisionConfig?: DecisionRunnerConfig;
 }
 
@@ -207,6 +208,7 @@ export class TournamentOrchestrator {
       seedCommitment: seedCommitment(masterSeed, tournamentId, setup.rulesetVersion),
       seedRevealed: false,
       pendingDecisionId: null,
+      decisionTimeoutMs: ARENA_DECISION_TIMEOUT_MS,
       decisionConfig: jsonSafe(this.#decisionConfig),
     };
     await this.#store.createTournament({
@@ -232,6 +234,7 @@ export class TournamentOrchestrator {
         promptVersion: effectivePrompt.version,
         outputSchemaVersion: effectiveOutputSchema.version,
         outputSchemaHash: effectiveOutputSchema.sha256,
+        decisionTimeoutMs: ARENA_DECISION_TIMEOUT_MS,
         rulesetVersion: setup.rulesetVersion,
         modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
           .map(([playerId, config]) => [playerId, modelConfigHash(config)])),
@@ -248,7 +251,12 @@ export class TournamentOrchestrator {
       () => { throw new Error("Tournament has no recovery snapshot"); },
       () => { throw new Error("Orchestrator snapshots must accompany every authoritative append"); },
     );
-    return recovered.state;
+    return {
+      ...recovered.state,
+      // Snapshots created before decisionTimeoutMs became explicit inherit the
+      // current Arena operational limit without mutating frozen model inputs.
+      decisionTimeoutMs: recovered.state.decisionTimeoutMs ?? ARENA_DECISION_TIMEOUT_MS,
+    };
   }
 
   async resume(runtime: OrchestratorRuntime): Promise<OrchestratorRuntime> {
@@ -259,6 +267,7 @@ export class TournamentOrchestrator {
       { ...runtime, operationalStatus: "RUNNING" },
       [publicArenaEvent("TOURNAMENT_RESUMED", {
         decisionId: runtime.pendingDecisionId,
+        decisionTimeoutMs: runtime.decisionTimeoutMs,
       })],
       {},
     );
@@ -346,7 +355,7 @@ export class TournamentOrchestrator {
       // legal-action keys whose values are undefined. Normalize once here so the
       // encrypted audit record is byte-for-byte representative of that request.
       userPayload: jsonSafe(context),
-      timeoutMs: runtime.frozenModelConfigByPlayer?.[claimed.playerId]?.timeoutMs ?? ARENA_DECISION_TIMEOUT_MS,
+      timeoutMs: runtime.decisionTimeoutMs ?? ARENA_DECISION_TIMEOUT_MS,
     };
     const resumeState = await this.#store.loadDecisionResumeState<DecisionResumeState>(claimed.id);
     const frozenModelConfig = runtime.frozenModelConfigByPlayer?.[claimed.playerId];

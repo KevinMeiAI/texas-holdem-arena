@@ -204,6 +204,7 @@ describePostgres("persisted model tournament orchestration", () => {
       expect(runtime).toMatchObject({
         operationalStatus: "PAUSED_INFRA",
         pendingDecisionId: originalDecision,
+        decisionTimeoutMs: ARENA_DECISION_TIMEOUT_MS,
       });
       expect(runtime.domain.currentHand?.players.map((player) => player.stack)).toEqual(originalStacks);
 
