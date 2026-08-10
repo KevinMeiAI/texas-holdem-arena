@@ -131,6 +131,12 @@ export async function registerTournamentRoutes(
     const events = await context.arena.projectedEvents(request.params.id, "SPECTATOR_REPLAY");
     return { points: stackHistoryFromEvents(events) };
   });
+  app.get<{ Params: { id: string } }>("/api/public/tournaments/:id/statistics", async (request, reply) => {
+    const statistics = await context.arena.tournamentStatistics(request.params.id);
+    return statistics
+      ? { statistics }
+      : reply.code(404).send({ error: "tournament_not_found" });
+  });
   app.get<{ Params: { id: string; handNo: string } }>(
     "/api/public/tournaments/:id/hands/:handNo/replay",
     async (request, reply) => {
@@ -149,7 +155,10 @@ export async function registerTournamentRoutes(
       };
     },
   );
-  app.get("/api/public/leaderboard", async () => ({ leaderboard: await context.arena.leaderboard() }));
+  app.get("/api/public/leaderboard", async () => {
+    const leaderboards = await context.arena.leaderboard();
+    return { leaderboard: leaderboards.competition, ...leaderboards };
+  });
   app.get<{ Params: { id: string } }>("/api/public/tournaments/:id/fairness", async (request) => (
     context.arena.fairness(request.params.id)
   ));

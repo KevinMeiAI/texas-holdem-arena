@@ -11,6 +11,14 @@ import {
   type OperationalStatus,
   type OrchestratorRuntime,
 } from "./orchestrator.js";
+import {
+  buildArenaLeaderboards,
+  calculateTournamentStatistics,
+  type ArenaLeaderboards,
+  type StatisticsTournamentState,
+  type TournamentStatistics,
+  type TournamentStatisticsComputation,
+} from "./statistics.js";
 
 export interface CreateArenaTournamentInput {
   name: string;
@@ -33,6 +41,7 @@ const delay = (milliseconds: number) => new Promise<void>((resolve) => setTimeou
 
 export class ArenaService {
   readonly #records = new Map<string, ActiveArena>();
+  readonly #statisticsCache = new Map<string, TournamentStatisticsComputation>();
   readonly #store: PgEventStore;
   #stopping = false;
 
@@ -222,43 +231,27 @@ export class ArenaService {
       .map((item) => projectArenaEvent(item, { role, completedHandNos }));
   }
 
-  async leaderboard(): Promise<unknown[]> {
-    const result = await this.pool.query<{ public_state: {
-      status?: string;
-      championPlayerId?: string | null;
-      players?: { id: string; displayName: string; finishingPosition: number | null }[];
-    } }>("select public_state from tournaments where status = 'COMPLETED'");
-    const entries = new Map<string, {
-      modelId: string;
-      displayName: string;
-      tournaments: number;
-      championships: number;
-      finishTotal: number;
-    }>();
-    for (const row of result.rows) {
-      for (const player of row.public_state.players ?? []) {
-        if (!player.finishingPosition) continue;
-        const entry = entries.get(player.id) ?? {
-          modelId: player.id,
-          displayName: player.displayName,
-          tournaments: 0,
-          championships: 0,
-          finishTotal: 0,
-        };
-        entry.tournaments += 1;
-        entry.finishTotal += player.finishingPosition;
-        if (row.public_state.championPlayerId === player.id) entry.championships += 1;
-        entries.set(player.id, entry);
-      }
-    }
-    return [...entries.values()].map((entry) => ({
-      ...entry,
-      championshipRate: entry.championships / entry.tournaments,
-      averageFinish: entry.finishTotal / entry.tournaments,
-      sampleWarning: entry.tournaments < 10,
-    })).sort((left, right) => (
-      right.championshipRate - left.championshipRate || left.averageFinish - right.averageFinish
-    ));
+  async tournamentStatistics(tournamentId: string): Promise<TournamentStatistics | null> {
+    const state = await this.publicState(tournamentId);
+    if (!state) return null;
+    return (await this.#calculateStatistics(tournamentId, state)).statistics;
+  }
+
+  async leaderboard(): Promise<ArenaLeaderboards> {
+    const result = await this.pool.query<{
+      id: string;
+      public_state: unknown;
+      created_at: Date;
+    }>("select id, public_state, created_at from tournaments where status = 'COMPLETED' order by created_at");
+    const completed = await Promise.all(result.rows.map(async (row) => {
+      const calculation = await this.#calculateStatistics(row.id, row.public_state);
+      return {
+        createdAt: row.created_at.toISOString(),
+        statistics: calculation.statistics,
+        internals: calculation.internals,
+      };
+    }));
+    return buildArenaLeaderboards(completed);
   }
 
   async fairness(tournamentId: string): Promise<unknown> {
@@ -278,6 +271,19 @@ export class ArenaService {
       [tournamentId],
     );
     return result.rows[0] ? Number(result.rows[0].sequence) : null;
+  }
+
+  async #calculateStatistics(tournamentId: string, rawState: unknown): Promise<TournamentStatisticsComputation> {
+    const state = rawState as StatisticsTournamentState & { status?: string };
+    if (!state || !Array.isArray(state.players) || typeof state.completedHands !== "number") {
+      throw new Error(`Tournament public state is unavailable for statistics: ${tournamentId}`);
+    }
+    const cached = this.#statisticsCache.get(tournamentId);
+    if (cached && state.status === "COMPLETED") return cached;
+    const events = await this.projectedEvents(tournamentId, "SPECTATOR_REPLAY");
+    const calculation = calculateTournamentStatistics(state, events);
+    if (state.status === "COMPLETED") this.#statisticsCache.set(tournamentId, calculation);
+    return calculation;
   }
 
   async #providers(modelIds: readonly string[]): Promise<Map<string, ModelProvider>> {
