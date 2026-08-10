@@ -137,4 +137,19 @@ describe("tournament statistics", () => {
 
     expect(boards.competition.find((entry) => entry.modelId === "a")?.displayName).toBe("Alpha Prime");
   });
+
+  it("can skip expensive all-in equity without changing leaderboard inputs", () => {
+    const full = calculateTournamentStatistics(state, events).statistics.players.find((player) => player.playerId === "a")!;
+    const light = calculateTournamentStatistics(state, events, { includeAllInEquity: false })
+      .statistics.players.find((player) => player.playerId === "a")!;
+
+    expect(light.allInHands).toBe(0);
+    expect(light).toMatchObject({
+      handsPlayed: full.handsPlayed,
+      vpipHands: full.vpipHands,
+      pfrHands: full.pfrHands,
+      decisions: full.decisions,
+      totalTokens: full.totalTokens,
+    });
+  });
 });

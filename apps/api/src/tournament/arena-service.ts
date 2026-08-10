@@ -245,7 +245,7 @@ export class ArenaService {
       created_at: Date;
     }>("select id, public_state, created_at from tournaments where status = 'COMPLETED' order by created_at");
     const completed = await Promise.all(result.rows.map(async (row) => {
-      const calculation = await this.#calculateStatistics(row.id, row.public_state);
+      const calculation = await this.#calculateStatistics(row.id, row.public_state, false);
       return {
         createdAt: row.created_at.toISOString(),
         statistics: calculation.statistics,
@@ -274,22 +274,26 @@ export class ArenaService {
     return result.rows[0] ? Number(result.rows[0].sequence) : null;
   }
 
-  async #calculateStatistics(tournamentId: string, rawState: unknown): Promise<TournamentStatisticsComputation> {
+  async #calculateStatistics(
+    tournamentId: string,
+    rawState: unknown,
+    includeAllInEquity = true,
+  ): Promise<TournamentStatisticsComputation> {
     const state = rawState as StatisticsTournamentState & { status?: string };
     if (!state || !Array.isArray(state.players) || typeof state.completedHands !== "number") {
       throw new Error(`Tournament public state is unavailable for statistics: ${tournamentId}`);
     }
-    const cached = this.#statisticsCache.get(tournamentId);
+    const cached = includeAllInEquity ? this.#statisticsCache.get(tournamentId) : null;
     if (cached && state.status === "COMPLETED") return cached;
-    const pending = this.#statisticsPending.get(tournamentId);
+    const pending = includeAllInEquity ? this.#statisticsPending.get(tournamentId) : null;
     if (pending && state.status === "COMPLETED") return pending;
     const calculate = async () => {
       const events = await this.projectedEvents(tournamentId, "SPECTATOR_REPLAY");
-      const calculation = calculateTournamentStatistics(state, events);
-      if (state.status === "COMPLETED") this.#statisticsCache.set(tournamentId, calculation);
+      const calculation = calculateTournamentStatistics(state, events, { includeAllInEquity });
+      if (state.status === "COMPLETED" && includeAllInEquity) this.#statisticsCache.set(tournamentId, calculation);
       return calculation;
     };
-    if (state.status !== "COMPLETED") return calculate();
+    if (state.status !== "COMPLETED" || !includeAllInEquity) return calculate();
     const calculation = calculate();
     this.#statisticsPending.set(tournamentId, calculation);
     try {

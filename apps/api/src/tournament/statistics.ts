@@ -95,6 +95,10 @@ export interface TournamentStatisticsComputation {
   internals: Record<string, { latencySamplesMs: number[] }>;
 }
 
+export interface TournamentStatisticsOptions {
+  includeAllInEquity?: boolean;
+}
+
 interface MutablePlayerStatistics extends TournamentPlayerStatistics {
   latencySamplesMs: number[];
   knownUsageCalls: number;
@@ -444,6 +448,7 @@ function emptyPlayer(player: StatisticsPlayerState, initialStack: number): Mutab
 export function calculateTournamentStatistics(
   state: StatisticsTournamentState,
   events: readonly StatisticsEvent[],
+  options: TournamentStatisticsOptions = {},
 ): TournamentStatisticsComputation {
   const ordered = [...events].sort((left, right) => left.sequence - right.sequence);
   const grouped = new Map<number, StatisticsEvent[]>();
@@ -537,7 +542,9 @@ export function calculateTournamentStatistics(
       }
     }
 
-    const equity = allInEquity(handNo, handEvents, startingStacks, seats);
+    const equity = options.includeAllInEquity === false
+      ? null
+      : allInEquity(handNo, handEvents, startingStacks, seats);
     for (const playerId of participants) {
       const metric = metrics.get(playerId);
       if (!metric) continue;
