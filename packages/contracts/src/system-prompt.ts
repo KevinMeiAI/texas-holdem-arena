@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const ARENA_PROMPT_VERSION = "arena-system-v8";
+export const ARENA_PROMPT_VERSION = "arena-system-v10";
 
 const LOCKED_PREFIX = `You are a player in a single-table no-limit Texas Hold'em tournament between AI models.
 Your sole objective is to finish as the champion. The deterministic Arena engine is the only rules authority.
@@ -13,15 +13,12 @@ The positions object is authoritative: position is one of BTN/SB, BTN, SB, BB, U
 const LOCKED_SUFFIX = `Return exactly one JSON object and no Markdown or surrounding text.
 Every output field shown below is required. Use null for a field that does not apply; never omit it.
 For a poker decision, return either {"type":"action","action":"fold|check|call|bet|raise|all_in","amount_to":null,"decision_summary":"brief <=300 chars or null","query":null} or one history_query. For fold/check/call/all_in, amount_to must be null because the engine computes the paid amount. For bet/raise, amount_to must instead be an integer.
-For bet/raise, amount_to means your cumulative contribution on the current street after acting. The legal_actions object is authoritative.
-Before acting, you may request public history from completed earlier hands by returning exactly one of these valid example shapes:
-{"type":"history_query","action":null,"amount_to":null,"decision_summary":null,"query":{"kind":"hand","hand_no":12,"limit":80}}
-{"type":"history_query","action":null,"amount_to":null,"decision_summary":null,"query":{"kind":"recent_hands","count":3,"limit":80}}
-{"type":"history_query","action":null,"amount_to":null,"decision_summary":null,"query":{"kind":"player_actions","player_id":"player id from arena_state","streets":["FLOP","TURN"],"actions":["bet","raise","all_in"],"limit":40}}
-{"type":"history_query","action":null,"amount_to":null,"decision_summary":null,"query":{"kind":"public_stats","player_id":"player id from arena_state or null","limit":40}}
+For bet/raise, amount_to means your cumulative contribution on the current street after acting.
+Before acting, you may request public history from completed earlier hands with {"type":"history_query","action":null,"amount_to":null,"decision_summary":null,"query":QUERY}. QUERY must be exactly one of:
+{"kind":"hand","hand_no":12,"limit":80}; {"kind":"recent_hands","count":3,"limit":80}; {"kind":"player_actions","player_id":"player id from arena_state","streets":["FLOP","TURN"],"actions":["bet","raise","all_in"],"limit":40}; {"kind":"public_stats","player_id":"player id from arena_state or null","limit":40}.
 hand_no must be a positive earlier hand number; count is 1..20; limit is 1..80. For player_actions, streets and actions must be arrays or null. For public_stats, player_id must be a player id or null.
-A history query does not take a poker action. Its public results arrive in history_results on the next request with the same arena_state. Respect history_budget_remaining, never query the current or a future hand, and eventually return an action.
-Never add unknown fields. Invalid output receives one correction; a second protocol failure becomes check when legal, otherwise fold. Infrastructure failures pause the tournament instead of choosing an action.`;
+A history query does not take a poker action. Its normalized public records arrive in history_results on the next request with the same arena_state. Respect the single authoritative history_budget_remaining object, completeness/truncation flags, and sample warnings; never query the current or a future hand, and eventually return an action.
+Never add unknown fields. Invalid output receives one correction; a second protocol failure becomes check when legal, otherwise fold.`;
 
 export interface EffectiveSystemPrompt {
   version: string;

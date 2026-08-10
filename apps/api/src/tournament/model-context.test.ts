@@ -29,7 +29,7 @@ describe("model-self context projection", () => {
     const hand = state.currentHand!;
     const heroCodes = hand.players.find((player) => player.id === "hero")!.holeCards.map(cardCode);
     const villainCodes = hand.players.find((player) => player.id === "villain")!.holeCards.map(cardCode);
-    const budget = new HistoryBudget({ maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 });
+    const budget = new HistoryBudget({ maxQueries: 2, maxRecordsPerQuery: 80, maxApproxTokens: 4_000 });
     const serialized = JSON.stringify(buildModelContext({
       tournamentId: "11111111-1111-4111-8111-111111111111",
       rulesetVersion: "arena-rules-v1",
@@ -62,7 +62,7 @@ describe("model-self context projection", () => {
       state,
       playerId: "hero",
       currentHandEvents: [],
-      historyBudget: new HistoryBudget({ maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 }).state,
+      historyBudget: new HistoryBudget({ maxQueries: 2, maxRecordsPerQuery: 80, maxApproxTokens: 4_000 }).state,
     }) as { schema_version: string; positions: Record<string, unknown> };
     expect(context.schema_version).toBe("model-context-v3");
     expect(context.positions).toMatchObject({
@@ -112,7 +112,7 @@ describe("model-self context projection", () => {
       state,
       playerId: "villain",
       currentHandEvents,
-      historyBudget: new HistoryBudget({ maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 }).state,
+      historyBudget: new HistoryBudget({ maxQueries: 2, maxRecordsPerQuery: 80, maxApproxTokens: 4_000 }).state,
     }) as {
       schema_version: string;
       tournament: Record<string, unknown>;
@@ -120,6 +120,7 @@ describe("model-self context projection", () => {
       betting: Record<string, unknown>;
       action_history: Record<string, unknown>[];
       current_hand_events?: unknown;
+      history_budget?: unknown;
     };
     expect(context.schema_version).toBe("model-context-v3");
     expect(context.tournament).toMatchObject({
@@ -148,6 +149,7 @@ describe("model-self context projection", () => {
       stack_after: 990,
     });
     expect(context.current_hand_events).toBeUndefined();
+    expect(context.history_budget).toBeUndefined();
     expect(JSON.stringify(context)).not.toContain("eventHash");
     expect(JSON.stringify(context)).not.toContain("createdAt");
   });
@@ -169,7 +171,7 @@ describe("model-self context projection", () => {
       state,
       playerId: "hero",
       currentHandEvents: [],
-      historyBudget: new HistoryBudget({ maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 }).state,
+      historyBudget: new HistoryBudget({ maxQueries: 2, maxRecordsPerQuery: 80, maxApproxTokens: 4_000 }).state,
     }) as { schema_version: string; positions: unknown };
     expect(context).toMatchObject({
       schema_version: "model-context-v1",
@@ -199,7 +201,7 @@ describe("model-self context projection", () => {
       state,
       playerId: "hijack",
       currentHandEvents: [],
-      historyBudget: new HistoryBudget({ maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 }).state,
+      historyBudget: new HistoryBudget({ maxQueries: 2, maxRecordsPerQuery: 80, maxApproxTokens: 4_000 }).state,
     }) as { positions: {
       dead_button: boolean;
       hero_position: string;
@@ -222,7 +224,7 @@ describe("model-self context projection", () => {
   });
 
   it("produces complete position labels and action orders for every 2-9 seat combination", () => {
-    const budget = new HistoryBudget({ maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 }).state;
+    const budget = new HistoryBudget({ maxQueries: 2, maxRecordsPerQuery: 80, maxApproxTokens: 4_000 }).state;
     for (let seatCount = 2; seatCount <= 9; seatCount += 1) {
       const seats = Array.from({ length: seatCount }, (_, seat) => seat);
       for (const activeSeats of seatSubsets(seats)) {

@@ -49,6 +49,7 @@ export function handEventToArenaEvent(handNo: number, event: HandEvent): NewAren
     return publicEvent(event.type, handNo, {
       street: event.street,
       command: event.command,
+      classification: event.classification,
       paid: event.paid,
       amountTo: event.amountTo,
     }, event.playerId);

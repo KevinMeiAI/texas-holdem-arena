@@ -94,12 +94,19 @@ function preflightRequest(expectedOutput: ExpectedModelOutput): CanonicalModelRe
     systemPrompt: prompt.text,
     systemPromptHash: prompt.sha256,
     userPayload: {
-      schema_version: "arena-preflight-v1",
-      preflight: true,
-      phase: "FLOP",
-      hero: { player_id: "preflight-player", stack: 1_000, hole_cards: ["As", "Kh"] },
-      legal_actions: { check: true },
-      history_budget: { remaining_queries: 0 },
+      arena_state: {
+        schema_version: "arena-preflight-v2",
+        preflight: true,
+        phase: "FLOP",
+        hero: { player_id: "preflight-player", stack: 1_000, hole_cards: ["As", "Kh"] },
+        legal_actions: { check: true },
+      },
+      history_results: [],
+      history_budget_remaining: {
+        queries: 0,
+        approximate_tokens: 0,
+        max_records_per_query: 80,
+      },
     },
     timeoutMs: 60_000,
   };

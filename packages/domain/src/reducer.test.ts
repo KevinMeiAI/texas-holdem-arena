@@ -54,6 +54,27 @@ describe("pure hand reducer", () => {
     ]);
   });
 
+  it("records engine-resolved all-in classification independently of the model label", () => {
+    let { state } = startHand({
+      handNo: 1,
+      seatCount: 2,
+      players: [{ id: "a", seat: 0, stack: 10 }, { id: "b", seat: 1, stack: 100 }],
+      positions: initialPositions(0, [0, 1], 2),
+      smallBlind: 5,
+      bigBlind: 10,
+      bigBlindAnte: 0,
+      deck: createDeck(),
+    });
+    const transition = reduceHand(state, { type: "ACTION", playerId: "a", action: { action: "call" } });
+    state = transition.state;
+    expect(state.players.find((player) => player.id === "a")?.allIn).toBe(true);
+    expect(transition.events).toContainEqual(expect.objectContaining({
+      type: "ACTION_APPLIED",
+      command: { action: "call" },
+      classification: "call",
+    }));
+  });
+
   it("keeps BBA dead money in the main pot and out of side-pot eligibility", () => {
     let { state } = startHand({
       handNo: 1,

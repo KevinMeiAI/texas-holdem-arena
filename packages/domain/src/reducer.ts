@@ -78,7 +78,7 @@ export type HandEvent =
   | { type: "FORCED_BET_POSTED"; playerId: string; kind: "SMALL_BLIND" | "BIG_BLIND" | "BIG_BLIND_ANTE"; amount: number; live: boolean }
   | { type: "HOLE_CARDS_DEALT"; playerId: string; cards: [Card, Card] }
   | { type: "BETTING_ROUND_STARTED"; street: Street; actorId: string; currentBet: number }
-  | { type: "ACTION_APPLIED"; street: Street; playerId: string; command: ActionCommand; paid: number; amountTo: number }
+  | { type: "ACTION_APPLIED"; street: Street; playerId: string; command: ActionCommand; classification: "fold" | "check" | "call" | "bet" | "raise" | "short_raise"; paid: number; amountTo: number }
   | { type: "STREET_DEALT"; boardIndex: number; street: Exclude<Street, "PREFLOP">; burn: Card; cards: Card[] }
   | { type: "SHOWDOWN_REVEALED"; players: { playerId: string; cards: [Card, Card] }[] }
   | { type: "UNCALLED_BET_RETURNED"; playerId: string; amount: number }
@@ -443,11 +443,15 @@ export function reduceHand(state: HandState, command: HandCommand): HandTransiti
   if (command.action.action === "all_in" && !available.allIn) {
     throw new Error("All-in classification is missing");
   }
+  const classification = command.action.action === "all_in"
+    ? available.allIn!.classification
+    : command.action.action;
   events.push({
     type: "ACTION_APPLIED",
     street: before.street,
     playerId: command.playerId,
     command: command.action,
+    classification,
     paid,
     amountTo,
   });

@@ -118,7 +118,15 @@ describePostgres("PostgreSQL authoritative event store", () => {
         actions: ["check"],
         limit: 10,
       })).toEqual([
-        expect.objectContaining({ type: "ACTION_APPLIED", actorId: "p1", handNo: 1 }),
+        expect.objectContaining({
+          kind: "contextual_player_action",
+          player_id: "p1",
+          hand_no: 1,
+          action: "check",
+          classification: "check",
+          board_before_action: [],
+          pot_before_action: 0,
+        }),
       ]);
       await expect(history.execute(tournamentId, 1, {
         kind: "hand",

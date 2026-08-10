@@ -17,7 +17,7 @@ export interface DecisionRunnerConfig {
   infrastructureRetryDelaysMs: readonly number[];
   history: {
     maxQueries: number;
-    maxEventsPerQuery: number;
+    maxRecordsPerQuery: number;
     maxApproxTokens: number;
   };
 }
@@ -75,6 +75,7 @@ function withFeedback(
       history_budget_remaining: {
         queries: budget.state.maxQueries - budget.state.usedQueries,
         approximate_tokens: budget.state.maxApproxTokens - budget.state.usedApproxTokens,
+        max_records_per_query: budget.state.maxRecordsPerQuery,
       },
       ...(correction ? {
         protocol_correction: {
@@ -159,8 +160,8 @@ export async function runModelDecision(
       if (!decision) throw new ProviderCallError("INVALID_RESPONSE", correction ?? "Invalid model response", false);
       if (decision.parsed.type === "history_query") {
         if (!input.executeHistoryQuery) throw new Error("History queries are not available");
-        const events = await input.executeHistoryQuery(decision.parsed.query);
-        historyResults.push(budget.consume(decision.parsed.query, events));
+        const records = await input.executeHistoryQuery(decision.parsed.query);
+        historyResults.push(budget.consume(decision.parsed.query, records));
         correction = null;
         continue;
       }

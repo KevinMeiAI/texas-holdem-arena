@@ -20,7 +20,7 @@ const request: CanonicalModelRequest = {
 const config = {
   maxInfrastructureAttempts: 3,
   infrastructureRetryDelaysMs: [0, 0],
-  history: { maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 },
+  history: { maxQueries: 2, maxRecordsPerQuery: 80, maxApproxTokens: 4_000 },
 };
 
 describe("uniform model decision policy", () => {
@@ -106,13 +106,13 @@ describe("uniform model decision policy", () => {
     expect(payloads[0]).toMatchObject({
       arena_state: request.userPayload,
       history_results: [],
-      history_budget_remaining: { queries: 2, approximate_tokens: 4_000 },
+      history_budget_remaining: { queries: 2, approximate_tokens: 4_000, max_records_per_query: 80 },
     });
     expect(payloads[1]).toMatchObject({
       arena_state: request.userPayload,
       history_results: [{
         query: { kind: "recent_hands", count: 1, limit: 10 },
-        events: [{ handNo: 1, type: "ACTION_APPLIED" }],
+        records: [{ handNo: 1, type: "ACTION_APPLIED" }],
       }],
       history_budget_remaining: { queries: 1 },
     });

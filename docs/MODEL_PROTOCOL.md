@@ -1,4 +1,4 @@
-# Model protocol v8
+# Model protocol v10
 
 Every seat receives the same effective system prompt bytes. The effective prompt
 contains only the locked Arena rules prefix and locked output protocol. It has no
@@ -83,9 +83,18 @@ Before taking an action, a model may request completed-hand public history:
 ```
 
 Supported kinds are `player_actions`, `hand`, `recent_hands` and
-`public_stats`. Defaults are at most two queries per decision, 80 events per
-query and about 4,000 cumulative input tokens. SQL results are deterministic and
-contain only public events from hands strictly earlier than the current hand.
+`public_stats`. Defaults are at most two queries per decision, 80 normalized
+records per query and about 4,000 cumulative input tokens. Results are
+deterministic and contain only public information from hands strictly earlier
+than the current hand.
+
+`hand` and `recent_hands` return normalized hand summaries with explicit
+completion and action-truncation metadata while retaining board, showdown and
+result information; recent hands are wrapped with requested and returned hand
+counts. `player_actions` returns contextual actions with the board,
+pot and prior street actions. `public_stats` reports sample sizes, VPIP/PFR,
+street classifications, facing-bet decisions and separate all-in call/aggression
+counts. Legacy all-ins without an engine classification are marked unknown.
 
 The complete query JSON shapes are part of the locked system prompt. A query is
 not a poker action: the engine executes it and calls the same model again with

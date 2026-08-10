@@ -63,7 +63,7 @@ export interface OrchestratorDependencies {
 const defaultDecisionConfig: DecisionRunnerConfig = {
   maxInfrastructureAttempts: 3,
   infrastructureRetryDelaysMs: [2_000, 8_000],
-  history: { maxQueries: 2, maxEventsPerQuery: 80, maxApproxTokens: 4_000 },
+  history: { maxQueries: 2, maxRecordsPerQuery: 80, maxApproxTokens: 4_000 },
 };
 
 function jsonSafe<T>(value: T): T {

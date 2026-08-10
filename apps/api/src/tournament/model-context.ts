@@ -115,6 +115,7 @@ function compactActionHistory(
         street: stringValue(payload.street),
         player_id: playerId,
         action: stringValue(objectValue(payload.command).action),
+        classification: stringValue(payload.classification),
         paid,
         amount_to: numericValue(payload.amountTo),
         pot_after: pot,
@@ -338,6 +339,6 @@ export function buildModelContext(input: ModelContextInput): unknown {
     ...(professionalContext
       ? { action_history: compactActionHistory(input.state, input.currentHandEvents) }
       : { current_hand_events: input.currentHandEvents }),
-    history_budget: input.historyBudget,
+    ...(professionalContext ? {} : { history_budget: input.historyBudget }),
   };
 }
