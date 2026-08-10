@@ -69,7 +69,7 @@ describe("strict model protocol", () => {
     const first = buildEffectiveSystemPrompt();
     const second = buildEffectiveSystemPrompt();
     expect(first).toEqual(second);
-    expect(first.version).toBe("arena-system-v6");
+    expect(first.version).toBe("arena-system-v7");
     expect(first.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(first.text).not.toContain("SHARED STRATEGY PROMPT");
     expect(first.text).not.toContain("shared strategy");
@@ -77,6 +77,7 @@ describe("strict model protocol", () => {
     expect(first.text).toContain('"kind":"player_actions"');
     expect(first.text).toContain("history_budget_remaining");
     expect(first.text).toContain("dead_button");
+    expect(first.text).toContain("infer probabilistic opponent ranges");
     expect(first.text).toContain("For fold/check/call/all_in, amount_to must be null");
     expect(first.text).toContain(ARENA_PROMPT_VERSION);
   });

@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import {
   buildEffectiveSystemPrompt,
-  projectArenaEvent,
+  projectArenaEvents,
   tournamentEventToArenaEvents,
   type CanonicalModelRequest,
   type NewArenaEvent,
@@ -286,13 +286,14 @@ export class TournamentOrchestrator {
       loaded.filter((item) => item.event.type === "HAND_COMPLETED" && item.event.handNo !== null)
         .map((item) => item.event.handNo!),
     );
-    const currentHandEvents = loaded
-      .filter((item) => item.event.handNo === hand.handNo)
-      .map((item) => projectArenaEvent(item, {
+    const currentHandEvents = projectArenaEvents(
+      loaded.filter((item) => item.event.handNo === hand.handNo),
+      {
         role: "MODEL_SELF",
         playerId: claimed.playerId,
         completedHandNos,
-      }));
+      },
+    );
     const historyBudget = new HistoryBudget(this.#decisionConfig.history);
     const context = buildModelContext({
       tournamentId: runtime.tournamentId,

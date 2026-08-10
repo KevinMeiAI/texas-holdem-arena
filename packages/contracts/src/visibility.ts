@@ -49,3 +49,12 @@ export function projectArenaEvent(
     ? { ...base, privatePayload: loaded.privatePayload }
     : base;
 }
+
+export function projectArenaEvents(
+  loaded: readonly LoadedArenaEvent[],
+  request: ProjectionRequest,
+): ProjectedArenaEvent[] {
+  return loaded
+    .filter(({ event }) => request.role !== "MODEL_SELF" || event.type !== "MODEL_DECISION_RECORDED")
+    .map((item) => projectArenaEvent(item, request));
+}

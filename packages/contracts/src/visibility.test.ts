@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LoadedArenaEvent } from "./events.js";
-import { projectArenaEvent, type ProjectionRole } from "./visibility.js";
+import { projectArenaEvent, projectArenaEvents, type ProjectionRole } from "./visibility.js";
 
 const secretMarker = "FOLDED-HOLE-CARDS-AsAh";
 const loaded: LoadedArenaEvent = {
@@ -49,5 +49,38 @@ describe("role-separated event projections", () => {
 
   it("permits explicit administrator audit projection", () => {
     expect(JSON.stringify(projection("ADMIN_AUDIT"))).toContain(secretMarker);
+  });
+
+  it("keeps decision summaries out of live model inputs without hiding them from spectators", () => {
+    const decision: LoadedArenaEvent = {
+      event: {
+        ...loaded.event,
+        sequence: 5,
+        aggregateVersion: 5,
+        type: "MODEL_DECISION_RECORDED",
+        actorId: "p2",
+        publicPayload: {
+          playerId: "p2",
+          decisionSummary: "I am betting a hidden draw.",
+          providerMetrics: [{ latencyMs: 999, usage: { totalTokens: 123 } }],
+        },
+        encryptedPrivatePayload: null,
+        privateVisibility: "NONE",
+        privateOwnerId: null,
+        eventHash: "2".repeat(64),
+      },
+      privatePayload: undefined,
+    };
+    const modelEvents = projectArenaEvents([loaded, decision], {
+      role: "MODEL_SELF",
+      playerId: "p1",
+      completedHandNos: new Set(),
+    });
+    expect(modelEvents.map((event) => event.type)).not.toContain("MODEL_DECISION_RECORDED");
+    const spectatorEvents = projectArenaEvents([loaded, decision], {
+      role: "SPECTATOR_LIVE",
+      completedHandNos: new Set(),
+    });
+    expect(JSON.stringify(spectatorEvents)).toContain("I am betting a hidden draw.");
   });
 });

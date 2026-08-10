@@ -1,4 +1,4 @@
-# Model protocol v6
+# Model protocol v7
 
 Every seat receives the same effective system prompt bytes. The effective prompt
 contains only the locked Arena rules prefix and locked output protocol. It has no
