@@ -109,7 +109,7 @@ legal, otherwise `fold`. Invalid runout voting after correction means Run It
 Once.
 
 Infrastructure errors include timeouts, network failure, 429 and provider 5xx.
-Tournament decisions allow 90 seconds per attempt and retry against the same
+Tournament decisions allow 120 seconds per attempt and retry against the same
 decision request and state at most three times, waiting 2 seconds after the
 first failure and 8 seconds after the second. Model preflight allows 60 seconds
 per check. Authentication and configuration errors still pause immediately;

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { runMigrations } from "../../db/migrate.js";
+import { ARENA_DECISION_TIMEOUT_MS } from "../../apps/api/src/model-runtime.js";
 import { PgEventStore } from "../../apps/api/src/persistence/event-store.js";
 import { TournamentOrchestrator } from "../../apps/api/src/tournament/orchestrator.js";
 import { MockPolicyProvider } from "../../packages/providers/src/mock-scripted.js";
@@ -132,10 +133,12 @@ describePostgres("persisted model tournament orchestration", () => {
     const tournamentId = randomUUID();
     const store = new PgEventStore(pool!, Buffer.alloc(32, 42));
     let healthy = false;
+    const observedTimeouts: number[] = [];
     const flaky: ModelProvider = {
       kind: "mock-scripted",
       classifyError: (error) => error as ProviderCallError,
-      decide: async (): Promise<ProviderDecision> => {
+      decide: async (request): Promise<ProviderDecision> => {
+        observedTimeouts.push(request.timeoutMs);
         if (!healthy) throw new ProviderCallError("SERVER", "provider down", true, 503);
         return {
           parsed: { type: "action", action: "call" },
@@ -184,6 +187,7 @@ describePostgres("persisted model tournament orchestration", () => {
       expect(runtime.operationalStatus).toBe("RUNNING");
       expect(runtime.pendingDecisionId).not.toBe(originalDecision);
       expect(runtime.domain.currentHand?.players.find((player) => player.id === "alpha")?.folded).toBe(false);
+      expect(new Set(observedTimeouts)).toEqual(new Set([ARENA_DECISION_TIMEOUT_MS]));
     } finally {
       await pool!.query("delete from tournaments where id = $1", [tournamentId]);
     }

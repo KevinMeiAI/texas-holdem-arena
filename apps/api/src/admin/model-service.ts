@@ -10,6 +10,7 @@ import type {
 import { inspectOutputPolicy } from "../../../../packages/providers/src/output-policy.js";
 import { encryptedPayloadSchema } from "../../../../packages/contracts/src/events.js";
 import { decryptJson, encryptJson } from "../security/encryption.js";
+import { ARENA_DECISION_TIMEOUT_MS } from "../model-runtime.js";
 
 interface ProviderRow {
   id: string;
@@ -93,7 +94,7 @@ function publicModel(row: ModelRow) {
     providerDefaultOutputMode: row.default_output_mode,
     outputMode: row.output_mode,
     model: row.model_id,
-    timeoutMs: 90_000,
+    timeoutMs: ARENA_DECISION_TIMEOUT_MS,
     parameters: row.parameters,
   });
   return {
@@ -286,7 +287,7 @@ export class ModelConfigService {
       model: row.model_id,
       ...(typeof apiKey === "string" ? { apiKey } : {}),
       ...(row.base_url ? { baseUrl: row.base_url } : {}),
-      timeoutMs: 90_000,
+      timeoutMs: ARENA_DECISION_TIMEOUT_MS,
       parameters: row.parameters,
     };
   }
@@ -313,7 +314,7 @@ export class ModelConfigService {
       model: modelId,
       ...(typeof apiKey === "string" ? { apiKey } : {}),
       ...(row.base_url ? { baseUrl: row.base_url } : {}),
-      timeoutMs: 90_000,
+      timeoutMs: ARENA_DECISION_TIMEOUT_MS,
       parameters,
     };
   }

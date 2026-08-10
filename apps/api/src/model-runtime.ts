@@ -1,0 +1,1 @@
+export const ARENA_DECISION_TIMEOUT_MS = 120_000;

@@ -11,6 +11,7 @@ import { cardCode, createDeck } from "../../../../packages/domain/src/cards.js";
 import { createTournament as createDomainTournament, reduceTournament, startTournamentHand, type TournamentConfig, type TournamentState, type TournamentTransition } from "../../../../packages/domain/src/tournament.js";
 import { deriveSeed, DeterministicRng, seedCommitment } from "../../../../packages/fairness/src/rng.js";
 import type { ModelProvider } from "../../../../packages/providers/src/provider.js";
+import { ARENA_DECISION_TIMEOUT_MS } from "../model-runtime.js";
 import {
   type AppendEventsInput,
   type PendingDecisionRequest,
@@ -314,7 +315,7 @@ export class TournamentOrchestrator {
       systemPrompt: runtime.effectivePrompt.text,
       systemPromptHash: runtime.effectivePrompt.sha256,
       userPayload: context,
-      timeoutMs: 90_000,
+      timeoutMs: ARENA_DECISION_TIMEOUT_MS,
     };
     const decision = await runModelDecision({
       provider,
