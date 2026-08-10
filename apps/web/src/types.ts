@@ -134,3 +134,8 @@ export interface HandSummary {
   eventCount: number;
   completed: boolean;
 }
+
+export interface StackHistoryPoint {
+  handNo: number;
+  stacks: Record<string, number>;
+}

@@ -29,6 +29,27 @@ const createTournamentSchema = z.object({
   ]),
 }).strict();
 
+interface StackHistoryPoint {
+  handNo: number;
+  stacks: Record<string, number>;
+}
+
+function stackHistoryFromEvents(events: Awaited<ReturnType<ArenaService["projectedEvents"]>>): StackHistoryPoint[] {
+  const current: Record<string, number> = {};
+  const points: StackHistoryPoint[] = [];
+  for (const event of [...events].sort((left, right) => left.sequence - right.sequence)) {
+    if (event.type !== "HAND_COMPLETED" || event.handNo === null) continue;
+    const payload = event.publicPayload as { result?: { stacks?: unknown } } | null;
+    const stacks = payload?.result?.stacks;
+    if (!stacks || typeof stacks !== "object" || Array.isArray(stacks)) continue;
+    for (const [playerId, value] of Object.entries(stacks)) {
+      if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) current[playerId] = value;
+    }
+    points.push({ handNo: event.handNo, stacks: { ...current } });
+  }
+  return points;
+}
+
 async function audit(
   pool: Pool,
   adminUserId: string,
@@ -102,6 +123,13 @@ export async function registerTournamentRoutes(
       hands.set(event.handNo, hand);
     }
     return { hands: [...hands.values()].sort((left, right) => left.handNo - right.handNo) };
+  });
+  app.get<{ Params: { id: string } }>("/api/public/tournaments/:id/stack-history", async (request, reply) => {
+    if (!(await context.arena.publicState(request.params.id))) {
+      return reply.code(404).send({ error: "tournament_not_found" });
+    }
+    const events = await context.arena.projectedEvents(request.params.id, "SPECTATOR_REPLAY");
+    return { points: stackHistoryFromEvents(events) };
   });
   app.get<{ Params: { id: string; handNo: string } }>(
     "/api/public/tournaments/:id/hands/:handNo/replay",

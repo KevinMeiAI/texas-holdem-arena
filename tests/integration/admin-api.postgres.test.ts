@@ -213,6 +213,21 @@ describePostgres("administrator auth and model configuration API", () => {
       const hands = handsResponse.json<{ hands: { handNo: number; completed: boolean }[] }>().hands;
       expect(hands.length).toBeGreaterThan(0);
       expect(hands.every((hand) => hand.completed)).toBe(true);
+      const stackHistoryResponse = await app.inject({
+        method: "GET",
+        url: `/api/public/tournaments/${tournamentId}/stack-history`,
+      });
+      expect(stackHistoryResponse.statusCode).toBe(200);
+      const stackPoints = stackHistoryResponse.json<{
+        points: { handNo: number; stacks: Record<string, number> }[];
+      }>().points;
+      expect(stackPoints).toHaveLength(hands.length);
+      expect(stackPoints.map((point) => point.handNo)).toEqual(hands.map((hand) => hand.handNo));
+      expect(stackPoints.at(-1)?.stacks).toMatchObject({
+        [modelId]: expect.any(Number),
+        [secondModelId]: expect.any(Number),
+      });
+      expect(Object.values(stackPoints.at(-1)?.stacks ?? {}).reduce((sum, stack) => sum + stack, 0)).toBe(200);
       const replay = await app.inject({
         method: "GET",
         url: `/api/public/tournaments/${tournamentId}/hands/${hands[0]!.handNo}/replay`,

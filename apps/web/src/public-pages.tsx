@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiRequest, useApiResource } from "./api";
+import { StackHistoryChart } from "./stack-history-chart";
 import {
   EmptyState,
   ErrorBlock,
@@ -20,6 +21,7 @@ import type {
   DecisionAuditTurn,
   HandSummary,
   LeaderboardEntry,
+  StackHistoryPoint,
   TournamentSummary,
 } from "./types";
 
@@ -179,6 +181,7 @@ export function ReplayPage() {
   const { id = "", handNo: routeHandNo } = useParams();
   const tournament = useApiResource<{ state: ArenaState }>(id ? `/api/public/tournaments/${id}` : null);
   const hands = useApiResource<{ hands: HandSummary[] }>(id ? `/api/public/tournaments/${id}/hands` : null);
+  const stackHistory = useApiResource<{ points: StackHistoryPoint[] }>(id ? `/api/public/tournaments/${id}/stack-history` : null);
   const handNo = Number(routeHandNo ?? hands.data?.hands.at(-1)?.handNo ?? 0);
   const replay = useApiResource<{
     events: ArenaEvent[];
@@ -201,6 +204,17 @@ export function ReplayPage() {
   return (
     <main className="page-shell replay-page">
       <SectionHeading title={state.name} aside={<div><StatusBadge status={state.status} /><p>第 {String(handNo).padStart(3, "0")} 手</p></div>} />
+      {state.status === "COMPLETED" && (
+        <section className="stack-history-panel" aria-labelledby="stack-history-heading">
+          <header className="stack-history-heading">
+            <div><h2 id="stack-history-heading">筹码走势</h2><p>每一手结算后的权威筹码快照</p></div>
+            <span><b>{stackHistory.data?.points.length ?? state.completedHands}</b> 手</span>
+          </header>
+          {stackHistory.loading ? <LoadingBlock label="正在绘制筹码走势" />
+            : stackHistory.error ? <ErrorBlock message={stackHistory.error} onRetry={() => void stackHistory.refresh()} />
+              : <StackHistoryChart players={state.players} points={stackHistory.data?.points ?? []} />}
+        </section>
+      )}
       <HandSelector hands={hands.data?.hands ?? []} activeHand={handNo} tournamentId={id} />
       {replay.loading ? <LoadingBlock /> : replay.error ? <ErrorBlock message={replay.error} /> : (
         <div className="replay-grid">
