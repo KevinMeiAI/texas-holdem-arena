@@ -42,6 +42,7 @@ const delay = (milliseconds: number) => new Promise<void>((resolve) => setTimeou
 export class ArenaService {
   readonly #records = new Map<string, ActiveArena>();
   readonly #statisticsCache = new Map<string, TournamentStatisticsComputation>();
+  readonly #statisticsPending = new Map<string, Promise<TournamentStatisticsComputation>>();
   readonly #store: PgEventStore;
   #stopping = false;
 
@@ -280,10 +281,22 @@ export class ArenaService {
     }
     const cached = this.#statisticsCache.get(tournamentId);
     if (cached && state.status === "COMPLETED") return cached;
-    const events = await this.projectedEvents(tournamentId, "SPECTATOR_REPLAY");
-    const calculation = calculateTournamentStatistics(state, events);
-    if (state.status === "COMPLETED") this.#statisticsCache.set(tournamentId, calculation);
-    return calculation;
+    const pending = this.#statisticsPending.get(tournamentId);
+    if (pending && state.status === "COMPLETED") return pending;
+    const calculate = async () => {
+      const events = await this.projectedEvents(tournamentId, "SPECTATOR_REPLAY");
+      const calculation = calculateTournamentStatistics(state, events);
+      if (state.status === "COMPLETED") this.#statisticsCache.set(tournamentId, calculation);
+      return calculation;
+    };
+    if (state.status !== "COMPLETED") return calculate();
+    const calculation = calculate();
+    this.#statisticsPending.set(tournamentId, calculation);
+    try {
+      return await calculation;
+    } finally {
+      this.#statisticsPending.delete(tournamentId);
+    }
   }
 
   async #providers(modelIds: readonly string[]): Promise<Map<string, ModelProvider>> {

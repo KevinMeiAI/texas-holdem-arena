@@ -121,4 +121,20 @@ describe("tournament statistics", () => {
     expect(boards.styles.find((entry) => entry.modelId === "a")?.profile).toBe("松凶");
     expect(boards.methodology.separation).toContain("never alter");
   });
+
+  it("uses the latest frozen display name for a persistent model identity", () => {
+    const result = calculateTournamentStatistics(state, events);
+    const renamed = {
+      ...result.statistics,
+      players: result.statistics.players.map((player) => (
+        player.playerId === "a" ? { ...player, displayName: "Alpha Prime" } : player
+      )),
+    };
+    const boards = buildArenaLeaderboards([
+      { createdAt: "2026-08-10T00:00:00.000Z", statistics: result.statistics, internals: result.internals },
+      { createdAt: "2026-08-11T00:00:00.000Z", statistics: renamed, internals: result.internals },
+    ]);
+
+    expect(boards.competition.find((entry) => entry.modelId === "a")?.displayName).toBe("Alpha Prime");
+  });
 });

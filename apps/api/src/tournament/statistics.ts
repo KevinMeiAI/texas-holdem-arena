@@ -825,7 +825,9 @@ export function buildArenaLeaderboards(records: readonly CompletedTournamentStat
   const chronological = [...records].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   for (const record of chronological) {
     for (const player of record.statistics.players) {
-      if (!entries.has(player.playerId)) entries.set(player.playerId, aggregateEntry(player.playerId, player.displayName));
+      const existing = entries.get(player.playerId);
+      if (existing) existing.displayName = player.displayName;
+      else entries.set(player.playerId, aggregateEntry(player.playerId, player.displayName));
     }
     const field = record.statistics.players.filter((player) => player.finishingPosition !== null);
     const priorRatings = new Map(field.map((player) => [player.playerId, entries.get(player.playerId)!.rating]));

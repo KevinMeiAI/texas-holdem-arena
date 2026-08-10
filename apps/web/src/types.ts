@@ -83,11 +83,67 @@ export interface TournamentSummary {
 export interface LeaderboardEntry {
   modelId: string;
   displayName: string;
+  rating: number;
+  points: number;
   tournaments: number;
   championships: number;
   championshipRate: number;
+  topThree: number;
+  topThreeRate: number;
   averageFinish: number;
   sampleWarning: boolean;
+}
+
+export interface ReliabilityLeaderboardEntry {
+  modelId: string;
+  displayName: string;
+  decisions: number;
+  validDecisionRate: number | null;
+  firstPassRate: number | null;
+  protocolCorrections: number;
+  fallbacks: number;
+  timeouts: number;
+  infrastructurePauses: number;
+  sampleWarning: boolean;
+}
+
+export interface EfficiencyLeaderboardEntry {
+  modelId: string;
+  displayName: string;
+  decisions: number;
+  providerCalls: number;
+  averageLatencyMs: number | null;
+  p95LatencyMs: number | null;
+  totalTokens: number | null;
+  tokensPerDecision: number | null;
+  tokenUsageCoverage: number;
+  sampleWarning: boolean;
+}
+
+export interface StyleProfileEntry {
+  modelId: string;
+  displayName: string;
+  handsPlayed: number;
+  vpipRate: number;
+  pfrRate: number;
+  threeBetRate: number;
+  showdownWinRate: number | null;
+  profile: "紧凶" | "紧稳" | "均衡" | "松凶" | "松稳";
+  sampleWarning: boolean;
+}
+
+export interface LeaderboardResponse {
+  leaderboard: LeaderboardEntry[];
+  competition: LeaderboardEntry[];
+  reliability: ReliabilityLeaderboardEntry[];
+  efficiency: EfficiencyLeaderboardEntry[];
+  styles: StyleProfileEntry[];
+  methodology: {
+    competition: string;
+    rating: string;
+    points: string;
+    separation: string;
+  };
 }
 
 export interface ProviderConnection {
@@ -138,4 +194,68 @@ export interface HandSummary {
 export interface StackHistoryPoint {
   handNo: number;
   stacks: Record<string, number>;
+}
+
+export interface TournamentPlayerStatistics {
+  playerId: string;
+  displayName: string;
+  seat: number;
+  finishingPosition: number | null;
+  knockouts: number;
+  handsPlayed: number;
+  potsWon: number;
+  chipLeadHands: number;
+  chipLeadRate: number;
+  peakStack: number;
+  peakStackBigBlinds: number;
+  lowestPositiveStackBigBlinds: number | null;
+  netBigBlinds: number;
+  vpipHands: number;
+  vpipRate: number;
+  pfrHands: number;
+  pfrRate: number;
+  threeBetHands: number;
+  threeBetRate: number;
+  showdownHands: number;
+  showdownWins: number;
+  showdownWinRate: number | null;
+  allInHands: number;
+  allInWins: number;
+  allInWinRate: number | null;
+  allInExpectedBigBlinds: number;
+  allInActualBigBlinds: number;
+  allInLuckBigBlinds: number;
+  allInEstimatedHands: number;
+  decisions: number;
+  validDecisions: number;
+  validDecisionRate: number | null;
+  firstPassDecisions: number;
+  firstPassRate: number | null;
+  providerCalls: number;
+  infrastructureRetries: number;
+  protocolCorrections: number;
+  timeouts: number;
+  fallbacks: number;
+  infrastructurePauses: number;
+  averageLatencyMs: number | null;
+  p95LatencyMs: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  tokenUsageCoverage: number;
+}
+
+export interface TournamentStatistics {
+  tournamentId: string;
+  completedHands: number;
+  initialStack: number;
+  totalChips: number;
+  players: TournamentPlayerStatistics[];
+  methodology: {
+    chipPerformance: string;
+    allInEquity: string;
+    validDecision: string;
+    firstPass: string;
+    monetaryCost: string;
+  };
 }
