@@ -563,7 +563,13 @@ button:disabled {
 .playing-card strong,
 .playing-card i {
   font-size: clamp(var(--text-base), 5vw, var(--text-xl));
-  line-height: 0.9;
+  line-height: 1;
+}
+
+.playing-card strong {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .playing-card i {
@@ -596,12 +602,15 @@ button:disabled {
 }
 
 .playing-card.compact {
-  width: 2.5rem;
+  width: 2.75rem;
 }
 
-.playing-card.compact strong,
+.playing-card.compact strong {
+  font-size: var(--text-md);
+}
+
 .playing-card.compact i {
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
 }
 
 .pot-display {
