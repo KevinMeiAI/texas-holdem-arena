@@ -1,5 +1,6 @@
 import { buildModelUserPrompt, type CanonicalModelRequest } from "../../contracts/src/index.js";
 import { finiteToken, postJson, requiredString } from "./http.js";
+import { resolveOutputPolicy } from "./output-policy.js";
 import { classifyProviderError, parseProviderOutput, ProviderCallError, type FrozenModelConfig, type ModelProvider, type ProviderDecision } from "./provider.js";
 
 export class GoogleGeminiProvider implements ModelProvider {
@@ -11,6 +12,15 @@ export class GoogleGeminiProvider implements ModelProvider {
 
   async decide(request: CanonicalModelRequest): Promise<ProviderDecision> {
     if (!this.config.apiKey) throw new ProviderCallError("CONFIG", "Gemini API key is required", false);
+    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput);
+    const structuredConfig = outputPolicy.effectiveMode === "json_schema"
+      ? {
+          responseMimeType: "application/json",
+          responseSchema: outputPolicy.schema!.schema,
+        }
+      : outputPolicy.effectiveMode === "json_object"
+        ? { responseMimeType: "application/json" }
+        : {};
     const started = Date.now();
     const base = (this.config.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, "");
     const response = await postJson(
@@ -19,7 +29,7 @@ export class GoogleGeminiProvider implements ModelProvider {
       {
         systemInstruction: { parts: [{ text: request.systemPrompt }] },
         contents: [{ role: "user", parts: [{ text: buildModelUserPrompt(request.userPayload) }] }],
-        generationConfig: { ...this.config.parameters, responseMimeType: "application/json" },
+        generationConfig: { ...this.config.parameters, ...structuredConfig },
       },
       request.timeoutMs,
     );

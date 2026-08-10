@@ -6,9 +6,15 @@ import type {
 import { parseModelJson, type ExpectedModelOutput } from "../../contracts/src/model-protocol.js";
 
 export type ProviderKind = "openai-responses" | "anthropic-messages" | "google-gemini" | "openai-compatible" | "mock-scripted";
+export type ProviderProfile = "auto" | "openai" | "anthropic" | "gemini" | "deepseek" | "kimi" | "zhipu" | "generic";
+export type OutputMode = "auto" | "json_schema" | "json_object" | "prompt";
+export type ModelOutputMode = "inherit" | OutputMode;
 
 export interface FrozenModelConfig {
   provider: ProviderKind;
+  providerProfile: ProviderProfile;
+  providerDefaultOutputMode: OutputMode;
+  outputMode: ModelOutputMode;
   model: string;
   apiKey?: string;
   baseUrl?: string;
@@ -85,9 +91,14 @@ export interface PreflightResult {
 export async function preflightProvider(
   provider: ModelProvider,
   request: CanonicalModelRequest,
+  validate?: (decision: ProviderDecision) => string | null,
 ): Promise<PreflightResult> {
   try {
     const result = await provider.decide(request);
+    const validationMessage = validate?.(result) ?? null;
+    if (validationMessage) {
+      throw new ProviderCallError("INVALID_RESPONSE", validationMessage, false);
+    }
     return {
       ok: true,
       latencyMs: result.latencyMs,

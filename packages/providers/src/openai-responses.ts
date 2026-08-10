@@ -1,5 +1,6 @@
 import { buildModelUserPrompt, type CanonicalModelRequest } from "../../contracts/src/index.js";
 import { finiteToken, postJson, requiredString } from "./http.js";
+import { resolveOutputPolicy } from "./output-policy.js";
 import {
   classifyProviderError,
   parseProviderOutput,
@@ -29,6 +30,19 @@ export class OpenAIResponsesProvider implements ModelProvider {
 
   async decide(request: CanonicalModelRequest): Promise<ProviderDecision> {
     if (!this.config.apiKey) throw new ProviderCallError("CONFIG", "OpenAI API key is required", false);
+    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput);
+    const text = outputPolicy.effectiveMode === "json_schema"
+      ? {
+          format: {
+            type: "json_schema",
+            name: outputPolicy.schema!.name,
+            schema: outputPolicy.schema!.schema,
+            strict: true,
+          },
+        }
+      : outputPolicy.effectiveMode === "json_object"
+        ? { format: { type: "json_object" } }
+        : undefined;
     const started = Date.now();
     const response = await postJson(
       `${(this.config.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "")}/responses`,
@@ -40,7 +54,7 @@ export class OpenAIResponsesProvider implements ModelProvider {
           { role: "system", content: [{ type: "input_text", text: request.systemPrompt }] },
           { role: "user", content: [{ type: "input_text", text: buildModelUserPrompt(request.userPayload) }] },
         ],
-        text: { format: { type: "json_object" } },
+        ...(text ? { text } : {}),
       },
       request.timeoutMs,
     );

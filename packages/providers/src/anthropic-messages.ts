@@ -1,5 +1,6 @@
 import { buildModelUserPrompt, type CanonicalModelRequest } from "../../contracts/src/index.js";
 import { finiteToken, postJson, requiredString } from "./http.js";
+import { resolveOutputPolicy } from "./output-policy.js";
 import { classifyProviderError, parseProviderOutput, ProviderCallError, type FrozenModelConfig, type ModelProvider, type ProviderDecision } from "./provider.js";
 
 export class AnthropicMessagesProvider implements ModelProvider {
@@ -11,6 +12,10 @@ export class AnthropicMessagesProvider implements ModelProvider {
 
   async decide(request: CanonicalModelRequest): Promise<ProviderDecision> {
     if (!this.config.apiKey) throw new ProviderCallError("CONFIG", "Anthropic API key is required", false);
+    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput);
+    const outputConfig = outputPolicy.effectiveMode === "json_schema"
+      ? { format: { type: "json_schema", schema: outputPolicy.schema!.schema } }
+      : undefined;
     const started = Date.now();
     const response = await postJson(
       `${(this.config.baseUrl ?? "https://api.anthropic.com/v1").replace(/\/$/, "")}/messages`,
@@ -21,6 +26,7 @@ export class AnthropicMessagesProvider implements ModelProvider {
         max_tokens: Number(this.config.parameters.max_tokens ?? 800),
         system: request.systemPrompt,
         messages: [{ role: "user", content: buildModelUserPrompt(request.userPayload) }],
+        ...(outputConfig ? { output_config: outputConfig } : {}),
       },
       request.timeoutMs,
     );

@@ -1860,6 +1860,10 @@ button:disabled {
   font-size: var(--text-xs);
 }
 
+.model-table code.policy-issue {
+  color: var(--color-danger-ink);
+}
+
 .model-table article > span,
 .model-table code {
   grid-column: 1 / -1;
@@ -1970,7 +1974,9 @@ button:disabled {
   border: var(--rule-hair) solid var(--color-rule);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-modal);
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   animation: modal-in var(--dur-long) var(--ease-out) both;
 }
 
@@ -2020,6 +2026,7 @@ button:disabled {
 .modal-form,
 .confirm-body {
   padding: var(--space-lg);
+  overflow: auto;
 }
 
 .form-grid {
@@ -2045,6 +2052,13 @@ button:disabled {
   color: var(--color-muted);
   font-size: var(--text-xs);
   font-weight: 400;
+}
+
+.form-help {
+  margin: var(--space-sm) 0 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
 }
 
 input,
@@ -2102,11 +2116,16 @@ select[aria-invalid="true"] {
 }
 
 .modal-actions {
-  padding-top: var(--space-lg);
+  margin: var(--space-lg) calc(var(--space-lg) * -1) calc(var(--space-lg) * -1);
+  padding: var(--space-sm) var(--space-lg);
+  position: sticky;
+  bottom: calc(var(--space-lg) * -1);
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-xs);
+  background: var(--color-paper-2);
+  border-top: var(--rule-hair) solid var(--color-rule);
 }
 
 .confirm-body > p {

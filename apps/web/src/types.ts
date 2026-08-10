@@ -77,6 +77,8 @@ export interface ProviderConnection {
   id: string;
   label: string;
   providerType: string;
+  providerProfile: string;
+  defaultOutputMode: string;
   baseUrl: string | null;
   hasApiKey: boolean;
   keyLastFour: string | null;
@@ -90,8 +92,15 @@ export interface ModelConfig {
   providerConnectionId: string;
   providerLabel: string;
   providerType: string;
+  providerProfile: string;
+  providerDefaultOutputMode: string;
   modelId: string;
   parameters: Record<string, unknown>;
+  outputMode: string;
+  effectiveOutputMode: string;
+  effectiveProviderProfile: string;
+  outputModeSupported: boolean;
+  outputModeMessage: string | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;

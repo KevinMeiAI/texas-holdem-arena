@@ -86,7 +86,15 @@ function request(expectedOutput: CanonicalModelRequest["expectedOutput"] = "ACTI
   };
 }
 
-const common = { model: "test", apiKey: "secret", timeoutMs: 500, parameters: {} } as const;
+const common = {
+  model: "test",
+  apiKey: "secret",
+  timeoutMs: 500,
+  parameters: {},
+  providerProfile: "auto",
+  providerDefaultOutputMode: "auto",
+  outputMode: "inherit",
+} as const;
 
 describe("real provider transport adapters", () => {
   it("maps OpenAI Responses without changing the system prompt", async () => {
@@ -98,8 +106,12 @@ describe("real provider transport adapters", () => {
     const result = await provider.decide(request());
     expect(result.parsed).toMatchObject({ type: "action", action: "check" });
     expect(result.usage).toEqual({ inputTokens: 12, outputTokens: 7, totalTokens: 19 });
-    const body = captured.at(-1)?.body as { input?: { role: string; content: { text: string }[] }[] };
+    const body = captured.at(-1)?.body as {
+      input?: { role: string; content: { text: string }[] }[];
+      text?: { format?: { type?: string; strict?: boolean; schema?: unknown } };
+    };
     expect(body.input?.[0]?.content[0]?.text).toBe("identical locked prompt");
+    expect(body.text?.format).toMatchObject({ type: "json_schema", strict: true, schema: expect.any(Object) });
   });
 
   it("maps Anthropic Messages", async () => {
@@ -113,6 +125,9 @@ describe("real provider transport adapters", () => {
     expect(result.parsed).toMatchObject({ type: "action", action: "call" });
     expect(result.usage.totalTokens).toBe(24);
     expect(captured.at(-1)?.headers.get("x-api-key")).toBe("secret");
+    expect(captured.at(-1)?.body).toMatchObject({
+      output_config: { format: { type: "json_schema", schema: expect.any(Object) } },
+    });
   });
 
   it("maps Gemini and keeps runout output separate", async () => {
@@ -125,6 +140,12 @@ describe("real provider transport adapters", () => {
     const result = await provider.decide(request("RUNOUT_VOTE"));
     expect(result.parsed).toEqual({ type: "runout_vote", accept_run_it_twice: true });
     expect(result.usage.totalTokens).toBe(12);
+    expect(captured.at(-1)?.body).toMatchObject({
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: expect.any(Object),
+      },
+    });
   });
 
   it("maps OpenAI-compatible chat completions and history queries", async () => {
@@ -135,6 +156,7 @@ describe("real provider transport adapters", () => {
     });
     const result = await provider.decide(request());
     expect(result.parsed).toMatchObject({ type: "history_query", query: { count: 2 } });
+    expect(captured.at(-1)?.body).toMatchObject({ response_format: { type: "json_object" } });
   });
 
   it("classifies 429, timeout and protocol failures independently", async () => {

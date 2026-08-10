@@ -80,9 +80,10 @@ describePostgres("administrator auth and model configuration API", () => {
         payload: { label: "Local mock", providerType: "mock-scripted", apiKey: "TOP-SECRET-KEY" },
       });
       expect(providerResponse.statusCode).toBe(201);
-      const provider = providerResponse.json<{ provider: { id: string; keyLastFour: string } }>().provider;
+      const provider = providerResponse.json<{ provider: { id: string; keyLastFour: string; providerProfile: string; defaultOutputMode: string } }>().provider;
       providerId = provider.id;
       expect(provider.keyLastFour).toBe("-KEY");
+      expect(provider).toMatchObject({ providerProfile: "auto", defaultOutputMode: "auto" });
       expect(providerResponse.body).not.toContain("TOP-SECRET-KEY");
 
       const providers = await app.inject({
@@ -137,7 +138,13 @@ describePostgres("administrator auth and model configuration API", () => {
         payload: { displayName: "Policy Alpha Prime", parameters: { style: "balanced" } },
       });
       expect(updatedModel.json()).toMatchObject({
-        model: { displayName: "Policy Alpha Prime", parameters: { style: "balanced" } },
+        model: {
+          displayName: "Policy Alpha Prime",
+          parameters: { style: "balanced" },
+          outputMode: "inherit",
+          effectiveOutputMode: "prompt",
+          outputModeSupported: true,
+        },
       });
       const preflight = await app.inject({
         method: "POST",
@@ -145,7 +152,17 @@ describePostgres("administrator auth and model configuration API", () => {
         headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
       });
       expect(preflight.statusCode).toBe(200);
-      expect(preflight.json()).toMatchObject({ result: { ok: true } });
+      expect(preflight.json()).toMatchObject({
+        result: {
+          ok: true,
+          effectiveMode: "prompt",
+          schemaVersion: "arena-output-v1",
+          checks: [
+            { expectedOutput: "ACTION_OR_HISTORY", ok: true, schema: { applied: false } },
+            { expectedOutput: "RUNOUT_VOTE", ok: true, schema: { applied: false } },
+          ],
+        },
+      });
 
       const rejectedSharedPrompt = await app.inject({
         method: "POST",

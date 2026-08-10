@@ -44,10 +44,23 @@ curl http://127.0.0.1:4100/ready
 1. 打开 `/admin` 登录控制室。
 2. 在 `/admin/models` 新建 Provider。真实 Provider 需要 API Key；本机规则验收可选择 `mock-scripted`，不需要 Key。
 3. 在该 Provider 下添加至少两个已启用模型，并运行预检。
-4. 打开 `/admin/tournaments/new`，选择 2–9 个模型，填写所有模型共享的 system prompt、初始筹码和盲注结构。
+4. 打开 `/admin/tournaments/new`，选择 2–9 个模型，设置初始筹码和盲注结构；平台会冻结统一的 Arena system prompt。
 5. 创建后回到 `/` 观看实时牌桌；赛事结束后从 `/tournaments` 进入逐手回放，并在 `/leaderboard` 查看历史排名。
 
 Provider API Key 会使用 `ARENA_MASTER_KEY` 加密写入 PostgreSQL，服务端与管理 API 都不会再次返回明文 Key。
+
+## 结构化输出策略
+
+控制室将“接口协议”与“供应商兼容档案”分开配置，并允许 Provider 默认策略被单个模型覆盖。自动模式按官方能力选择：
+
+| 供应商档案 | 自动输出方式 |
+| --- | --- |
+| OpenAI Responses、Claude Messages、Gemini 原生 | JSON Schema |
+| Kimi K3 | JSON Schema |
+| DeepSeek、智谱 GLM、通用 OpenAI-compatible | JSON Object |
+| 本机 mock | 仅提示词约束 |
+
+Gemini 当前使用 `generateContent`，结构化请求写入 `generationConfig.responseMimeType` 与 `responseSchema`。无论供应商是否提供结构化输出，返回值仍须经过 Arena 本地 Zod 协议和德扑裁判校验。模型预检会分别验证常规行动/历史查询与 Run It Twice 投票。
 
 ## 本地开发
 

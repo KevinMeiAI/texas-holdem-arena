@@ -1,5 +1,6 @@
 import { buildModelUserPrompt, type CanonicalModelRequest } from "../../contracts/src/index.js";
 import { finiteToken, postJson, requiredString } from "./http.js";
+import { resolveOutputPolicy } from "./output-policy.js";
 import { classifyProviderError, parseProviderOutput, ProviderCallError, type FrozenModelConfig, type ModelProvider, type ProviderDecision } from "./provider.js";
 
 export class OpenAICompatibleProvider implements ModelProvider {
@@ -11,6 +12,19 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   async decide(request: CanonicalModelRequest): Promise<ProviderDecision> {
     if (!this.config.baseUrl) throw new ProviderCallError("CONFIG", "OpenAI-compatible base URL is required", false);
+    const outputPolicy = resolveOutputPolicy(this.config, request.expectedOutput);
+    const responseFormat = outputPolicy.effectiveMode === "json_schema"
+      ? {
+          type: "json_schema",
+          json_schema: {
+            name: outputPolicy.schema!.name,
+            schema: outputPolicy.schema!.schema,
+            strict: true,
+          },
+        }
+      : outputPolicy.effectiveMode === "json_object"
+        ? { type: "json_object" }
+        : undefined;
     const started = Date.now();
     const response = await postJson(
       `${this.config.baseUrl.replace(/\/$/, "")}/chat/completions`,
@@ -22,7 +36,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
           { role: "system", content: request.systemPrompt },
           { role: "user", content: buildModelUserPrompt(request.userPayload) },
         ],
-        response_format: { type: "json_object" },
+        ...(responseFormat ? { response_format: responseFormat } : {}),
       },
       request.timeoutMs,
     );

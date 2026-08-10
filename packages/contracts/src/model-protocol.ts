@@ -79,6 +79,47 @@ export type ActionDecisionResponse = z.infer<typeof actionDecisionResponseSchema
 
 export type ExpectedModelOutput = "ACTION_OR_HISTORY" | "RUNOUT_VOTE";
 
+function normalizeNullableEnvelope(parsed: unknown, expected: ExpectedModelOutput): unknown {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed;
+  const value = parsed as Record<string, unknown>;
+
+  if (expected === "RUNOUT_VOTE") {
+    if (value.message !== null) return parsed;
+    const { message: _message, ...normalized } = value;
+    return normalized;
+  }
+
+  if (value.type === "action") {
+    if (value.query !== undefined && value.query !== null) return parsed;
+    const normalized = { ...value };
+    delete normalized.query;
+    if (normalized.amount_to === null) delete normalized.amount_to;
+    if (normalized.decision_summary === null) delete normalized.decision_summary;
+    return normalized;
+  }
+
+  if (value.type === "history_query") {
+    if ((value.action !== undefined && value.action !== null)
+      || (value.amount_to !== undefined && value.amount_to !== null)
+      || (value.decision_summary !== undefined && value.decision_summary !== null)) return parsed;
+    const normalized = { ...value };
+    delete normalized.action;
+    delete normalized.amount_to;
+    delete normalized.decision_summary;
+    const query = normalized.query;
+    if (query && typeof query === "object" && !Array.isArray(query)) {
+      const normalizedQuery = { ...query } as Record<string, unknown>;
+      if (normalizedQuery.streets === null) delete normalizedQuery.streets;
+      if (normalizedQuery.actions === null) delete normalizedQuery.actions;
+      if (normalizedQuery.player_id === null) delete normalizedQuery.player_id;
+      normalized.query = normalizedQuery;
+    }
+    return normalized;
+  }
+
+  return parsed;
+}
+
 export function parseModelJson(text: string, expected: ExpectedModelOutput): ActionDecisionResponse | RunoutVoteResponse {
   const trimmed = text.trim();
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
@@ -90,16 +131,17 @@ export function parseModelJson(text: string, expected: ExpectedModelOutput): Act
   } catch {
     throw new Error("Model response is not valid JSON");
   }
-  if (expected === "RUNOUT_VOTE") return runoutVoteResponseSchema.parse(parsed);
-  const result = actionDecisionResponseSchema.safeParse(parsed);
+  const normalized = normalizeNullableEnvelope(parsed, expected);
+  if (expected === "RUNOUT_VOTE") return runoutVoteResponseSchema.parse(normalized);
+  const result = actionDecisionResponseSchema.safeParse(normalized);
   if (result.success) return result.data;
   // A malformed optional self-summary must not invalidate an otherwise legal
   // poker action. Drop only that field; strict parsing still rejects every
   // other unknown or malformed field.
-  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)
-    && (parsed as { type?: unknown }).type === "action"
-    && Object.prototype.hasOwnProperty.call(parsed, "decision_summary")) {
-    const { decision_summary: _discarded, ...withoutSummary } = parsed as Record<string, unknown>;
+  if (normalized && typeof normalized === "object" && !Array.isArray(normalized)
+    && (normalized as { type?: unknown }).type === "action"
+    && Object.prototype.hasOwnProperty.call(normalized, "decision_summary")) {
+    const { decision_summary: _discarded, ...withoutSummary } = normalized as Record<string, unknown>;
     const salvaged = actionResponseSchema.safeParse(withoutSummary);
     if (salvaged.success) return salvaged.data;
   }

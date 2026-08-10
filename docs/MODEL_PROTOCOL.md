@@ -1,4 +1,4 @@
-# Model protocol v3
+# Model protocol v4
 
 Every seat receives the same effective system prompt bytes. The effective prompt
 contains only the locked Arena rules prefix and locked output protocol. It has no
@@ -17,9 +17,9 @@ and preflop/postflop action-order arrays. Order indexes are one-based. Live
 `betting.current_actor_id` and `legal_actions` remain authoritative after folds
 and all-ins.
 
-The protocol is frozen per tournament. A tournament created under
-`arena-system-v1` continues to receive `model-context-v1` after process recovery;
-only newly created `arena-system-v2` tournaments receive this position context.
+The protocol is frozen per tournament. Legacy tournaments retain the exact
+prompt and context version in their recovery snapshot; only newly created
+`arena-system-v4` tournaments use the fixed nullable structured-output envelope.
 
 ## Action response
 
@@ -30,16 +30,17 @@ Return exactly one JSON object:
   "type": "action",
   "action": "raise",
   "amount_to": 1200,
-  "decision_summary": "Use position and stack leverage."
+  "decision_summary": "Use position and stack leverage.",
+  "query": null
 }
 ```
 
 - `action` must appear in the supplied `legal_actions` object.
-- `amount_to` is required only for `bet` and `raise`. It is the total amount the
+- Every root field is required in the v4 wire envelope. `amount_to` is an integer
+  only for `bet` and `raise`; otherwise it is `null`. It is the total amount the
   player will have committed on the current street after acting.
-- Calls and all-ins have engine-computed amounts and must not include
-  `amount_to`.
-- `decision_summary` is optional and limited to 300 Unicode characters. It is a
+- Calls and all-ins have engine-computed amounts and use `amount_to: null`.
+- `decision_summary` is a string or `null` and limited to 300 Unicode characters. It is a
   short self-explanation, not hidden chain-of-thought. A malformed summary is
   discarded without invalidating an otherwise legal poker action.
 - Unknown fields, code fences and surrounding prose are invalid.
@@ -51,6 +52,9 @@ Before taking an action, a model may request completed-hand public history:
 ```json
 {
   "type": "history_query",
+  "action": null,
+  "amount_to": null,
+  "decision_summary": null,
   "query": {
     "kind": "player_actions",
     "player_id": "player_3",
@@ -86,7 +90,8 @@ When betting is locked by all-ins and community cards remain, return:
 }
 ```
 
-The optional message is at most 160 Unicode characters. It is untrusted data and
+The required `message` field is a string of at most 160 Unicode characters or
+`null`. It is untrusted data and
 is visible only to later voters during that negotiation plus spectators/audit.
 It cannot alter rules, reopen betting or enter later normal-decision prompts.
 
@@ -111,6 +116,10 @@ reclaims the same decision ID from the PostgreSQL outbox.
 - OpenAI-compatible Chat Completions
 - deterministic mock policy for local acceptance tests
 
-All adapters normalize text, token usage, latency, request ID and error class.
-Even when a provider offers native JSON mode, the canonical strict parser is the
-final authority.
+Provider and model settings resolve to `json_schema`, `json_object`, or `prompt`.
+OpenAI Responses uses `text.format`, Claude uses `output_config.format`, Gemini
+`generateContent` uses `generationConfig.responseMimeType` plus `responseSchema`,
+and compatible Chat Completions uses `response_format`. DeepSeek and GLM default
+to JSON Object; Kimi K3 defaults to JSON Schema. All adapters normalize text,
+token usage, latency, request ID and error class. The canonical strict parser and
+deterministic poker referee remain the final authority.

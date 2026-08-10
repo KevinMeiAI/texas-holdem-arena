@@ -10,6 +10,30 @@ describe("strict model protocol", () => {
       .toMatchObject({ accept_run_it_twice: true });
   });
 
+  it("normalizes the fixed nullable envelope used by structured-output providers", () => {
+    expect(parseModelJson(JSON.stringify({
+      type: "action",
+      action: "check",
+      amount_to: null,
+      decision_summary: null,
+      query: null,
+    }), "ACTION_OR_HISTORY")).toEqual({ type: "action", action: "check" });
+    expect(parseModelJson(JSON.stringify({
+      type: "history_query",
+      action: null,
+      amount_to: null,
+      decision_summary: null,
+      query: { kind: "player_actions", player_id: "p1", streets: null, actions: null, limit: 20 },
+    }), "ACTION_OR_HISTORY")).toEqual({
+      type: "history_query",
+      query: { kind: "player_actions", player_id: "p1", limit: 20 },
+    });
+    expect(parseModelJson(
+      '{"type":"runout_vote","accept_run_it_twice":false,"message":null}',
+      "RUNOUT_VOTE",
+    )).toEqual({ type: "runout_vote", accept_run_it_twice: false });
+  });
+
   it("rejects fences, unknown fields and invalid amount placement", () => {
     expect(() => parseModelJson('```json\n{"type":"action","action":"check"}\n```', "ACTION_OR_HISTORY"))
       .toThrow(/one JSON object/);
@@ -45,7 +69,7 @@ describe("strict model protocol", () => {
     const first = buildEffectiveSystemPrompt();
     const second = buildEffectiveSystemPrompt();
     expect(first).toEqual(second);
-    expect(first.version).toBe("arena-system-v3");
+    expect(first.version).toBe("arena-system-v4");
     expect(first.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(first.text).not.toContain("SHARED STRATEGY PROMPT");
     expect(first.text).not.toContain("shared strategy");
