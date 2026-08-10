@@ -70,7 +70,7 @@ describe("pot construction and awards", () => {
     ]);
   });
 
-  it("splits two boards and sends odd chips clockwise from the button", () => {
+  it("sends odd chips clockwise from the button on the single board", () => {
     const pots = [{
       index: 0,
       lowerBound: 0,
@@ -82,25 +82,17 @@ describe("pot construction and awards", () => {
     const awards = awardPots(
       pots,
       [
-        [
-          { playerId: "a", seat: 0, rank: 10 },
-          { playerId: "b", seat: 1, rank: 10 },
-          { playerId: "c", seat: 2, rank: 2 },
-        ],
-        [
-          { playerId: "a", seat: 0, rank: 1 },
-          { playerId: "b", seat: 1, rank: 3 },
-          { playerId: "c", seat: 2, rank: 9 },
-        ],
+        { playerId: "a", seat: 0, rank: 10 },
+        { playerId: "b", seat: 1, rank: 10 },
+        { playerId: "c", seat: 2, rank: 2 },
       ],
       (left, right) => Number(left) - Number(right),
       0,
       3,
     );
     expect(awards).toEqual([
-      { potIndex: 0, boardIndex: 0, playerId: "b", amount: 4 },
-      { potIndex: 0, boardIndex: 0, playerId: "a", amount: 4 },
-      { potIndex: 0, boardIndex: 1, playerId: "c", amount: 7 },
+      { potIndex: 0, boardIndex: 0, playerId: "b", amount: 8 },
+      { potIndex: 0, boardIndex: 0, playerId: "a", amount: 7 },
     ]);
   });
 
@@ -134,11 +126,10 @@ describe("pot construction and awards", () => {
     ), { numRuns: 2_000 });
   });
 
-  it("preserves each pot amount when awarding one or two boards", () => {
+  it("preserves each pot amount when awarding the single board", () => {
     fc.assert(fc.property(
       fc.array(fc.integer({ min: 1, max: 2_000 }), { minLength: 2, maxLength: 9 }),
-      fc.boolean(),
-      (amounts, twice) => {
+      (amounts) => {
         const contributions = amounts.map((amount, seat) => ({
           playerId: `p${seat}`,
           seat,
@@ -153,7 +144,7 @@ describe("pot construction and awards", () => {
         }));
         const awards = awardPots(
           pots,
-          twice ? [ranks, ranks] : [ranks],
+          ranks,
           (left, right) => Number(left) - Number(right),
           0,
           contributions.length,

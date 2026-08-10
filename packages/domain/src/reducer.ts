@@ -274,14 +274,14 @@ function settleShowdown(state: HandState, events: HandEvent[]): void {
     players: contenders.map((player) => ({ playerId: player.id, cards: player.holeCards })),
   });
   const pots = createPots(state, events);
-  const boardRanks: RankedPlayer[][] = state.boards.map((board, boardIndex) => contenders.map((player) => {
-    const rank = evaluateBest([...player.holeCards, ...board]);
-    state.showdown.push({ playerId: player.id, boardIndex, rank });
+  const rankedPlayers: RankedPlayer[] = contenders.map((player) => {
+    const rank = evaluateBest([...player.holeCards, ...state.boards[0]!]);
+    state.showdown.push({ playerId: player.id, boardIndex: 0, rank });
     return { playerId: player.id, seat: player.seat, rank };
-  }));
+  });
   const awards = awardPots(
     pots,
-    boardRanks,
+    rankedPlayers,
     (left, right) => compareHandRanks(left as HandRank, right as HandRank),
     state.positions.button,
     state.seatCount,

@@ -124,42 +124,32 @@ function clockwiseWinners(
 
 export function awardPots(
   pots: readonly PotLayer[],
-  boardRanks: readonly RankedPlayer[][],
+  rankedPlayers: readonly RankedPlayer[],
   compare: (left: unknown, right: unknown) => number,
   buttonSeat: number,
   seatCount: number,
 ): PotAward[] {
-  if (boardRanks.length < 1 || boardRanks.length > 2) {
-    throw new Error("One or two boards are supported");
-  }
   const awards: PotAward[] = [];
 
   for (const pot of pots) {
-    const boardAmounts = boardRanks.length === 2
-      ? [Math.ceil(pot.amount / 2), Math.floor(pot.amount / 2)]
-      : [pot.amount];
-
-    boardRanks.forEach((rankedPlayers, boardIndex) => {
-      const eligible = rankedPlayers.filter((player) => pot.eligible.includes(player.playerId));
-      if (eligible.length === 0) throw new Error(`Pot ${pot.index} has no ranked eligible player`);
-      let best = eligible[0]!;
-      for (const player of eligible.slice(1)) {
-        if (compare(player.rank, best.rank) > 0) best = player;
-      }
-      const winners = clockwiseWinners(
-        eligible.filter((player) => compare(player.rank, best.rank) === 0),
-        buttonSeat,
-        seatCount,
-      );
-      const boardAmount = boardAmounts[boardIndex] ?? 0;
-      const share = Math.floor(boardAmount / winners.length);
-      let remainder = boardAmount % winners.length;
-      for (const winner of winners) {
-        const amount = share + (remainder > 0 ? 1 : 0);
-        remainder = Math.max(0, remainder - 1);
-        if (amount > 0) awards.push({ potIndex: pot.index, boardIndex, playerId: winner.playerId, amount });
-      }
-    });
+    const eligible = rankedPlayers.filter((player) => pot.eligible.includes(player.playerId));
+    if (eligible.length === 0) throw new Error(`Pot ${pot.index} has no ranked eligible player`);
+    let best = eligible[0]!;
+    for (const player of eligible.slice(1)) {
+      if (compare(player.rank, best.rank) > 0) best = player;
+    }
+    const winners = clockwiseWinners(
+      eligible.filter((player) => compare(player.rank, best.rank) === 0),
+      buttonSeat,
+      seatCount,
+    );
+    const share = Math.floor(pot.amount / winners.length);
+    let remainder = pot.amount % winners.length;
+    for (const winner of winners) {
+      const amount = share + (remainder > 0 ? 1 : 0);
+      remainder = Math.max(0, remainder - 1);
+      if (amount > 0) awards.push({ potIndex: pot.index, boardIndex: 0, playerId: winner.playerId, amount });
+    }
   }
 
   return awards;
