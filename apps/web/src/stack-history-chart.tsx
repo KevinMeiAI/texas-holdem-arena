@@ -59,6 +59,7 @@ export function StackHistoryChart({ players, points }: {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(Math.max(0, points.length - 1));
   const [focusedPlayerId, setFocusedPlayerId] = useState<string | null>(null);
+  const [isPointerActive, setIsPointerActive] = useState(false);
 
   useEffect(() => setSelectedIndex(Math.max(0, points.length - 1)), [points.length]);
   useLayoutEffect(() => {
@@ -94,8 +95,11 @@ export function StackHistoryChart({ players, points }: {
             viewBox={`0 0 ${chart.width} ${chart.height}`}
             role="img"
             aria-labelledby="stack-chart-title stack-chart-description"
+            onPointerEnter={() => setIsPointerActive(true)}
             onPointerMove={selectFromPointer}
             onPointerDown={selectFromPointer}
+            onPointerLeave={() => setIsPointerActive(false)}
+            onPointerCancel={() => setIsPointerActive(false)}
           >
             <title id="stack-chart-title">各模型每手结束后的筹码走势</title>
             <desc id="stack-chart-description">横轴为手数，纵轴为筹码。右侧列表展示当前选中手牌的精确筹码。</desc>
@@ -120,15 +124,19 @@ export function StackHistoryChart({ players, points }: {
               return (
                 <g className={`stack-chart-series${muted ? " is-muted" : ""}`} key={player.id}>
                   <path d={path} stroke={color} />
-                  <circle cx={xAt(selectedIndex)} cy={yAt(selected.stacks[player.id] ?? 0)} r="4.5" fill={color} />
+                  {isPointerActive && (
+                    <circle cx={xAt(selectedIndex)} cy={yAt(selected.stacks[player.id] ?? 0)} r="4.5" fill={color} />
+                  )}
                 </g>
               );
             })}
-            <g className="stack-chart-cursor">
-              <line x1={xAt(selectedIndex)} x2={xAt(selectedIndex)} y1={chart.top} y2={chart.top + plotHeight} />
-              <rect x={xAt(selectedIndex) - 31} y={chart.top - 5} width="62" height="24" rx="3" />
-              <text x={xAt(selectedIndex)} y={chart.top + 11}>第 {selected.handNo} 手</text>
-            </g>
+            {isPointerActive && (
+              <g className="stack-chart-cursor">
+                <line x1={xAt(selectedIndex)} x2={xAt(selectedIndex)} y1={chart.top} y2={chart.top + plotHeight} />
+                <rect x={xAt(selectedIndex) - 31} y={chart.top - 5} width="62" height="24" rx="3" />
+                <text x={xAt(selectedIndex)} y={chart.top + 11}>第 {selected.handNo} 手</text>
+              </g>
+            )}
             <rect className="stack-chart-hitarea" x={chart.left} y={chart.top} width={plotWidth} height={plotHeight} />
           </svg>
         </div>
