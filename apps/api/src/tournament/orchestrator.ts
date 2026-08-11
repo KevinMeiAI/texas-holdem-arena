@@ -13,7 +13,11 @@ import { createTournament as createDomainTournament, reduceTournament, startTour
 import { deriveSeed, DeterministicRng, seedCommitment } from "../../../../packages/fairness/src/rng.js";
 import { canonicalJson } from "../../../../packages/fairness/src/canonical-json.js";
 import type { FrozenModelConfig, ModelProvider } from "../../../../packages/providers/src/provider.js";
-import { ARENA_DECISION_TIMEOUT_MS } from "../model-runtime.js";
+import {
+  ARENA_DECISION_TIMEOUT_MAX_MS,
+  ARENA_DECISION_TIMEOUT_MIN_MS,
+  ARENA_DECISION_TIMEOUT_MS,
+} from "../model-runtime.js";
 import {
   type AppendEventsInput,
   type PendingDecisionRequest,
@@ -42,6 +46,7 @@ export interface ArenaTournamentSetup {
   playerLabels?: Record<string, string>;
   masterSeed?: Uint8Array;
   managedByArena?: boolean;
+  decisionTimeoutMs?: number;
 }
 
 export interface OrchestratorRuntime {
@@ -96,6 +101,7 @@ function publicState(runtime: OrchestratorRuntime): unknown {
     outputSchemaHash: runtime.effectiveOutputSchema?.sha256 ?? null,
     status: runtime.operationalStatus,
     completedHands: runtime.domain.completedHands,
+    decisionTimeoutMs: runtime.decisionTimeoutMs,
     championPlayerId: runtime.domain.championPlayerId,
     seedCommitment: runtime.seedCommitment,
     seedRevealed: runtime.seedRevealed,
@@ -179,6 +185,12 @@ export class TournamentOrchestrator {
     const effectiveOutputSchema = arenaOutputSchema("ACTION_OR_HISTORY");
     const masterSeed = setup.masterSeed ?? randomBytes(32);
     if (masterSeed.byteLength !== 32) throw new Error("Tournament master seed must be 256 bits");
+    const decisionTimeoutMs = setup.decisionTimeoutMs ?? ARENA_DECISION_TIMEOUT_MS;
+    if (!Number.isSafeInteger(decisionTimeoutMs)
+      || decisionTimeoutMs < ARENA_DECISION_TIMEOUT_MIN_MS
+      || decisionTimeoutMs > ARENA_DECISION_TIMEOUT_MAX_MS) {
+      throw new Error(`decisionTimeoutMs must be between ${ARENA_DECISION_TIMEOUT_MIN_MS} and ${ARENA_DECISION_TIMEOUT_MAX_MS}`);
+    }
     for (const player of setup.tournament.players) {
       const providerId = setup.providerIdByPlayer[player.id];
       if (!providerId || !this.#providers.has(providerId)) {
@@ -208,7 +220,7 @@ export class TournamentOrchestrator {
       seedCommitment: seedCommitment(masterSeed, tournamentId, setup.rulesetVersion),
       seedRevealed: false,
       pendingDecisionId: null,
-      decisionTimeoutMs: ARENA_DECISION_TIMEOUT_MS,
+      decisionTimeoutMs,
       decisionConfig: jsonSafe(this.#decisionConfig),
     };
     await this.#store.createTournament({
@@ -224,6 +236,7 @@ export class TournamentOrchestrator {
         outputSchemaHash: effectiveOutputSchema.sha256,
         modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
           .map(([playerId, config]) => [playerId, modelConfigHash(config)])),
+        decisionTimeoutMs,
         managedByArena: setup.managedByArena === true,
       },
       promptHash: effectivePrompt.sha256,
@@ -234,7 +247,7 @@ export class TournamentOrchestrator {
         promptVersion: effectivePrompt.version,
         outputSchemaVersion: effectiveOutputSchema.version,
         outputSchemaHash: effectiveOutputSchema.sha256,
-        decisionTimeoutMs: ARENA_DECISION_TIMEOUT_MS,
+        decisionTimeoutMs,
         rulesetVersion: setup.rulesetVersion,
         modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
           .map(([playerId, config]) => [playerId, modelConfigHash(config)])),

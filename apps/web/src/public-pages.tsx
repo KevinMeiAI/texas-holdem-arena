@@ -275,6 +275,10 @@ export function ReplayPage() {
   if (!state) return <main className="page-shell"><EmptyState title={text("赛事不存在", "Tournament not found")} body={text("无法找到对应的赛事记录。", "The requested tournament could not be found.")} /></main>;
   const events = replay.data?.events ?? [];
   const decisions = replay.data?.decisions ?? [];
+  const initialStack = performance.data?.statistics.initialStack
+    ?? (state.players.length > 0
+      ? state.players.reduce((total, player) => total + player.stack, 0) / state.players.length
+      : 0);
   const boards = collectBoard(events);
   const holeCards = new Map<string, unknown[]>();
   for (const event of events) {
@@ -294,7 +298,7 @@ export function ReplayPage() {
             </header>
             {stackHistory.loading ? <LoadingBlock label={text("正在绘制筹码走势", "Loading stack history")} />
               : stackHistory.error ? <ErrorBlock message={stackHistory.error} onRetry={() => void stackHistory.refresh()} />
-                : <StackHistoryChart players={state.players} points={stackHistory.data?.points ?? []} />}
+                : <StackHistoryChart players={state.players} points={stackHistory.data?.points ?? []} initialStack={initialStack} />}
           </section>
           {performance.loading ? <LoadingBlock label={text("正在计算赛后战报", "Loading tournament report")} />
             : performance.error ? <ErrorBlock message={performance.error} onRetry={() => void performance.refresh()} />

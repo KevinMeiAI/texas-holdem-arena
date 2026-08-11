@@ -29,6 +29,7 @@ export interface ArenaState {
   promptHash: string;
   status: "READY" | "RUNNING" | "PAUSED_INFRA" | "COMPLETED" | "CANCELLED";
   completedHands: number;
+  decisionTimeoutMs?: number;
   championPlayerId: string | null;
   seedCommitment: string;
   seedRevealed: boolean;

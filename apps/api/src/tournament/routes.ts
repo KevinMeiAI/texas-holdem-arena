@@ -3,6 +3,11 @@ import type { FastifyInstance } from "fastify";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { requireAdmin, type AdminAuthContext } from "../auth/routes.js";
+import {
+  ARENA_DECISION_TIMEOUT_MAX_MS,
+  ARENA_DECISION_TIMEOUT_MIN_MS,
+  ARENA_DECISION_TIMEOUT_MS,
+} from "../model-runtime.js";
 import { ArenaService } from "./arena-service.js";
 
 const blindLevelSchema = z.object({
@@ -11,7 +16,7 @@ const blindLevelSchema = z.object({
   bigBlindAnte: z.number().int().nonnegative(),
 }).strict().refine((level) => level.smallBlind <= level.bigBlind, "smallBlind must not exceed bigBlind");
 
-const createTournamentSchema = z.object({
+export const createTournamentSchema = z.object({
   name: z.string().trim().min(1).max(120),
   modelConfigIds: z.array(z.string().uuid()).min(2).max(9).refine(
     (ids) => new Set(ids).size === ids.length,
@@ -19,6 +24,10 @@ const createTournamentSchema = z.object({
   ),
   initialStack: z.number().int().min(100).max(10_000_000).default(20_000),
   handsPerLevel: z.number().int().min(1).max(1_000).default(10),
+  decisionTimeoutMs: z.number().int()
+    .min(ARENA_DECISION_TIMEOUT_MIN_MS)
+    .max(ARENA_DECISION_TIMEOUT_MAX_MS)
+    .default(ARENA_DECISION_TIMEOUT_MS),
   blindLevels: z.array(blindLevelSchema).min(1).max(100).default([
     { smallBlind: 100, bigBlind: 200, bigBlindAnte: 0 },
     { smallBlind: 150, bigBlind: 300, bigBlindAnte: 0 },

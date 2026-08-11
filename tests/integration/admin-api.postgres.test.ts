@@ -188,6 +188,7 @@ describePostgres("administrator auth and model configuration API", () => {
           modelConfigIds: [modelId, secondModelId],
           initialStack: 100,
           handsPerLevel: 1,
+          decisionTimeoutMs: 240_000,
           blindLevels: [
             { smallBlind: 25, bigBlind: 50, bigBlindAnte: 0 },
             { smallBlind: 50, bigBlind: 100, bigBlindAnte: 100 },
@@ -197,7 +198,7 @@ describePostgres("administrator auth and model configuration API", () => {
       expect(tournamentResponse.statusCode).toBe(201);
       tournamentId = tournamentResponse.json<{ tournamentId: string }>().tournamentId;
 
-      let liveState: { state?: { status?: string } } = {};
+      let liveState: { state?: { status?: string; decisionTimeoutMs?: number } } = {};
       for (let attempt = 0; attempt < 200; attempt += 1) {
         const live = await app.inject({ method: "GET", url: `/api/public/tournaments/${tournamentId}` });
         liveState = live.json();
@@ -205,6 +206,7 @@ describePostgres("administrator auth and model configuration API", () => {
         await new Promise<void>((resolve) => setTimeout(resolve, 50));
       }
       expect(liveState.state?.status).toBe("COMPLETED");
+      expect(liveState.state?.decisionTimeoutMs).toBe(240_000);
 
       const handsResponse = await app.inject({
         method: "GET",

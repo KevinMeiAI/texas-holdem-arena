@@ -25,6 +25,7 @@ export interface CreateArenaTournamentInput {
   modelConfigIds: string[];
   initialStack: number;
   handsPerLevel: number;
+  decisionTimeoutMs: number;
   blindLevels: { smallBlind: number; bigBlind: number; bigBlindAnte: number }[];
 }
 
@@ -96,7 +97,7 @@ export class ArenaService {
       return model;
     }));
     const frozenConfigByModelId = Object.fromEntries(await Promise.all(input.modelConfigIds.map(async (id) => (
-      [id, await this.models.runtimeConfig(id)] as const
+      [id, { ...await this.models.runtimeConfig(id), timeoutMs: input.decisionTimeoutMs }] as const
     ))));
     const providers = this.#providersFromFrozen(frozenConfigByModelId);
     const masterSeed = randomBytes(32);
@@ -122,6 +123,7 @@ export class ArenaService {
         frozenConfigByModelId[model.id]!,
       ])),
       playerLabels: Object.fromEntries(seated.map((model) => [model.id, model.displayName])),
+      decisionTimeoutMs: input.decisionTimeoutMs,
       masterSeed,
       managedByArena: true,
     });

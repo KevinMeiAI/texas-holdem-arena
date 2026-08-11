@@ -52,31 +52,57 @@ function sampledIndexes(length: number, maximum = 9): number[] {
   return indexes;
 }
 
-export function StackHistoryChart({ players, points }: {
+interface StackChartPoint {
+  key: string;
+  handNo: number | null;
+  stacks: Record<string, number>;
+}
+
+export function createStackHistorySeries(
+  players: Pick<ArenaPlayer, "id">[],
+  points: StackHistoryPoint[],
+  initialStack: number,
+): StackChartPoint[] {
+  return [
+    {
+      key: "origin",
+      handNo: null,
+      stacks: Object.fromEntries(players.map((player) => [player.id, initialStack])),
+    },
+    ...points.map((point) => ({ key: `hand-${point.handNo}`, ...point })),
+  ];
+}
+
+export function StackHistoryChart({ players, points, initialStack }: {
   players: ArenaPlayer[];
   points: StackHistoryPoint[];
+  initialStack: number;
 }) {
   const { text } = useUiPreferences();
   const orderedPlayers = [...players].sort((left, right) => left.seat - right.seat);
+  const seriesPoints = createStackHistorySeries(orderedPlayers, points, initialStack);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [selectedIndex, setSelectedIndex] = useState(Math.max(0, points.length - 1));
+  const [selectedIndex, setSelectedIndex] = useState(points.length);
   const [focusedPlayerId, setFocusedPlayerId] = useState<string | null>(null);
   const [isPointerActive, setIsPointerActive] = useState(false);
 
-  useEffect(() => setSelectedIndex(Math.max(0, points.length - 1)), [points.length]);
+  useEffect(() => setSelectedIndex(points.length), [points.length]);
   useLayoutEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
     container.scrollLeft = container.scrollWidth - container.clientWidth;
   }, [points.length]);
-  if (points.length === 0) return <div className="stack-history-empty">{text("还没有筹码记录。", "No stack history yet.")}</div>;
+  if (orderedPlayers.length === 0) return <div className="stack-history-empty">{text("还没有筹码记录。", "No stack history yet.")}</div>;
 
-  const maximumStack = Math.max(1, ...points.flatMap((point) => orderedPlayers.map((player) => point.stacks[player.id] ?? 0)));
+  const maximumStack = Math.max(1, ...seriesPoints.flatMap((point) => orderedPlayers.map((player) => point.stacks[player.id] ?? 0)));
   const yMaximum = axisMaximum(maximumStack);
   const yTicks = Array.from({ length: 5 }, (_, index) => index * yMaximum / 4);
-  const xAt = (index: number) => chart.left + (points.length === 1 ? plotWidth / 2 : index * plotWidth / (points.length - 1));
+  const xAt = (index: number) => chart.left + (seriesPoints.length === 1 ? 0 : index * plotWidth / (seriesPoints.length - 1));
   const yAt = (stack: number) => chart.top + plotHeight - stack / yMaximum * plotHeight;
-  const selected = points[Math.min(selectedIndex, points.length - 1)]!;
+  const selected = seriesPoints[Math.min(selectedIndex, seriesPoints.length - 1)]!;
+  const selectedLabel = selected.handNo === null
+    ? text("初始", "Origin")
+    : text(`第 ${selected.handNo} 手`, `H${selected.handNo}`);
   const ranking = orderedPlayers
     .map((player, index) => ({ player, color: SERIES_COLORS[index % SERIES_COLORS.length]!, stack: selected.stacks[player.id] ?? 0 }))
     .sort((left, right) => right.stack - left.stack || left.player.seat - right.player.seat);
@@ -85,7 +111,7 @@ export function StackHistoryChart({ players, points }: {
     const bounds = event.currentTarget.getBoundingClientRect();
     const svgX = (event.clientX - bounds.left) / bounds.width * chart.width;
     const progress = Math.min(1, Math.max(0, (svgX - chart.left) / plotWidth));
-    setSelectedIndex(Math.round(progress * Math.max(0, points.length - 1)));
+    setSelectedIndex(Math.round(progress * Math.max(0, seriesPoints.length - 1)));
   };
 
   return (
@@ -103,8 +129,8 @@ export function StackHistoryChart({ players, points }: {
             onPointerLeave={() => setIsPointerActive(false)}
             onPointerCancel={() => setIsPointerActive(false)}
           >
-            <title id="stack-chart-title">{text("各模型每手结束后的筹码走势", "Model stack history after each hand")}</title>
-            <desc id="stack-chart-description">{text("横轴为手数，纵轴为筹码。右侧列表展示当前选中手牌的精确筹码。", "The x-axis shows hands and the y-axis shows chips. The list shows exact stacks for the selected hand.")}</desc>
+            <title id="stack-chart-title">{text("各模型从初始筹码到每手结束后的筹码走势", "Model stacks from the origin through every completed hand")}</title>
+            <desc id="stack-chart-description">{text("横轴从初始筹码开始，随后为每手结束状态；纵轴为筹码。右侧列表展示当前选中节点的精确筹码。", "The x-axis starts at the initial stacks and continues through each completed hand. The list shows exact stacks for the selected point.")}</desc>
             {yTicks.map((tick) => {
               const y = yAt(tick);
               return (
@@ -114,14 +140,14 @@ export function StackHistoryChart({ players, points }: {
                 </g>
               );
             })}
-            {sampledIndexes(points.length).map((index) => (
-              <text className="stack-chart-x-label" x={xAt(index)} y={chart.height - 18} key={points[index]!.handNo}>
-                H{points[index]!.handNo}
+            {[0, ...sampledIndexes(points.length, 8).map((index) => index + 1)].map((index) => (
+              <text className="stack-chart-x-label" x={xAt(index)} y={chart.height - 18} key={seriesPoints[index]!.key}>
+                {seriesPoints[index]!.handNo === null ? text("初始", "Origin") : `H${seriesPoints[index]!.handNo}`}
               </text>
             ))}
             {orderedPlayers.map((player, playerIndex) => {
               const color = SERIES_COLORS[playerIndex % SERIES_COLORS.length]!;
-              const path = points.map((point, index) => `${index === 0 ? "M" : "L"} ${xAt(index)} ${yAt(point.stacks[player.id] ?? 0)}`).join(" ");
+              const path = seriesPoints.map((point, index) => `${index === 0 ? "M" : "L"} ${xAt(index)} ${yAt(point.stacks[player.id] ?? 0)}`).join(" ");
               const muted = focusedPlayerId !== null && focusedPlayerId !== player.id;
               return (
                 <g className={`stack-chart-series${muted ? " is-muted" : ""}`} key={player.id}>
@@ -136,7 +162,7 @@ export function StackHistoryChart({ players, points }: {
               <g className="stack-chart-cursor">
                 <line x1={xAt(selectedIndex)} x2={xAt(selectedIndex)} y1={chart.top} y2={chart.top + plotHeight} />
                 <rect x={xAt(selectedIndex) - 31} y={chart.top - 5} width="62" height="24" rx="3" />
-                <text x={xAt(selectedIndex)} y={chart.top + 11}>{text("第", "H")} {selected.handNo} {text("手", "")}</text>
+                <text x={xAt(selectedIndex)} y={chart.top + 11}>{selectedLabel}</text>
               </g>
             )}
             <rect className="stack-chart-hitarea" x={chart.left} y={chart.top} width={plotWidth} height={plotHeight} />
@@ -144,7 +170,7 @@ export function StackHistoryChart({ players, points }: {
         </div>
       </div>
       <aside className="stack-chart-inspector" aria-live="polite">
-        <header><span>{text("结算快照", "Snapshot")}</span><strong>{text("第", "Hand")} {selected.handNo} {text("手", "")}</strong></header>
+        <header><span>{text("筹码快照", "Snapshot")}</span><strong>{selectedLabel}</strong></header>
         <div className="stack-chart-ranking">
           {ranking.map(({ player, color, stack }, index) => (
             <button
@@ -163,9 +189,9 @@ export function StackHistoryChart({ players, points }: {
         </div>
       </aside>
       <table className="visually-hidden">
-        <caption>{text("各模型每手结束后的筹码明细", "Model stacks after each hand")}</caption>
-        <thead><tr><th>{text("手数", "Hand")}</th>{orderedPlayers.map((player) => <th key={player.id}>{player.displayName}</th>)}</tr></thead>
-        <tbody>{points.map((point) => <tr key={point.handNo}><th>{text("第", "Hand")} {point.handNo} {text("手", "")}</th>{orderedPlayers.map((player) => <td key={player.id}>{point.stacks[player.id] ?? 0}</td>)}</tr>)}</tbody>
+        <caption>{text("各模型从初始筹码到每手结束后的筹码明细", "Model stacks from the origin through every completed hand")}</caption>
+        <thead><tr><th>{text("节点", "Point")}</th>{orderedPlayers.map((player) => <th key={player.id}>{player.displayName}</th>)}</tr></thead>
+        <tbody>{seriesPoints.map((point) => <tr key={point.key}><th>{point.handNo === null ? text("初始", "Origin") : text(`第 ${point.handNo} 手`, `H${point.handNo}`)}</th>{orderedPlayers.map((player) => <td key={player.id}>{point.stacks[player.id] ?? 0}</td>)}</tr>)}</tbody>
       </table>
     </div>
   );

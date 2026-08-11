@@ -159,6 +159,7 @@ describePostgres("persisted model tournament orchestration", () => {
 
   it("pauses on infrastructure failure and resumes the same decision without a poker penalty", async () => {
     const tournamentId = randomUUID();
+    const decisionTimeoutMs = 240_000;
     const store = new PgEventStore(pool!, Buffer.alloc(32, 42));
     let healthy = false;
     const observedTimeouts: number[] = [];
@@ -196,6 +197,7 @@ describePostgres("persisted model tournament orchestration", () => {
           blindLevels: [{ smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 }],
         },
         providerIdByPlayer: { alpha: "flaky", beta: "policy" },
+        decisionTimeoutMs,
         masterSeed: new Uint8Array(32).fill(6),
       });
       const originalDecision = runtime.pendingDecisionId;
@@ -204,7 +206,7 @@ describePostgres("persisted model tournament orchestration", () => {
       expect(runtime).toMatchObject({
         operationalStatus: "PAUSED_INFRA",
         pendingDecisionId: originalDecision,
-        decisionTimeoutMs: ARENA_DECISION_TIMEOUT_MS,
+        decisionTimeoutMs,
       });
       expect(runtime.domain.currentHand?.players.map((player) => player.stack)).toEqual(originalStacks);
 
@@ -215,7 +217,7 @@ describePostgres("persisted model tournament orchestration", () => {
       expect(runtime.operationalStatus).toBe("RUNNING");
       expect(runtime.pendingDecisionId).not.toBe(originalDecision);
       expect(runtime.domain.currentHand?.players.find((player) => player.id === "alpha")?.folded).toBe(false);
-      expect(new Set(observedTimeouts)).toEqual(new Set([ARENA_DECISION_TIMEOUT_MS]));
+      expect(new Set(observedTimeouts)).toEqual(new Set([decisionTimeoutMs]));
     } finally {
       await pool!.query("delete from tournaments where id = $1", [tournamentId]);
     }
