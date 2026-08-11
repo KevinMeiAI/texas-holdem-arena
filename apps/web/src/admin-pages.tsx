@@ -141,6 +141,7 @@ const providerProfileLabel = (profile: string, locale: UiLocale = "zh-CN") => ({
   deepseek: "DeepSeek",
   kimi: "Kimi",
   zhipu: uiText(locale, "智谱 GLM", "Zhipu GLM"),
+  xai: "xAI / Grok",
   generic: uiText(locale, "通用兼容", "Generic compatible"),
 }[profile] ?? profile);
 
@@ -236,7 +237,7 @@ function ProviderModal({ value, onClose, onSave }: { value: { draft: ProviderDra
       <div className="form-grid">
         <label><span>{text("名称", "Name")}</span><input autoComplete="organization" value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} required autoFocus /></label>
         <label><span>{text("接口协议", "API protocol")}</span><select value={draft.providerType} onChange={(event) => setDraft({ ...draft, providerType: event.target.value })}><option value="openai-responses">OpenAI Responses</option><option value="anthropic-messages">Anthropic Messages</option><option value="google-gemini">Google Gemini</option><option value="openai-compatible">OpenAI-compatible</option><option value="mock-scripted">{text("本机模拟策略", "Local mock")}</option></select></label>
-        <label><span>{text("供应商兼容档案", "Provider profile")}</span><select value={draft.providerProfile} onChange={(event) => setDraft({ ...draft, providerProfile: event.target.value })}><option value="auto">{text("自动识别", "Automatic")}</option><option value="openai">OpenAI</option><option value="anthropic">Claude</option><option value="gemini">Gemini</option><option value="deepseek">DeepSeek</option><option value="kimi">Kimi</option><option value="zhipu">{text("智谱 GLM", "Zhipu GLM")}</option><option value="generic">{text("通用兼容端点", "Generic compatible")}</option></select></label>
+        <label><span>{text("供应商兼容档案", "Provider profile")}</span><select value={draft.providerProfile} onChange={(event) => setDraft({ ...draft, providerProfile: event.target.value })}><option value="auto">{text("自动识别", "Automatic")}</option><option value="openai">OpenAI</option><option value="anthropic">Claude</option><option value="gemini">Gemini</option><option value="deepseek">DeepSeek</option><option value="kimi">Kimi</option><option value="zhipu">{text("智谱 GLM", "Zhipu GLM")}</option><option value="xai">xAI / Grok</option><option value="generic">{text("通用兼容端点", "Generic compatible")}</option></select></label>
         <label><span>{text("默认输出方式", "Default output")}</span><select value={draft.defaultOutputMode} onChange={(event) => setDraft({ ...draft, defaultOutputMode: event.target.value })}><option value="auto">{text("自动选择", "Automatic")}</option><option value="json_schema">JSON Schema</option><option value="json_object">JSON Object</option><option value="prompt">{text("仅提示词约束", "Prompt only")}</option></select></label>
         <label className="full"><span>Base URL</span><input type="url" placeholder="https://api.example.com/v1" value={draft.baseUrl} onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })} /></label>
         <label className="full"><span>API Key</span><input type="password" autoComplete="new-password" placeholder={value.editing && value.editing.hasApiKey ? `${text("当前", "Current")} •••• ${value.editing.keyLastFour}` : "sk-…"} value={draft.apiKey} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} /></label>

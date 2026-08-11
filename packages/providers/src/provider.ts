@@ -5,7 +5,7 @@ import type {
 import { parseModelJson, type ExpectedModelOutput } from "../../contracts/src/model-protocol.js";
 
 export type ProviderKind = "openai-responses" | "anthropic-messages" | "google-gemini" | "openai-compatible" | "mock-scripted";
-export type ProviderProfile = "auto" | "openai" | "anthropic" | "gemini" | "deepseek" | "kimi" | "zhipu" | "generic";
+export type ProviderProfile = "auto" | "openai" | "anthropic" | "gemini" | "deepseek" | "kimi" | "zhipu" | "xai" | "generic";
 export type OutputMode = "auto" | "json_schema" | "json_object" | "prompt";
 export type ModelOutputMode = "inherit" | OutputMode;
 

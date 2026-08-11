@@ -159,6 +159,27 @@ describe("real provider transport adapters", () => {
     expect(captured.at(-1)?.body).toMatchObject({ response_format: { type: "json_object" } });
   });
 
+  it("maps the xAI profile to OpenAI-compatible JSON Schema", async () => {
+    const provider = new OpenAICompatibleProvider({
+      ...common,
+      provider: "openai-compatible",
+      providerProfile: "xai",
+      model: "grok-4",
+      baseUrl: "https://provider.test/compatible/v1",
+    });
+    await provider.decide(request());
+    expect(captured.at(-1)?.body).toMatchObject({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "arena_action_or_history",
+          schema: expect.any(Object),
+          strict: true,
+        },
+      },
+    });
+  });
+
   it("classifies 429, timeout and protocol failures independently", async () => {
     const rateLimited = new OpenAICompatibleProvider({
       ...common,

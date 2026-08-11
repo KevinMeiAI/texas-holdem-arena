@@ -24,7 +24,7 @@ const providerType = z.enum([
   "openai-compatible",
   "mock-scripted",
 ]);
-const providerProfile = z.enum(["auto", "openai", "anthropic", "gemini", "deepseek", "kimi", "zhipu", "generic"]);
+const providerProfile = z.enum(["auto", "openai", "anthropic", "gemini", "deepseek", "kimi", "zhipu", "xai", "generic"]);
 const outputMode = z.enum(["auto", "json_schema", "json_object", "prompt"]);
 const modelOutputMode = z.enum(["inherit", "auto", "json_schema", "json_object", "prompt"]);
 

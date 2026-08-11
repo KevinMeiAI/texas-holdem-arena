@@ -33,10 +33,13 @@ function inferredProfile(config: FrozenModelConfig): Exclude<ProviderProfile, "a
     case "anthropic-messages": return "anthropic";
     case "google-gemini": return "gemini";
     case "openai-compatible": {
-      const fingerprint = `${config.baseUrl ?? ""} ${config.model}`.toLowerCase();
+      const baseUrl = (config.baseUrl ?? "").toLowerCase();
+      const model = config.model.trim().toLowerCase();
+      const fingerprint = `${baseUrl} ${model}`;
       if (fingerprint.includes("deepseek")) return "deepseek";
       if (fingerprint.includes("moonshot") || fingerprint.includes("kimi")) return "kimi";
       if (fingerprint.includes("bigmodel") || fingerprint.includes("zhipu") || /(^|[\s/_-])glm/.test(fingerprint)) return "zhipu";
+      if (baseUrl.includes("api.x.ai") || baseUrl.includes("x.ai/") || /^grok(?:[.\-_]|$)/.test(model)) return "xai";
       return "generic";
     }
     case "mock-scripted": return "generic";

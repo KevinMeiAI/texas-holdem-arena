@@ -36,6 +36,15 @@ describe("provider output policy", () => {
       .toMatchObject({ effectiveProviderProfile: "kimi", effectiveMode: "json_schema" });
     expect(inspectOutputPolicy(config({ model: "glm-4.5", baseUrl: "https://open.bigmodel.cn/api/paas/v4" })))
       .toMatchObject({ effectiveProviderProfile: "zhipu", effectiveMode: "json_object" });
+    expect(inspectOutputPolicy(config({ model: "example-model", baseUrl: "https://api.x.ai/v1" })))
+      .toMatchObject({ effectiveProviderProfile: "xai", effectiveMode: "json_schema" });
+    expect(inspectOutputPolicy(config({ model: "grok-4", baseUrl: "https://compatible.example/v1" })))
+      .toMatchObject({ effectiveProviderProfile: "xai", effectiveMode: "json_schema" });
+  });
+
+  it("selects JSON Schema for an explicit xAI profile", () => {
+    expect(inspectOutputPolicy(config({ providerProfile: "xai", model: "grok-4" })))
+      .toMatchObject({ effectiveProviderProfile: "xai", effectiveMode: "json_schema", supported: true });
   });
 
   it("selects Kimi K3 schema mode while older model names remain on JSON Object", () => {
