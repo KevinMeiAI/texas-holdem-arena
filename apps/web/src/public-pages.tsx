@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiRequest, useApiResource } from "./api";
+import { HandActionLedger } from "./hand-action-ledger";
 import { StackHistoryChart } from "./stack-history-chart";
 import { TournamentStatisticsReport } from "./tournament-statistics";
 import {
@@ -259,6 +260,7 @@ function HandSelector({ hands, activeHand, tournamentId }: {
 
 export function ReplayPage() {
   const { id = "", handNo: routeHandNo } = useParams();
+  const [eventsCollapsed, setEventsCollapsed] = useState(false);
   const tournament = useApiResource<{ state: ArenaState }>(id ? `/api/public/tournaments/${id}` : null);
   const hands = useApiResource<{ hands: HandSummary[] }>(id ? `/api/public/tournaments/${id}/hands` : null);
   const stackHistory = useApiResource<{ points: StackHistoryPoint[] }>(id ? `/api/public/tournaments/${id}/stack-history` : null);
@@ -303,17 +305,28 @@ export function ReplayPage() {
       )}
       <HandSelector hands={hands.data?.hands ?? []} activeHand={handNo} tournamentId={id} />
       {replay.loading ? <LoadingBlock /> : replay.error ? <ErrorBlock message={replay.error} /> : (
-        <div className="replay-grid">
+        <div className={`replay-grid${eventsCollapsed ? " events-collapsed" : ""}`}>
           <section className="replay-stage">
             <div className="replay-board-label"><span>公共牌结果</span><b>{boards.length > 1 ? `${boards.length} 次发牌` : "发牌一次"}</b></div>
             {boards.map((board, index) => <div className="replay-board" key={index}><span>第 {index + 1} 组</span><div>{Array.from({ length: 5 }, (_, cardIndex) => <PlayingCard card={board[cardIndex]} key={cardIndex} />)}</div></div>)}
             {boards.length === 0 && <div className="replay-board"><span>第 1 组</span><div>{Array.from({ length: 5 }, (_, index) => <PlayingCard key={index} />)}</div></div>}
-            <div className="hole-card-ledger">
-              <div className="ledger-heading"><span>赛后底牌存档</span><b>牌局结束后公开</b></div>
-              {state.players.map((player) => <div className="ledger-player" key={player.id}><span className="model-monogram">{player.displayName.slice(0, 1)}</span><strong>{player.displayName}</strong><div><PlayingCard card={holeCards.get(player.id)?.[0]} compact /><PlayingCard card={holeCards.get(player.id)?.[1]} compact /></div></div>)}
-            </div>
+            <HandActionLedger players={state.players} events={events} holeCards={holeCards} />
           </section>
-          <aside className="replay-events"><div className="panel-heading"><div><h2>逐事件记录</h2><p>按执行顺序完整保存</p></div><span>{events.length} 条事件</span></div><EventTape compact events={events} players={state.players} /></aside>
+          <aside className={`replay-events${eventsCollapsed ? " is-collapsed" : ""}`}>
+            {eventsCollapsed ? (
+              <button className="replay-events-reveal" type="button" onClick={() => setEventsCollapsed(false)} aria-expanded="false">
+                <span>逐事件记录</span><b>展开</b>
+              </button>
+            ) : (
+              <>
+                <div className="panel-heading replay-events-heading">
+                  <div><h2>逐事件记录</h2><p>按执行顺序完整保存</p></div>
+                  <div><span>{events.length} 条事件</span><button type="button" onClick={() => setEventsCollapsed(true)} aria-expanded="true">收起</button></div>
+                </div>
+                <EventTape compact events={events} players={state.players} />
+              </>
+            )}
+          </aside>
         </div>
       )}
       {decisions.length > 0 && (
