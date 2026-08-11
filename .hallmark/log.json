@@ -1,5 +1,17 @@
 [
   {
+    "date": "2026-08-11",
+    "scope": "app",
+    "macrostructure": "Workbench / Index-First",
+    "theme": "custom adaptive",
+    "theme_axes": "light-dark / geometric-sans / chromatic-brass",
+    "vibe": "deep felt, aged brass, quiet utility",
+    "enrichment": "none",
+    "nav": "N9 sticky edge-aligned",
+    "footer": "none",
+    "brief": "Full-app copy reduction, sticky navigation, theme and locale controls"
+  },
+  {
     "date": "2026-08-09",
     "scope": "app",
     "macrostructure": "Workbench / Index-First",

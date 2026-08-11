@@ -1,4 +1,5 @@
 import type { ArenaEvent, ArenaPlayer } from "./types";
+import { type UiLocale, uiText } from "./ui-preferences";
 
 export const HAND_STREETS = ["PREFLOP", "FLOP", "TURN", "RIVER"] as const;
 
@@ -140,24 +141,31 @@ function formattedAmount(value: number): string {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
-function actionLabel(action: EventAction): string {
+function actionLabel(action: EventAction, locale: UiLocale): string {
   const allIn = action.commandAction === "all_in";
   if (allIn) {
+    if (locale === "en") {
+      const prefix = action.classification === "call" ? "All-in call to"
+        : action.classification === "bet" ? "All-in bet to"
+          : action.classification === "raise" || action.classification === "short_raise" ? "All-in raise to"
+            : "All-in to";
+      return action.amountTo > 0 ? `${prefix} ${formattedAmount(action.amountTo)}` : prefix.replace(/ to$/, "");
+    }
     const prefix = action.classification === "call" ? "全下跟注至"
       : action.classification === "bet" ? "全下下注至"
         : action.classification === "raise" || action.classification === "short_raise" ? "全下加注至"
           : "全下至";
     return action.amountTo > 0 ? `${prefix} ${formattedAmount(action.amountTo)}` : prefix.replace(/至$/, "");
   }
-  if (action.classification === "fold") return "弃牌";
-  if (action.classification === "check") return "过牌";
-  if (action.classification === "call") return action.paid > 0 ? `跟注 ${formattedAmount(action.paid)}` : "跟注";
-  if (action.classification === "bet") return action.amountTo > 0 ? `下注至 ${formattedAmount(action.amountTo)}` : "下注";
+  if (action.classification === "fold") return uiText(locale, "弃牌", "Fold");
+  if (action.classification === "check") return uiText(locale, "过牌", "Check");
+  if (action.classification === "call") return action.paid > 0 ? `${uiText(locale, "跟注", "Call")} ${formattedAmount(action.paid)}` : uiText(locale, "跟注", "Call");
+  if (action.classification === "bet") return action.amountTo > 0 ? `${uiText(locale, "下注至", "Bet to")} ${formattedAmount(action.amountTo)}` : uiText(locale, "下注", "Bet");
   if (action.classification === "raise" || action.classification === "short_raise") {
-    return action.amountTo > 0 ? `加注至 ${formattedAmount(action.amountTo)}` : "加注";
+    return action.amountTo > 0 ? `${uiText(locale, "加注至", "Raise to")} ${formattedAmount(action.amountTo)}` : uiText(locale, "加注", "Raise");
   }
   const fallback = action.commandAction.replaceAll("_", " ").trim();
-  return fallback ? fallback.toUpperCase() : "行动";
+  return fallback ? fallback.toUpperCase() : uiText(locale, "行动", "Action");
 }
 
 function actionTone(classification: string): HandLedgerAction["tone"] {
@@ -174,7 +182,7 @@ function emptyCells(): Record<HandStreet, HandLedgerCell> {
   };
 }
 
-export function buildHandActionLedger(players: ArenaPlayer[], events: ArenaEvent[]): HandLedgerRow[] {
+export function buildHandActionLedger(players: ArenaPlayer[], events: ArenaEvent[], locale: UiLocale = "zh-CN"): HandLedgerRow[] {
   const orderedEvents = [...events].sort((left, right) => left.sequence - right.sequence);
   const actions = collectActions(orderedEvents);
   const participantIds = new Set<string>();
@@ -216,7 +224,7 @@ export function buildHandActionLedger(players: ArenaPlayer[], events: ArenaEvent
       : preflopRaiseCount;
     row.cells[action.street].actions.push({
       eventSequence: action.event.sequence,
-      label: actionLabel(action),
+      label: actionLabel(action, locale),
       term: actionTerm(action, raiseNumber, preflopAggressorId, flopAggressionCount),
       tone: actionTone(action.classification),
       audit: action.audit,

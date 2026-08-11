@@ -1,17 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { formatChips } from "./components";
 import type { ArenaPlayer, StackHistoryPoint } from "./types";
+import { useUiPreferences } from "./ui-preferences";
 
 const SERIES_COLORS = [
-  "#e4b85f",
-  "#62c8c2",
-  "#f0836d",
-  "#b69bef",
-  "#78aaf3",
-  "#9ccb70",
-  "#e58fb8",
-  "#e59c58",
-  "#b8c4c1",
+  "var(--chart-series-1)",
+  "var(--chart-series-2)",
+  "var(--chart-series-3)",
+  "var(--chart-series-4)",
+  "var(--chart-series-5)",
+  "var(--chart-series-6)",
+  "var(--chart-series-7)",
+  "var(--chart-series-8)",
+  "var(--chart-series-9)",
 ];
 
 const chart = { width: 920, height: 390, left: 72, right: 26, top: 24, bottom: 54 };
@@ -55,6 +56,7 @@ export function StackHistoryChart({ players, points }: {
   players: ArenaPlayer[];
   points: StackHistoryPoint[];
 }) {
+  const { text } = useUiPreferences();
   const orderedPlayers = [...players].sort((left, right) => left.seat - right.seat);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [selectedIndex, setSelectedIndex] = useState(Math.max(0, points.length - 1));
@@ -67,7 +69,7 @@ export function StackHistoryChart({ players, points }: {
     if (!container) return;
     container.scrollLeft = container.scrollWidth - container.clientWidth;
   }, [points.length]);
-  if (points.length === 0) return <div className="stack-history-empty">还没有可绘制的手牌结算记录。</div>;
+  if (points.length === 0) return <div className="stack-history-empty">{text("还没有筹码记录。", "No stack history yet.")}</div>;
 
   const maximumStack = Math.max(1, ...points.flatMap((point) => orderedPlayers.map((player) => point.stacks[player.id] ?? 0)));
   const yMaximum = axisMaximum(maximumStack);
@@ -101,8 +103,8 @@ export function StackHistoryChart({ players, points }: {
             onPointerLeave={() => setIsPointerActive(false)}
             onPointerCancel={() => setIsPointerActive(false)}
           >
-            <title id="stack-chart-title">各模型每手结束后的筹码走势</title>
-            <desc id="stack-chart-description">横轴为手数，纵轴为筹码。右侧列表展示当前选中手牌的精确筹码。</desc>
+            <title id="stack-chart-title">{text("各模型每手结束后的筹码走势", "Model stack history after each hand")}</title>
+            <desc id="stack-chart-description">{text("横轴为手数，纵轴为筹码。右侧列表展示当前选中手牌的精确筹码。", "The x-axis shows hands and the y-axis shows chips. The list shows exact stacks for the selected hand.")}</desc>
             {yTicks.map((tick) => {
               const y = yAt(tick);
               return (
@@ -134,16 +136,15 @@ export function StackHistoryChart({ players, points }: {
               <g className="stack-chart-cursor">
                 <line x1={xAt(selectedIndex)} x2={xAt(selectedIndex)} y1={chart.top} y2={chart.top + plotHeight} />
                 <rect x={xAt(selectedIndex) - 31} y={chart.top - 5} width="62" height="24" rx="3" />
-                <text x={xAt(selectedIndex)} y={chart.top + 11}>第 {selected.handNo} 手</text>
+                <text x={xAt(selectedIndex)} y={chart.top + 11}>{text("第", "H")} {selected.handNo} {text("手", "")}</text>
               </g>
             )}
             <rect className="stack-chart-hitarea" x={chart.left} y={chart.top} width={plotWidth} height={plotHeight} />
           </svg>
         </div>
-        <p className="stack-chart-hint">移动指针或横向拖动，查看每一手结算后的筹码。</p>
       </div>
       <aside className="stack-chart-inspector" aria-live="polite">
-        <header><span>结算快照</span><strong>第 {selected.handNo} 手</strong></header>
+        <header><span>{text("结算快照", "Snapshot")}</span><strong>{text("第", "Hand")} {selected.handNo} {text("手", "")}</strong></header>
         <div className="stack-chart-ranking">
           {ranking.map(({ player, color, stack }, index) => (
             <button
@@ -162,9 +163,9 @@ export function StackHistoryChart({ players, points }: {
         </div>
       </aside>
       <table className="visually-hidden">
-        <caption>各模型每手结束后的筹码明细</caption>
-        <thead><tr><th>手数</th>{orderedPlayers.map((player) => <th key={player.id}>{player.displayName}</th>)}</tr></thead>
-        <tbody>{points.map((point) => <tr key={point.handNo}><th>第 {point.handNo} 手</th>{orderedPlayers.map((player) => <td key={player.id}>{point.stacks[player.id] ?? 0}</td>)}</tr>)}</tbody>
+        <caption>{text("各模型每手结束后的筹码明细", "Model stacks after each hand")}</caption>
+        <thead><tr><th>{text("手数", "Hand")}</th>{orderedPlayers.map((player) => <th key={player.id}>{player.displayName}</th>)}</tr></thead>
+        <tbody>{points.map((point) => <tr key={point.handNo}><th>{text("第", "Hand")} {point.handNo} {text("手", "")}</th>{orderedPlayers.map((player) => <td key={player.id}>{point.stacks[player.id] ?? 0}</td>)}</tr>)}</tbody>
       </table>
     </div>
   );
