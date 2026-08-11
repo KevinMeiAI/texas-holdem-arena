@@ -606,7 +606,7 @@ button:disabled {
 
 .playing-card.card-empty {
   background: var(--color-felt-deep);
-  border-color: var(--color-felt-light);
+  border-color: var(--color-felt-rule);
   box-shadow: none;
 }
 
@@ -655,7 +655,7 @@ button:disabled {
 .pot-display strong {
   display: block;
   margin-top: var(--space-3xs);
-  color: var(--color-accent-strong);
+  color: var(--color-accent-on-dark);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   font-weight: 500;
@@ -674,7 +674,7 @@ button:disabled {
 
 .table-result span {
   display: block;
-  color: var(--color-accent-strong);
+  color: var(--color-accent-on-dark);
   font-size: var(--text-sm);
   font-weight: 700;
 }
@@ -788,7 +788,7 @@ button:disabled {
   position: absolute;
   inset-inline-start: 50%;
   bottom: -1.5rem;
-  color: var(--color-accent-strong);
+  color: var(--color-accent-on-dark);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-weight: 500;
@@ -1854,7 +1854,7 @@ button:disabled {
 }
 
 .report-player-metrics .is-negative strong {
-  color: var(--color-danger-ink);
+  color: var(--color-danger-text);
 }
 
 .report-methodology {
@@ -2028,8 +2028,9 @@ button:disabled {
 }
 
 .replay-board > span {
-  color: var(--color-ink-2);
+  color: var(--color-card-paper);
   font-size: var(--text-xs);
+  font-weight: 700;
 }
 
 .replay-board > div {
@@ -2294,7 +2295,7 @@ button:disabled {
 }
 
 .hand-action-meta span.fallback {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 .hand-cell-empty {
@@ -2966,7 +2967,7 @@ button:disabled {
 }
 
 .model-table code.policy-issue {
-  color: var(--color-danger-ink);
+  color: var(--color-danger-text);
 }
 
 .model-table article > span,
@@ -3209,13 +3210,13 @@ select:disabled {
 input[aria-invalid="true"],
 textarea[aria-invalid="true"],
 select[aria-invalid="true"] {
-  border-color: var(--color-danger);
+  border-color: var(--color-danger-text);
 }
 
 .form-error {
   min-height: 1.5rem;
   margin: var(--space-xs) 0 0;
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   font-size: var(--text-sm);
   font-weight: 700;
 }
@@ -3524,7 +3525,7 @@ select[aria-invalid="true"] {
 }
 
 .login-editorial h1 span {
-  color: var(--color-accent-strong);
+  color: var(--color-accent-on-dark);
 }
 
 .login-editorial > p {
@@ -3589,6 +3590,90 @@ select[aria-invalid="true"] {
   color: var(--color-muted);
   font-size: var(--text-xs);
   text-align: center;
+}
+
+:root[data-theme="light"] .table-broadcast {
+  background: var(--color-paper);
+}
+
+:root[data-theme="light"] .poker-table-shell {
+  background: var(--color-surface-raised);
+}
+
+:root[data-theme="light"] .table-seat {
+  background: var(--color-surface-raised);
+}
+
+:root[data-theme="light"] .table-seat.is-out {
+  color: var(--color-muted);
+  background: var(--color-paper-3);
+  box-shadow: none;
+  filter: none;
+  opacity: 0.92;
+}
+
+:root[data-theme="light"] .table-seat.is-out .seat-name strong,
+:root[data-theme="light"] .table-seat.is-out .seat-stack b {
+  color: var(--color-muted);
+}
+
+:root[data-theme="light"] .stack-history-panel,
+:root[data-theme="light"] .tournament-report,
+:root[data-theme="light"] .decision-audit-panel,
+:root[data-theme="light"] .hand-action-ledger,
+:root[data-theme="light"] .provider-card,
+:root[data-theme="light"] .model-table article,
+:root[data-theme="light"] .admin-live-card,
+:root[data-theme="light"] .modal {
+  background: var(--color-surface-raised);
+}
+
+:root[data-theme="light"] .stack-chart-layout,
+:root[data-theme="light"] .tournament-report-heading,
+:root[data-theme="light"] .leaderboard-principle {
+  background: var(--color-paper-2);
+}
+
+:root[data-theme="light"] .stack-chart-scroll {
+  scrollbar-color: var(--color-neutral) var(--color-paper-2);
+}
+
+:root[data-theme="light"] .stack-chart-grid line {
+  stroke: var(--color-rule);
+}
+
+:root[data-theme="light"] .stack-chart-series path {
+  stroke-width: 3;
+}
+
+:root[data-theme="light"] .replay-stage,
+:root[data-theme="light"] .hand-action-table tbody th,
+:root[data-theme="light"] .hand-action-table tbody td {
+  background: var(--color-surface-raised);
+}
+
+:root[data-theme="light"] .replay-board .playing-card.card-empty {
+  background: var(--color-felt);
+}
+
+:root[data-theme="light"] .hand-action-meta span {
+  color: var(--color-warning);
+  background: var(--color-surface-raised);
+  border-color: var(--color-warning);
+}
+
+:root[data-theme="light"] .hand-action-meta span.fallback {
+  color: var(--color-danger-text);
+  border-color: var(--color-danger-text);
+}
+
+:root[data-theme="light"] .login-editorial > p {
+  color: var(--color-card-paper);
+}
+
+:root[data-theme="light"] .login-proof span {
+  color: var(--color-card-paper);
+  background: var(--color-felt);
 }
 
 @media (hover: hover) and (pointer: fine) {
