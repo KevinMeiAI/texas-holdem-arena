@@ -3,6 +3,11 @@ import { Link, useParams } from "react-router-dom";
 import { apiRequest, useApiResource } from "./api";
 import { HandActionLedger } from "./hand-action-ledger";
 import { styleProfileLabel } from "./leaderboard-format";
+import {
+  sortLeaderboardEntries,
+  type LeaderboardSortDirection,
+  type LeaderboardSortValue,
+} from "./leaderboard-sort";
 import { StackHistoryChart } from "./stack-history-chart";
 import { TournamentStatisticsReport } from "./tournament-statistics";
 import {
@@ -125,7 +130,15 @@ export function TournamentsPage() {
 
 export function LeaderboardPage() {
   const { locale, text } = useUiPreferences();
-  const [view, setView] = useState<"competition" | "reliability" | "efficiency" | "styles">("competition");
+  type LeaderboardView = "competition" | "reliability" | "efficiency" | "styles";
+  type SortState = { key: string; direction: LeaderboardSortDirection };
+  const [view, setView] = useState<LeaderboardView>("competition");
+  const [sortByView, setSortByView] = useState<Record<LeaderboardView, SortState>>({
+    competition: { key: "rating", direction: "desc" },
+    reliability: { key: "validDecisionRate", direction: "desc" },
+    efficiency: { key: "averageLatencyMs", direction: "asc" },
+    styles: { key: "handsPlayed", direction: "desc" },
+  });
   const { data, loading, error, refresh } = useApiResource<LeaderboardResponse>("/api/public/leaderboard");
   if (loading) return <main className="page-shell"><LoadingBlock label={text("正在计算历史排名", "Loading rankings")} /></main>;
   if (error) return <main className="page-shell"><ErrorBlock message={error} onRetry={() => void refresh()} /></main>;
@@ -136,6 +149,80 @@ export function LeaderboardPage() {
     { id: "efficiency" as const, label: text("效率", "Efficiency") },
     { id: "styles" as const, label: text("牌风档案", "Playing style") },
   ];
+  const sortOptions: Record<LeaderboardView, { key: string; label: string; defaultDirection: LeaderboardSortDirection }[]> = {
+    competition: [
+      { key: "rating", label: "Rating", defaultDirection: "desc" },
+      { key: "points", label: text("积分", "Points"), defaultDirection: "desc" },
+      { key: "tournaments", label: text("赛事", "Events"), defaultDirection: "desc" },
+      { key: "championships", label: text("冠军", "Wins"), defaultDirection: "desc" },
+      { key: "topThreeRate", label: text("前三率", "Top 3"), defaultDirection: "desc" },
+      { key: "averageFinish", label: text("平均名次", "Avg finish"), defaultDirection: "asc" },
+    ],
+    reliability: [
+      { key: "validDecisionRate", label: text("有效决策", "Valid"), defaultDirection: "desc" },
+      { key: "firstPassRate", label: text("一次成功", "First pass"), defaultDirection: "desc" },
+      { key: "protocolCorrections", label: text("协议纠错", "Corrections"), defaultDirection: "asc" },
+      { key: "fallbacks", label: text("规则兜底", "Fallbacks"), defaultDirection: "asc" },
+      { key: "timeouts", label: text("超时", "Timeouts"), defaultDirection: "asc" },
+      { key: "infrastructurePauses", label: text("暂停", "Pauses"), defaultDirection: "asc" },
+    ],
+    efficiency: [
+      { key: "averageLatencyMs", label: text("平均响应", "Average"), defaultDirection: "asc" },
+      { key: "p95LatencyMs", label: text("95% 响应", "P95"), defaultDirection: "asc" },
+      { key: "providerCalls", label: text("调用次数", "Calls"), defaultDirection: "desc" },
+      { key: "totalTokens", label: text("总 Token", "Total tokens"), defaultDirection: "desc" },
+      { key: "tokensPerDecision", label: text("每次决策", "Per decision"), defaultDirection: "asc" },
+    ],
+    styles: [
+      { key: "vpipRate", label: text("主动入池", "VPIP"), defaultDirection: "desc" },
+      { key: "pfrRate", label: text("翻前加注", "PFR"), defaultDirection: "desc" },
+      { key: "threeBetRate", label: text("再加注手牌", "3-bet"), defaultDirection: "desc" },
+      { key: "showdownWinRate", label: text("摊牌胜率", "Showdown win"), defaultDirection: "desc" },
+      { key: "handsPlayed", label: text("样本手数", "Hands"), defaultDirection: "desc" },
+    ],
+  };
+  const activeSort = sortByView[view];
+  const setSortKey = (key: string) => {
+    const option = sortOptions[view].find((candidate) => candidate.key === key);
+    setSortByView((current) => ({
+      ...current,
+      [view]: current[view].key === key
+        ? { key, direction: current[view].direction === "desc" ? "asc" : "desc" }
+        : { key, direction: option?.defaultDirection ?? "desc" },
+    }));
+  };
+  const setSortDirection = (direction: LeaderboardSortDirection) => {
+    setSortByView((current) => ({ ...current, [view]: { ...current[view], direction } }));
+  };
+  const sortHeader = (label: string, key: string) => {
+    const active = activeSort.key === key;
+    const directionLabel = activeSort.direction === "desc"
+      ? text("从高到低", "High to low")
+      : text("从低到高", "Low to high");
+    return (
+      <span role="columnheader" aria-sort={active ? (activeSort.direction === "desc" ? "descending" : "ascending") : "none"}>
+        <button
+          type="button"
+          className={`leaderboard-sort-button ${active ? "active" : ""}`}
+          onClick={() => setSortKey(key)}
+          title={active ? directionLabel : text(`按${label}排序`, `Sort by ${label}`)}
+        >
+          <span>{label}</span><i aria-hidden="true">{active ? (activeSort.direction === "desc" ? "↓" : "↑") : "↕"}</i>
+        </button>
+      </span>
+    );
+  };
+  const metricValue = <T extends object>(entry: T, key: string): LeaderboardSortValue => {
+    const value = (entry as Record<string, unknown>)[key];
+    return typeof value === "number" || typeof value === "string" ? value : null;
+  };
+  const sortedCompetition = sortLeaderboardEntries(entries, (entry) => metricValue(entry, sortByView.competition.key), sortByView.competition.direction);
+  const reliabilityEntries = data?.reliability ?? [];
+  const sortedReliability = sortLeaderboardEntries(reliabilityEntries, (entry) => metricValue(entry, sortByView.reliability.key), sortByView.reliability.direction);
+  const efficiencyEntries = data?.efficiency ?? [];
+  const sortedEfficiency = sortLeaderboardEntries(efficiencyEntries, (entry) => metricValue(entry, sortByView.efficiency.key), sortByView.efficiency.direction);
+  const styleEntries = data?.styles ?? [];
+  const sortedStyles = sortLeaderboardEntries(styleEntries, (entry) => metricValue(entry, sortByView.styles.key), sortByView.styles.direction);
   const identity = (index: number, displayName: string, warning: boolean, warningText: string, styleProfile?: string) => (
     <div className="rank-model">
       <b>{String(index + 1).padStart(2, "0")}</b>
@@ -157,15 +244,23 @@ export function LeaderboardPage() {
           <div className="leaderboard-tabs compact-tabs" role="tablist" aria-label={text("选择排行榜维度", "Select ranking view")}>
             {tabs.map((tab) => <button type="button" role="tab" aria-selected={view === tab.id} className={view === tab.id ? "active" : ""} onClick={() => setView(tab.id)} key={tab.id}><b>{tab.label}</b></button>)}
           </div>
+          <div className="leaderboard-mobile-sort">
+            <label><span>{text("排序", "Sort")}</span><select value={activeSort.key} onChange={(event) => setSortKey(event.target.value)}>{sortOptions[view].map((option) => <option value={option.key} key={option.key}>{option.label}</option>)}</select></label>
+            <div className="sort-direction" role="group" aria-label={text("排序方向", "Sort direction")}>
+              <button type="button" className={activeSort.direction === "desc" ? "active" : ""} aria-pressed={activeSort.direction === "desc"} onClick={() => setSortDirection("desc")}>{text("高 → 低", "High → low")}</button>
+              <button type="button" className={activeSort.direction === "asc" ? "active" : ""} aria-pressed={activeSort.direction === "asc"} onClick={() => setSortDirection("asc")}>{text("低 → 高", "Low → high")}</button>
+            </div>
+          </div>
           {view === "competition" && (
             <div className="leaderboard leaderboard-grid is-competition">
-              <div className="leaderboard-head"><span>{text("排名 / 模型", "Rank / model")}</span><span>Rating</span><span>{text("积分", "Points")}</span><span>{text("冠军", "Wins")}</span><span>{text("前三率", "Top 3")}</span><span>{text("平均名次", "Avg finish")}</span></div>
-              {entries.map((entry, index) => (
+              <div className="leaderboard-head" role="row"><span role="columnheader">{text("排名 / 模型", "Rank / model")}</span>{sortHeader("Rating", "rating")}{sortHeader(text("积分", "Points"), "points")}{sortHeader(text("赛事", "Events"), "tournaments")}{sortHeader(text("冠军", "Wins"), "championships")}{sortHeader(text("前三率", "Top 3"), "topThreeRate")}{sortHeader(text("平均名次", "Avg finish"), "averageFinish")}</div>
+              {sortedCompetition.map((entry, index) => (
                 <article className="leaderboard-row" key={entry.modelId}>
                   {identity(index, entry.displayName, entry.sampleWarning, text("样本少于 10 场", "Fewer than 10 events"))}
                   <strong data-label="Rating">{entry.rating}</strong>
                   <span data-label={text("积分", "Points")}>{entry.points.toFixed(1)}</span>
-                  <span data-label={text("冠军", "Wins")}>{entry.championships} / {entry.tournaments}</span>
+                  <span data-label={text("赛事", "Events")}>{entry.tournaments}</span>
+                  <span data-label={text("冠军", "Wins")}>{entry.championships}</span>
                   <span data-label={text("前三率", "Top 3")}>{percent(entry.topThreeRate)}</span>
                   <span data-label={text("平均名次", "Avg finish")}>{entry.averageFinish.toFixed(2)}</span>
                 </article>
@@ -174,23 +269,24 @@ export function LeaderboardPage() {
           )}
           {view === "reliability" && (
             <div className="leaderboard leaderboard-grid is-reliability">
-              <div className="leaderboard-head"><span>{text("排名 / 模型", "Rank / model")}</span><span>{text("有效决策", "Valid")}</span><span>{text("一次成功", "First pass")}</span><span>{text("协议纠错", "Corrections")}</span><span>{text("规则兜底", "Fallbacks")}</span><span>{text("超时 / 暂停", "Timeouts / pauses")}</span></div>
-              {(data?.reliability ?? []).map((entry, index) => (
+              <div className="leaderboard-head" role="row"><span role="columnheader">{text("排名 / 模型", "Rank / model")}</span>{sortHeader(text("有效决策", "Valid"), "validDecisionRate")}{sortHeader(text("一次成功", "First pass"), "firstPassRate")}{sortHeader(text("协议纠错", "Corrections"), "protocolCorrections")}{sortHeader(text("规则兜底", "Fallbacks"), "fallbacks")}{sortHeader(text("超时", "Timeouts"), "timeouts")}{sortHeader(text("暂停", "Pauses"), "infrastructurePauses")}</div>
+              {sortedReliability.map((entry, index) => (
                 <article className="leaderboard-row" key={entry.modelId}>
                   {identity(index, entry.displayName, entry.sampleWarning, text("决策少于 50 次", "Fewer than 50 decisions"))}
                   <strong data-label={text("有效决策", "Valid")}>{percent(entry.validDecisionRate)}</strong>
                   <span data-label={text("一次成功", "First pass")}>{percent(entry.firstPassRate)}</span>
                   <span data-label={text("协议纠错", "Corrections")}>{entry.protocolCorrections}</span>
                   <span data-label={text("规则兜底", "Fallbacks")}>{entry.fallbacks}</span>
-                  <span data-label={text("超时 / 暂停", "Timeouts / pauses")}>{entry.timeouts} / {entry.infrastructurePauses}</span>
+                  <span data-label={text("超时", "Timeouts")}>{entry.timeouts}</span>
+                  <span data-label={text("暂停", "Pauses")}>{entry.infrastructurePauses}</span>
                 </article>
               ))}
             </div>
           )}
           {view === "efficiency" && (
             <div className="leaderboard leaderboard-grid is-efficiency">
-              <div className="leaderboard-head"><span>{text("排名 / 模型", "Rank / model")}</span><span>{text("平均响应", "Average")}</span><span>{text("95% 响应", "P95")}</span><span>{text("调用次数", "Calls")}</span><span>{text("总 Token", "Total tokens")}</span><span>{text("每次决策", "Per decision")}</span></div>
-              {(data?.efficiency ?? []).map((entry, index) => (
+              <div className="leaderboard-head" role="row"><span role="columnheader">{text("排名 / 模型", "Rank / model")}</span>{sortHeader(text("平均响应", "Average"), "averageLatencyMs")}{sortHeader(text("95% 响应", "P95"), "p95LatencyMs")}{sortHeader(text("调用次数", "Calls"), "providerCalls")}{sortHeader(text("总 Token", "Total tokens"), "totalTokens")}{sortHeader(text("每次决策", "Per decision"), "tokensPerDecision")}</div>
+              {sortedEfficiency.map((entry, index) => (
                 <article className="leaderboard-row" key={entry.modelId}>
                   {identity(index, entry.displayName, entry.sampleWarning, text("决策少于 50 次", "Fewer than 50 decisions"))}
                   <strong data-label={text("平均响应", "Average")}>{latency(entry.averageLatencyMs)}</strong>
@@ -204,8 +300,8 @@ export function LeaderboardPage() {
           )}
           {view === "styles" && (
             <div className="leaderboard leaderboard-grid is-styles">
-              <div className="leaderboard-head"><span>{text("模型 / 牌风", "Model / style")}</span><span>{text("主动入池", "VPIP")}</span><span>{text("翻前加注", "PFR")}</span><span>{text("再加注手牌", "3-bet")}</span><span>{text("摊牌胜率", "Showdown win")}</span><span>{text("样本手数", "Hands")}</span></div>
-              {(data?.styles ?? []).map((entry, index) => (
+              <div className="leaderboard-head" role="row"><span role="columnheader">{text("模型 / 牌风", "Model / style")}</span>{sortHeader(text("主动入池", "VPIP"), "vpipRate")}{sortHeader(text("翻前加注", "PFR"), "pfrRate")}{sortHeader(text("再加注手牌", "3-bet"), "threeBetRate")}{sortHeader(text("摊牌胜率", "Showdown win"), "showdownWinRate")}{sortHeader(text("样本手数", "Hands"), "handsPlayed")}</div>
+              {sortedStyles.map((entry, index) => (
                 <article className="leaderboard-row" key={entry.modelId}>
                   {identity(index, entry.displayName, entry.sampleWarning, text("样本少于 200 手", "Fewer than 200 hands"), styleProfileLabel(entry.profile, locale))}
                   <strong data-label={text("主动入池", "VPIP")}>{percent(entry.vpipRate)}</strong>
