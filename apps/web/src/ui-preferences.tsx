@@ -75,7 +75,7 @@ export function PreferenceControls({ className = "" }: { className?: string }) {
         aria-label={text("切换为英文", "Switch to Chinese")}
         title={text("切换为英文", "Switch to Chinese")}
       >
-        {locale === "zh-CN" ? "EN" : "中"}
+        {locale === "zh-CN" ? "EN" : "ZH"}
       </button>
       <button
         type="button"

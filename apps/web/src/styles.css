@@ -1299,8 +1299,10 @@ button:disabled {
 
 .style-profile {
   width: fit-content;
-  margin-bottom: var(--space-3xs);
+  min-height: var(--space-md);
   padding: 0 var(--space-2xs);
+  display: inline-flex;
+  align-items: center;
   color: var(--color-accent-ink);
   background: var(--color-accent);
   border-radius: var(--radius-pill);
@@ -1308,6 +1310,8 @@ button:disabled {
   font-size: var(--text-xs);
   font-style: normal;
   font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .leaderboard-method {

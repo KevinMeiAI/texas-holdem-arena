@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiRequest, useApiResource } from "./api";
 import { HandActionLedger } from "./hand-action-ledger";
+import { styleProfileLabel } from "./leaderboard-format";
 import { StackHistoryChart } from "./stack-history-chart";
 import { TournamentStatisticsReport } from "./tournament-statistics";
 import {
@@ -135,11 +136,15 @@ export function LeaderboardPage() {
     { id: "efficiency" as const, label: text("效率", "Efficiency") },
     { id: "styles" as const, label: text("牌风档案", "Playing style") },
   ];
-  const identity = (index: number, displayName: string, warning: boolean, warningText: string) => (
+  const identity = (index: number, displayName: string, warning: boolean, warningText: string, styleProfile?: string) => (
     <div className="rank-model">
       <b>{String(index + 1).padStart(2, "0")}</b>
       <span className="model-monogram">{displayName.slice(0, 1).toUpperCase()}</span>
-      <div><strong>{displayName}</strong>{warning && <small>{warningText}</small>}</div>
+      <div>
+        <strong>{displayName}</strong>
+        {warning && <small>{warningText}</small>}
+        {styleProfile && <i className="style-profile">{styleProfile}</i>}
+      </div>
     </div>
   );
   const percent = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(0)}%`;
@@ -202,12 +207,12 @@ export function LeaderboardPage() {
               <div className="leaderboard-head"><span>{text("模型 / 牌风", "Model / style")}</span><span>{text("主动入池", "VPIP")}</span><span>{text("翻前加注", "PFR")}</span><span>{text("再加注手牌", "3-bet")}</span><span>{text("摊牌胜率", "Showdown win")}</span><span>{text("样本手数", "Hands")}</span></div>
               {(data?.styles ?? []).map((entry, index) => (
                 <article className="leaderboard-row" key={entry.modelId}>
-                  {identity(index, entry.displayName, entry.sampleWarning, text("样本少于 200 手", "Fewer than 200 hands"))}
+                  {identity(index, entry.displayName, entry.sampleWarning, text("样本少于 200 手", "Fewer than 200 hands"), styleProfileLabel(entry.profile, locale))}
                   <strong data-label={text("主动入池", "VPIP")}>{percent(entry.vpipRate)}</strong>
                   <span data-label={text("翻前加注", "PFR")}>{percent(entry.pfrRate)}</span>
                   <span data-label={text("再加注手牌", "3-bet")}>{percent(entry.threeBetRate)}</span>
                   <span data-label={text("摊牌胜率", "Showdown win")}>{percent(entry.showdownWinRate)}</span>
-                  <span data-label={text("牌风 / 样本", "Style / sample")}><i className="style-profile">{entry.profile}</i>{entry.handsPlayed} {text("手", "hands")}</span>
+                  <span data-label={text("样本手数", "Hands")}>{entry.handsPlayed} {text("手", "hands")}</span>
                 </article>
               ))}
             </div>
