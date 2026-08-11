@@ -77,9 +77,10 @@ export function HandActionLedger({ players, events, holeCards }: {
             {rows.map((row) => (
               <tr key={row.player.id}>
                 <th scope="row">
-                  <span className="model-monogram">{row.player.displayName.slice(0, 1)}</span>
-                  <span className="hand-model-name">{row.player.displayName}</span>
-                  {row.position && <b className="hand-position" title={row.position === "SB" ? "小盲位" : "大盲位"}>{row.position}</b>}
+                  <div className="hand-model-cell">
+                    <span className="hand-model-name" title={row.player.displayName}>{row.player.displayName}</span>
+                    {row.position && <b className="hand-position" title={row.position === "SB" ? "小盲位" : "大盲位"}>{row.position}</b>}
+                  </div>
                 </th>
                 <td><div className="hand-hole-cards" aria-label={`${row.player.displayName} 的手牌`}><PlayingCard card={holeCards.get(row.player.id)?.[0]} compact /><PlayingCard card={holeCards.get(row.player.id)?.[1]} compact /></div></td>
                 {HAND_STREETS.map((street) => {

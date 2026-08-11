@@ -2059,14 +2059,14 @@ button:disabled {
 
 .hand-action-table {
   width: 100%;
-  min-width: 60.75rem;
+  min-width: 58rem;
   table-layout: fixed;
   border-spacing: 0;
   border-collapse: separate;
 }
 
 .hand-action-table .hand-model-col {
-  width: 10.5rem;
+  width: 8.75rem;
 }
 
 .hand-action-table .hand-cards-col {
@@ -2074,7 +2074,7 @@ button:disabled {
 }
 
 .hand-action-table .hand-street-col {
-  width: 10.75rem;
+  width: 10.5rem;
 }
 
 .hand-action-table th,
@@ -2142,24 +2142,31 @@ button:disabled {
 
 .hand-action-table tbody th:first-child {
   z-index: calc(var(--z-base) + 2);
-  white-space: nowrap;
+}
+
+.hand-model-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
 }
 
 .hand-model-name {
-  max-width: 5.25rem;
-  margin-inline-start: var(--space-2xs);
-  display: inline-block;
+  min-width: 0;
+  display: -webkit-box;
+  flex: 1 1 auto;
   overflow: hidden;
-  vertical-align: middle;
   font-size: var(--text-sm);
-  text-overflow: ellipsis;
+  line-height: 1.3;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .hand-position {
   min-width: 2rem;
-  margin-inline-start: var(--space-2xs);
   padding: 0.15rem var(--space-3xs);
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   vertical-align: middle;
@@ -3715,7 +3722,7 @@ select[aria-invalid="true"] {
   .hand-action-table thead th:nth-child(2),
   .hand-action-table tbody td:nth-child(2) {
     position: sticky;
-    inset-inline-start: 10.5rem;
+    inset-inline-start: 8.75rem;
   }
 
   .hand-action-table thead th:nth-child(2) {
