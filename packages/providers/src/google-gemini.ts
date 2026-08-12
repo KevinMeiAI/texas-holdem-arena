@@ -1,7 +1,7 @@
 import { buildModelUserPrompt, type CanonicalModelRequest } from "../../contracts/src/index.js";
 import { finiteToken, postJson, requiredString } from "./http.js";
 import { resolveOutputPolicy } from "./output-policy.js";
-import { classifyProviderError, parseProviderOutput, ProviderCallError, type FrozenModelConfig, type ModelProvider, type ProviderDecision } from "./provider.js";
+import { classifyProviderError, parseProviderRequestOutput, ProviderCallError, type FrozenModelConfig, type ModelProvider, type ProviderDecision } from "./provider.js";
 
 export class GoogleGeminiProvider implements ModelProvider {
   readonly kind = "google-gemini" as const;
@@ -28,7 +28,7 @@ export class GoogleGeminiProvider implements ModelProvider {
       {},
       {
         systemInstruction: { parts: [{ text: request.systemPrompt }] },
-        contents: [{ role: "user", parts: [{ text: buildModelUserPrompt(request.userPayload) }] }],
+        contents: [{ role: "user", parts: [{ text: buildModelUserPrompt(request.userPayload, request.adapterProtocolVersion) }] }],
         generationConfig: { ...this.config.parameters, ...structuredConfig },
       },
       request.timeoutMs,
@@ -44,7 +44,7 @@ export class GoogleGeminiProvider implements ModelProvider {
     };
     const rawText = requiredString(body.candidates?.[0]?.content?.parts?.[0]?.text, "candidate text");
     return {
-      parsed: parseProviderOutput(rawText, request.expectedOutput),
+      parsed: parseProviderRequestOutput(rawText, request),
       rawText,
       latencyMs: Date.now() - started,
       providerRequestId: typeof body.responseId === "string" ? body.responseId : null,

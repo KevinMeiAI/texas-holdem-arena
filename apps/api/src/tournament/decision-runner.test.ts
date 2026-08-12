@@ -44,6 +44,46 @@ describe("uniform model decision policy", () => {
     });
   });
 
+  it("places strict correction codes in trusted arena_control", async () => {
+    const payloads: unknown[] = [];
+    const strictRequest = {
+      ...request,
+      parserPolicy: "arena-parser-strict-v1" as const,
+      adapterProtocolVersion: "arena-adapters-v2",
+    };
+    let call = 0;
+    const provider: ModelProvider = {
+      kind: "mock-scripted",
+      classifyError: (error) => error as ProviderCallError,
+      decide: async (nextRequest) => {
+        payloads.push(nextRequest.userPayload);
+        call += 1;
+        if (call === 1) throw new ProviderCallError("INVALID_RESPONSE", "AMOUNT_TO_MUST_BE_NULL", false);
+        return {
+          parsed: { type: "action", action: "check" },
+          rawText: "{}",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          latencyMs: 1,
+          providerRequestId: null,
+        };
+      },
+    };
+    const result = await runModelDecision({
+      provider,
+      request: strictRequest,
+      validateAction: () => ({ action: "check" }),
+      fallbackAction: () => ({ action: "fold" }),
+    }, config);
+    expect(result).toMatchObject({ status: "ACTION", protocolFailures: 1 });
+    expect(payloads[1]).toMatchObject({
+      arena_control: {
+        mode: "protocol_correction",
+        error_codes: ["AMOUNT_TO_MUST_BE_NULL"],
+      },
+    });
+    expect(payloads[1]).not.toHaveProperty("protocol_correction");
+  });
+
   it("uses check-else-fold fallback only after the second protocol failure", async () => {
     const result = await runModelDecision({
       provider: new MockScriptedProvider(["bad", "still bad"]),

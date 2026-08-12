@@ -1,7 +1,7 @@
 import { buildModelUserPrompt, type CanonicalModelRequest } from "../../contracts/src/index.js";
 import { finiteToken, postJson, requiredString } from "./http.js";
 import { resolveOutputPolicy } from "./output-policy.js";
-import { classifyProviderError, parseProviderOutput, ProviderCallError, type FrozenModelConfig, type ModelProvider, type ProviderDecision } from "./provider.js";
+import { classifyProviderError, parseProviderRequestOutput, ProviderCallError, type FrozenModelConfig, type ModelProvider, type ProviderDecision } from "./provider.js";
 
 export class AnthropicMessagesProvider implements ModelProvider {
   readonly kind = "anthropic-messages" as const;
@@ -25,7 +25,7 @@ export class AnthropicMessagesProvider implements ModelProvider {
         model: this.config.model,
         max_tokens: Number(this.config.parameters.max_tokens ?? 800),
         system: request.systemPrompt,
-        messages: [{ role: "user", content: buildModelUserPrompt(request.userPayload) }],
+        messages: [{ role: "user", content: buildModelUserPrompt(request.userPayload, request.adapterProtocolVersion) }],
         ...(outputConfig ? { output_config: outputConfig } : {}),
       },
       request.timeoutMs,
@@ -39,7 +39,7 @@ export class AnthropicMessagesProvider implements ModelProvider {
     const inputTokens = finiteToken(body.usage?.input_tokens);
     const outputTokens = finiteToken(body.usage?.output_tokens);
     return {
-      parsed: parseProviderOutput(rawText, request.expectedOutput),
+      parsed: parseProviderRequestOutput(rawText, request),
       rawText,
       latencyMs: Date.now() - started,
       providerRequestId: typeof body.id === "string" ? body.id : null,

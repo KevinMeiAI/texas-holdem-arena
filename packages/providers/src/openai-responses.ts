@@ -3,7 +3,7 @@ import { finiteToken, postJson, requiredString } from "./http.js";
 import { resolveOutputPolicy } from "./output-policy.js";
 import {
   classifyProviderError,
-  parseProviderOutput,
+  parseProviderRequestOutput,
   ProviderCallError,
   type FrozenModelConfig,
   type ModelProvider,
@@ -52,7 +52,7 @@ export class OpenAIResponsesProvider implements ModelProvider {
         model: this.config.model,
         input: [
           { role: "system", content: [{ type: "input_text", text: request.systemPrompt }] },
-          { role: "user", content: [{ type: "input_text", text: buildModelUserPrompt(request.userPayload) }] },
+          { role: "user", content: [{ type: "input_text", text: buildModelUserPrompt(request.userPayload, request.adapterProtocolVersion) }] },
         ],
         ...(text ? { text } : {}),
       },
@@ -64,7 +64,7 @@ export class OpenAIResponsesProvider implements ModelProvider {
     };
     const rawText = outputText(response.body);
     return {
-      parsed: parseProviderOutput(rawText, request.expectedOutput),
+      parsed: parseProviderRequestOutput(rawText, request),
       rawText,
       latencyMs: Date.now() - started,
       providerRequestId: typeof body.id === "string" ? body.id : null,

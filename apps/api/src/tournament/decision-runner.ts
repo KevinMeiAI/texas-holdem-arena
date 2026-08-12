@@ -3,6 +3,7 @@ import type {
   CanonicalModelRequest,
   HistoryQuery,
 } from "../../../../packages/contracts/src/model-protocol.js";
+import { ModelProtocolError, type ProtocolErrorCode } from "../../../../packages/contracts/src/model-protocol.js";
 import type { ActionCommand } from "../../../../packages/domain/src/betting.js";
 import {
   ProviderCallError,
@@ -91,9 +92,24 @@ function withFeedback(
   correction: string | null,
   budget: HistoryBudget,
 ): CanonicalModelRequest {
+  const strictControl = request.parserPolicy === "arena-parser-strict-v1";
   return {
     ...request,
-    userPayload: {
+    userPayload: strictControl ? {
+      arena_control: {
+        mode: correction ? "protocol_correction" : "decision",
+        correction_attempt: correction ? 1 : 0,
+        max_correction_attempts: 1,
+        error_codes: correction ? [correction] : [],
+        history_budget_remaining: {
+          queries: budget.state.maxQueries - budget.state.usedQueries,
+          approximate_tokens: budget.state.maxApproxTokens - budget.state.usedApproxTokens,
+          max_records_per_query: budget.state.maxRecordsPerQuery,
+        },
+      },
+      arena_state: request.userPayload,
+      history_results: [...historyResults],
+    } : {
       arena_state: request.userPayload,
       history_results: [...historyResults],
       history_budget_remaining: {
@@ -109,6 +125,10 @@ function withFeedback(
       } : {}),
     },
   };
+}
+
+function correctionCode(error: unknown): ProtocolErrorCode {
+  return error instanceof ModelProtocolError ? error.code : "WIRE_SCHEMA_VIOLATION";
 }
 
 export async function runModelDecision(
@@ -201,7 +221,24 @@ export async function runModelDecision(
         } : {}),
       });
       if (classified.kind === "INVALID_RESPONSE") {
-        correction = classified.message;
+        if (input.request.parserPolicy === "arena-parser-strict-v1") {
+          correction = classified.message.match(/^[A-Z][A-Z_]+$/)?.[0] ?? "INVALID_JSON";
+          protocolFailures += 1;
+          if (protocolFailures > 1) {
+            if (!input.fallbackAction) throw new Error("Poker fallback action is not configured");
+            return {
+              status: "ACTION",
+              action: input.fallbackAction(),
+              response: null,
+              usedFallback: true,
+              protocolFailures,
+              historyResults,
+              calls,
+            };
+          }
+        } else {
+          correction = classified.message;
+        }
         await saveResumeState();
         break;
       }
@@ -221,7 +258,10 @@ export async function runModelDecision(
     }
 
     try {
-      if (!decision) throw new ProviderCallError("INVALID_RESPONSE", correction ?? "Invalid model response", false);
+      if (!decision) {
+        if (input.request.parserPolicy === "arena-parser-strict-v1") continue;
+        throw new ProviderCallError("INVALID_RESPONSE", correction ?? "Invalid model response", false);
+      }
       if (decision.parsed.type === "history_query") {
         if (!input.executeHistoryQuery) throw new Error("History queries are not available");
         const records = await input.executeHistoryQuery(decision.parsed.query);
@@ -245,7 +285,7 @@ export async function runModelDecision(
     } catch (error) {
       protocolFailures += 1;
       if (protocolFailures <= 1) {
-        correction = error instanceof Error ? error.message : "Protocol validation failed";
+        correction = correctionCode(error);
         await saveResumeState();
         continue;
       }

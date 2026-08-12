@@ -5,6 +5,7 @@ import { currentLegalActions } from "../../../../packages/domain/src/reducer.js"
 import { blindLevelAt, type TournamentState } from "../../../../packages/domain/src/tournament.js";
 import type { ProjectedArenaEvent } from "../../../../packages/contracts/src/visibility.js";
 import type { HistoryBudgetState } from "./history-budget.js";
+import { toModelLegalActions } from "./model-legal-actions.js";
 
 export interface ModelContextInput {
   tournamentId: string;
@@ -286,10 +287,11 @@ export function buildModelContext(input: ModelContextInput): unknown {
   const requestedContextVersion = input.contextVersion ?? (promptVersionNumber <= 1
     ? "model-context-v1"
     : promptVersionNumber >= 7 ? "model-context-v3" : "model-context-v2");
-  if (!new Set(["model-context-v1", "model-context-v2", "model-context-v3"]).has(requestedContextVersion)) {
+  if (!new Set(["model-context-v1", "model-context-v2", "model-context-v3", "model-context-v4"]).has(requestedContextVersion)) {
     throw new Error(`Unsupported model context version: ${requestedContextVersion}`);
   }
-  const professionalContext = requestedContextVersion === "model-context-v3";
+  const professionalContext = requestedContextVersion === "model-context-v3" || requestedContextVersion === "model-context-v4";
+  const strictContext = requestedContextVersion === "model-context-v4";
   return {
     schema_version: requestedContextVersion,
     tournament_id: input.tournamentId,
@@ -318,7 +320,18 @@ export function buildModelContext(input: ModelContextInput): unknown {
       total_committed: hero.totalCommitted,
       hole_cards: hero.holeCards.map(cardCode),
     },
-    players: hand.players.map((player) => ({
+    ...(strictContext ? { opponents: hand.players.filter((player) => player.id !== input.playerId).map((player) => ({
+      player_id: player.id,
+      seat: player.seat,
+      stack: player.stack,
+      stack_bb: player.stack / hand.bigBlind,
+      starting_stack: player.startingStack,
+      dead_committed: player.deadCommitted,
+      folded: player.folded,
+      all_in: player.allIn,
+      street_committed: player.streetCommitted,
+      total_committed: player.totalCommitted,
+    })) } : { players: hand.players.map((player) => ({
       player_id: player.id,
       seat: player.seat,
       stack: player.stack,
@@ -331,8 +344,8 @@ export function buildModelContext(input: ModelContextInput): unknown {
       all_in: player.allIn,
       street_committed: player.streetCommitted,
       total_committed: player.totalCommitted,
-    })),
-    boards: hand.boards.map((board) => board.map(cardCode)),
+    })) }),
+    ...(strictContext ? { board: hand.boards[0]?.map(cardCode) ?? [] } : { boards: hand.boards.map((board) => board.map(cardCode)) }),
     ...(professionalContext ? { pot: potContext(input.state, input.playerId) } : { pots: hand.pots }),
     betting: hand.betting ? {
       street: hand.betting.street,
@@ -342,7 +355,7 @@ export function buildModelContext(input: ModelContextInput): unknown {
       ...(professionalContext ? { last_aggressor_id: hand.betting.lastAggressorId ?? null } : {}),
       call_amount: legal?.call?.amount ?? 0,
     } : null,
-    legal_actions: legal,
+    legal_actions: strictContext ? toModelLegalActions(legal) : legal,
     ...(professionalContext
       ? { action_history: compactActionHistory(input.state, input.currentHandEvents) }
       : { current_hand_events: input.currentHandEvents }),

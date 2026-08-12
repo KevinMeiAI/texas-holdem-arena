@@ -24,10 +24,22 @@ export const LEGACY_DECISION_PROTOCOL_BUNDLE: DecisionProtocolBundleDefinition =
   adapterProtocolVersion: "arena-adapters-v1",
 });
 
-export const CURRENT_DECISION_PROTOCOL_BUNDLE_ID = LEGACY_DECISION_PROTOCOL_BUNDLE.id;
+export const DECISION_PROTOCOL_V11_BUNDLE: DecisionProtocolBundleDefinition = Object.freeze({
+  id: "arena-native-v11",
+  systemPromptVersion: "arena-system-v11",
+  contextVersion: "model-context-v4",
+  outputSchemaVersion: "arena-output-v3",
+  parserPolicyVersion: "arena-parser-strict-v1",
+  correctionProtocolVersion: "arena-correction-v1",
+  historyProtocolVersion: "arena-history-v2",
+  adapterProtocolVersion: "arena-adapters-v2",
+});
+
+export const CURRENT_DECISION_PROTOCOL_BUNDLE_ID = DECISION_PROTOCOL_V11_BUNDLE.id;
 
 const BUNDLES = new Map<string, DecisionProtocolBundleDefinition>([
   [LEGACY_DECISION_PROTOCOL_BUNDLE.id, LEGACY_DECISION_PROTOCOL_BUNDLE],
+  [DECISION_PROTOCOL_V11_BUNDLE.id, DECISION_PROTOCOL_V11_BUNDLE],
 ]);
 
 export function decisionProtocolBundle(id = CURRENT_DECISION_PROTOCOL_BUNDLE_ID): DecisionProtocolBundleDefinition {

@@ -71,6 +71,26 @@ export type HistoryQueryResponse = z.infer<typeof historyQueryResponseSchema>;
 export type ActionDecisionResponse = z.infer<typeof actionDecisionResponseSchema>;
 
 export type ExpectedModelOutput = "ACTION_OR_HISTORY";
+export type ModelParserPolicy = "arena-parser-legacy-v1" | "arena-parser-strict-v1";
+
+export type ProtocolErrorCode =
+  | "INVALID_JSON"
+  | "WIRE_SCHEMA_VIOLATION"
+  | "ACTION_NOT_ALLOWED"
+  | "AMOUNT_TO_REQUIRED"
+  | "AMOUNT_TO_MUST_BE_NULL"
+  | "AMOUNT_TO_OUT_OF_RANGE"
+  | "HISTORY_QUERY_INVALID";
+
+export class ModelProtocolError extends Error {
+  constructor(
+    readonly code: ProtocolErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ModelProtocolError";
+  }
+}
 
 function normalizeNullableEnvelope(parsed: unknown, expected: ExpectedModelOutput): unknown {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return parsed;
@@ -117,17 +137,58 @@ function normalizeNullableEnvelope(parsed: unknown, expected: ExpectedModelOutpu
   return parsed;
 }
 
-export function parseModelJson(text: string, expected: ExpectedModelOutput): ActionDecisionResponse {
+function strictEnvelope(parsed: unknown): ActionDecisionResponse {
+  const wireSchema = z.object({
+    type: z.enum(["action", "history_query"]),
+    action: pokerActionSchema.nullable(),
+    amount_to: z.number().int().positive().nullable(),
+    decision_summary: unicodeText(300).nullable(),
+    query: historyQuerySchema.nullable(),
+  }).strict();
+  const wire = wireSchema.safeParse(parsed);
+  if (!wire.success) throw new ModelProtocolError("WIRE_SCHEMA_VIOLATION", "Response does not match arena-output-v3");
+  if (wire.data.type === "history_query") {
+    if (wire.data.action !== null || wire.data.amount_to !== null
+      || wire.data.decision_summary !== null || wire.data.query === null) {
+      throw new ModelProtocolError("HISTORY_QUERY_INVALID", "History query fields are inconsistent");
+    }
+    return { type: "history_query", query: wire.data.query };
+  }
+  if (wire.data.action === null || wire.data.query !== null) {
+    throw new ModelProtocolError("WIRE_SCHEMA_VIOLATION", "Action fields are inconsistent");
+  }
+  const needsAmount = wire.data.action === "bet" || wire.data.action === "raise";
+  if (needsAmount && wire.data.amount_to === null) {
+    throw new ModelProtocolError("AMOUNT_TO_REQUIRED", "Bet or raise requires amount_to");
+  }
+  if (!needsAmount && wire.data.amount_to !== null) {
+    throw new ModelProtocolError("AMOUNT_TO_MUST_BE_NULL", "amount_to must be null for this action");
+  }
+  return {
+    type: "action",
+    action: wire.data.action,
+    ...(wire.data.amount_to === null ? {} : { amount_to: wire.data.amount_to }),
+    ...(wire.data.decision_summary === null ? {} : { decision_summary: wire.data.decision_summary }),
+  };
+}
+
+export function parseModelJson(
+  text: string,
+  expected: ExpectedModelOutput,
+  parserPolicy: ModelParserPolicy = "arena-parser-legacy-v1",
+): ActionDecisionResponse {
   const trimmed = text.trim();
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
-    throw new Error("Model response must be one JSON object with no surrounding text or code fence");
+    throw new ModelProtocolError("INVALID_JSON", "Model response must be one JSON object with no surrounding text or code fence");
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(trimmed) as unknown;
   } catch {
-    throw new Error("Model response is not valid JSON");
+    throw new ModelProtocolError("INVALID_JSON", "Model response is not valid JSON");
   }
+  if (parserPolicy === "arena-parser-strict-v1") return strictEnvelope(parsed);
+  if (parserPolicy !== "arena-parser-legacy-v1") throw new Error(`Unsupported Arena parser policy: ${parserPolicy}`);
   const normalized = normalizeNullableEnvelope(parsed, expected);
   const result = actionDecisionResponseSchema.safeParse(normalized);
   if (result.success) return result.data;
@@ -157,4 +218,6 @@ export interface CanonicalModelRequest {
   };
   userPayload: unknown;
   timeoutMs: number;
+  parserPolicy?: ModelParserPolicy;
+  adapterProtocolVersion?: string;
 }

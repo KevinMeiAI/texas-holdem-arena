@@ -182,6 +182,37 @@ describe("model-self context projection", () => {
     });
   });
 
+  it("projects v4 opponents, one board and one legal-action fact source", () => {
+    let state = createTournament({
+      seatCount: 2,
+      players: [{ id: "hero", seat: 0 }, { id: "villain", seat: 1 }],
+      initialStack: 1_000,
+      initialButton: 0,
+      handsPerLevel: 10,
+      blindLevels: [{ smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 }],
+    });
+    state = startTournamentHand(state, createDeck()).state;
+    const context = buildModelContext({
+      tournamentId: "11111111-1111-4111-8111-111111111111",
+      rulesetVersion: "arena-rules-v2",
+      promptVersion: "arena-system-v11",
+      contextVersion: "model-context-v4",
+      state,
+      playerId: state.currentHand!.betting!.currentActorId!,
+      currentHandEvents: [],
+      historyBudget: new HistoryBudget({ maxQueries: 2, maxRecordsPerQuery: 80, maxApproxTokens: 4_000 }).state,
+    }) as Record<string, unknown>;
+    expect(context).toMatchObject({
+      schema_version: "model-context-v4",
+      board: [],
+      opponents: [expect.not.objectContaining({ player_id: state.currentHand!.betting!.currentActorId })],
+      legal_actions: { allowed: expect.any(Array) },
+    });
+    expect(context).not.toHaveProperty("players");
+    expect(context).not.toHaveProperty("boards");
+    expect(JSON.stringify(context.legal_actions)).not.toMatch(/allIn|minAmountTo|maxAmountTo|"fold":false/);
+  });
+
   it("labels multiway positions around an empty dead button", () => {
     let state = createTournament({
       seatCount: 6,

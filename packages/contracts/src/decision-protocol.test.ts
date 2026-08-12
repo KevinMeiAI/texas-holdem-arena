@@ -7,7 +7,7 @@ import {
 
 describe("decision protocol bundle registry", () => {
   it("resolves the frozen v10 compatibility bundle explicitly", () => {
-    expect(decisionProtocolBundle()).toEqual({
+    expect(decisionProtocolBundle("arena-native-v10")).toEqual({
       id: "arena-native-v10",
       systemPromptVersion: "arena-system-v10",
       contextVersion: "model-context-v3",
@@ -17,7 +17,14 @@ describe("decision protocol bundle registry", () => {
       historyProtocolVersion: "arena-history-legacy-v1",
       adapterProtocolVersion: "arena-adapters-v1",
     });
-    expect(CURRENT_DECISION_PROTOCOL_BUNDLE_ID).toBe("arena-native-v10");
+    expect(CURRENT_DECISION_PROTOCOL_BUNDLE_ID).toBe("arena-native-v11");
+    expect(decisionProtocolBundle()).toMatchObject({
+      id: "arena-native-v11",
+      systemPromptVersion: "arena-system-v11",
+      contextVersion: "model-context-v4",
+      outputSchemaVersion: "arena-output-v3",
+      parserPolicyVersion: "arena-parser-strict-v1",
+    });
   });
 
   it("never silently falls back for an unknown registered bundle", () => {

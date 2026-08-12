@@ -82,6 +82,14 @@ const actionOrHistorySchema = {
   additionalProperties: false,
 };
 
+const actionOrHistorySchemaV3 = {
+  ...actionOrHistorySchema,
+  properties: {
+    ...actionOrHistorySchema.properties,
+    decision_summary: nullable({ type: "string", maxLength: 300 }),
+  },
+};
+
 export interface ArenaOutputSchema {
   version: string;
   name: string;
@@ -93,9 +101,11 @@ export function arenaOutputSchema(
   expected: ExpectedModelOutput,
   version = ARENA_OUTPUT_SCHEMA_VERSION,
 ): ArenaOutputSchema {
-  if (version !== "arena-output-v2") throw new Error(`Unsupported Arena output schema version: ${version}`);
+  if (version !== "arena-output-v2" && version !== "arena-output-v3") {
+    throw new Error(`Unsupported Arena output schema version: ${version}`);
+  }
   const name = "arena_action_or_history";
-  const schema = actionOrHistorySchema;
+  const schema = version === "arena-output-v3" ? actionOrHistorySchemaV3 : actionOrHistorySchema;
   const serialized = JSON.stringify(schema);
   return {
     version,

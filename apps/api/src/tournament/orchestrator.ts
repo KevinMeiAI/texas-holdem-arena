@@ -401,6 +401,8 @@ export class TournamentOrchestrator {
       systemPrompt: runtime.effectivePrompt.text,
       systemPromptHash: runtime.effectivePrompt.sha256,
       outputSchema,
+      parserPolicy: runtime.protocolBundle.parserPolicyVersion,
+      adapterProtocolVersion: runtime.protocolBundle.adapterProtocolVersion,
       // Provider transports serialize the payload as JSON, which omits optional
       // legal-action keys whose values are undefined. Normalize once here so the
       // encrypted audit record is byte-for-byte representative of that request.

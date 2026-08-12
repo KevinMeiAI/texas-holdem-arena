@@ -2,7 +2,7 @@ import type {
   ActionDecisionResponse,
   CanonicalModelRequest,
 } from "../../contracts/src/model-protocol.js";
-import { parseModelJson, type ExpectedModelOutput } from "../../contracts/src/model-protocol.js";
+import { ModelProtocolError, parseModelJson, type ExpectedModelOutput } from "../../contracts/src/model-protocol.js";
 
 export type ProviderKind = "openai-responses" | "anthropic-messages" | "google-gemini" | "openai-compatible" | "mock-scripted";
 export type ProviderProfile = "auto" | "openai" | "anthropic" | "gemini" | "deepseek" | "kimi" | "zhipu" | "xai" | "generic";
@@ -77,6 +77,17 @@ export function parseProviderOutput(text: string, expected: ExpectedModelOutput)
     return parseModelJson(text, expected);
   } catch {
     throw new ProviderCallError("INVALID_RESPONSE", "Model returned invalid Arena JSON", false, null, text);
+  }
+}
+
+export function parseProviderRequestOutput(text: string, request: CanonicalModelRequest) {
+  try {
+    return parseModelJson(text, request.expectedOutput, request.parserPolicy);
+  } catch (error) {
+    const message = error instanceof ModelProtocolError
+      ? error.code
+      : error instanceof Error ? error.message : "Model returned invalid Arena JSON";
+    throw new ProviderCallError("INVALID_RESPONSE", message, false, null, text);
   }
 }
 

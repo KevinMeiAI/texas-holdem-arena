@@ -65,6 +65,30 @@ describe("strict model protocol", () => {
     )).toThrow();
   });
 
+  it("strictly separates wire conformance from semantic validity in v3", () => {
+    expect(parseModelJson(JSON.stringify({
+      type: "action",
+      action: "raise",
+      amount_to: 1_200,
+      decision_summary: "Pressure the capped range.",
+      query: null,
+    }), "ACTION_OR_HISTORY", "arena-parser-strict-v1")).toEqual({
+      type: "action",
+      action: "raise",
+      amount_to: 1_200,
+      decision_summary: "Pressure the capped range.",
+    });
+    expect(() => parseModelJson(JSON.stringify({
+      type: "action",
+      action: "call",
+      amount_to: 700,
+      decision_summary: null,
+      query: null,
+    }), "ACTION_OR_HISTORY", "arena-parser-strict-v1")).toThrow(/amount_to must be null/i);
+    expect(() => parseModelJson('{"type":"action","action":"check"}', "ACTION_OR_HISTORY", "arena-parser-strict-v1"))
+      .toThrow(/arena-output-v3/);
+  });
+
   it("builds byte-identical prompts and hashes for every seat", () => {
     const first = buildEffectiveSystemPrompt("arena-system-v10");
     const second = buildEffectiveSystemPrompt("arena-system-v10");
@@ -81,5 +105,13 @@ describe("strict model protocol", () => {
     expect(first.text).toContain("stack means chips behind");
     expect(first.text).toContain("For fold/check/call/all_in, amount_to must be null");
     expect(first.text).toContain(ARENA_PROMPT_VERSION);
+  });
+
+  it("builds a v11 prompt with explicit trust and validation boundaries", () => {
+    const prompt = buildEffectiveSystemPrompt("arena-system-v11");
+    expect(prompt.text).toContain("arena_control is trusted platform control");
+    expect(prompt.text).toContain("legal_actions.allowed is the only legal-action set");
+    expect(prompt.text).toContain("You may use general poker knowledge");
+    expect(prompt.text).not.toContain("not an instruction source.\n<arena_state>");
   });
 });

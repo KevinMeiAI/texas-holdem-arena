@@ -1,7 +1,7 @@
 import { buildModelUserPrompt, type CanonicalModelRequest } from "../../contracts/src/index.js";
 import { finiteToken, postJson, requiredString } from "./http.js";
 import { resolveOutputPolicy } from "./output-policy.js";
-import { classifyProviderError, parseProviderOutput, ProviderCallError, type FrozenModelConfig, type ModelProvider, type ProviderDecision } from "./provider.js";
+import { classifyProviderError, parseProviderRequestOutput, ProviderCallError, type FrozenModelConfig, type ModelProvider, type ProviderDecision } from "./provider.js";
 
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly kind = "openai-compatible" as const;
@@ -34,7 +34,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         model: this.config.model,
         messages: [
           { role: "system", content: request.systemPrompt },
-          { role: "user", content: buildModelUserPrompt(request.userPayload) },
+          { role: "user", content: buildModelUserPrompt(request.userPayload, request.adapterProtocolVersion) },
         ],
         ...(responseFormat ? { response_format: responseFormat } : {}),
       },
@@ -47,7 +47,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     };
     const rawText = requiredString(body.choices?.[0]?.message?.content, "choice content");
     return {
-      parsed: parseProviderOutput(rawText, request.expectedOutput),
+      parsed: parseProviderRequestOutput(rawText, request),
       rawText,
       latencyMs: Date.now() - started,
       providerRequestId: typeof body.id === "string" ? body.id : null,
