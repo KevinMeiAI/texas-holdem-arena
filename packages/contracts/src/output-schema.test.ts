@@ -24,6 +24,7 @@ describe("platform-owned structured output schema", () => {
   it("publishes the v3 summary bound without changing the required envelope", () => {
     const action = arenaOutputSchema("ACTION_OR_HISTORY", "arena-output-v3");
     expect(action.version).toBe("arena-output-v3");
+    expect(action.sha256).toBe("c5dd516f27cd35262a45740cf0ced1aa7fa04f9113f7a8e0a054a51240630e0f");
     expect(action.schema).toHaveProperty("properties.decision_summary.anyOf.0.maxLength", 300);
     expect(action.schema).toHaveProperty("required", ["type", "action", "amount_to", "decision_summary", "query"]);
   });

@@ -47,28 +47,28 @@ beforeEach(() => {
     if (url.endsWith("/openai/responses")) {
       return jsonResponse({
         id: "resp_1",
-        output_text: '{"type":"action","action":"check","decision_summary":"safe"}',
+        output_text: '{"type":"action","action":"check","amount_to":null,"decision_summary":"safe","query":null}',
         usage: { input_tokens: 12, output_tokens: 7, total_tokens: 19 },
       });
     }
     if (url.endsWith("/anthropic/messages")) {
       return jsonResponse({
         id: "msg_1",
-        content: [{ type: "text", text: '{"type":"action","action":"call"}' }],
+        content: [{ type: "text", text: '{"type":"action","action":"call","amount_to":null,"decision_summary":null,"query":null}' }],
         usage: { input_tokens: 20, output_tokens: 4 },
       });
     }
     if (url.includes("/gemini/models/gemini-test:generateContent")) {
       return jsonResponse({
         responseId: "gem_1",
-        candidates: [{ content: { parts: [{ text: '{"type":"action","action":"check"}' }] } }],
+        candidates: [{ content: { parts: [{ text: '{"type":"action","action":"check","amount_to":null,"decision_summary":null,"query":null}' }] } }],
         usageMetadata: { promptTokenCount: 9, candidatesTokenCount: 3, totalTokenCount: 12 },
       });
     }
     if (url.endsWith("/compatible/v1/chat/completions")) {
       return jsonResponse({
         id: "chat_1",
-        choices: [{ message: { content: '{"type":"history_query","query":{"kind":"recent_hands","count":2,"limit":20}}' } }],
+        choices: [{ message: { content: '{"type":"history_query","action":null,"amount_to":null,"decision_summary":null,"query":{"kind":"recent_hands","count":2,"limit":20}}' } }],
         usage: { prompt_tokens: 15, completion_tokens: 5, total_tokens: 20 },
       });
     }
@@ -88,6 +88,14 @@ function request(expectedOutput: CanonicalModelRequest["expectedOutput"] = "ACTI
     systemPromptHash: "a".repeat(64),
     userPayload: { legal_actions: { check: true } },
     timeoutMs: 500,
+  };
+}
+
+function strictRequest(): CanonicalModelRequest {
+  return {
+    ...request(),
+    parserPolicy: "arena-parser-strict-v1",
+    adapterProtocolVersion: "arena-adapters-v2",
   };
 }
 
@@ -196,6 +204,51 @@ describe("real provider transport adapters", () => {
         },
       },
     });
+  });
+
+  it("locks all v2 adapter wire fixtures", async () => {
+    const fixtures: { provider: { decide(request: CanonicalModelRequest): Promise<unknown> }; expectedHash: string }[] = [
+      {
+        provider: new OpenAIResponsesProvider({
+          ...common,
+          provider: "openai-responses",
+          baseUrl: "https://provider.test/openai",
+        }),
+        expectedHash: "44fdd3cc32e26693f4fcc5d46731740fb6d1ba7ab835c15e715d622c595d642e",
+      },
+      {
+        provider: new AnthropicMessagesProvider({
+          ...common,
+          provider: "anthropic-messages",
+          model: "claude-test",
+          baseUrl: "https://provider.test/anthropic",
+        }),
+        expectedHash: "660a840a6655145034de496802bd572b27cf687dde3d5f035483431beda31b22",
+      },
+      {
+        provider: new GoogleGeminiProvider({
+          ...common,
+          provider: "google-gemini",
+          model: "gemini-test",
+          baseUrl: "https://provider.test/gemini",
+        }),
+        expectedHash: "2186957664eb9eaa974a3074552ba2706ae7dc81686635b1f80d3a0b74b287c8",
+      },
+      {
+        provider: new OpenAICompatibleProvider({
+          ...common,
+          provider: "openai-compatible",
+          providerProfile: "xai",
+          model: "grok-4",
+          baseUrl: "https://provider.test/compatible/v1",
+        }),
+        expectedHash: "59e8ed5864640bf6b8956da850a6e4e2af7234ff649f9bad801d48e989c7ec5c",
+      },
+    ];
+    for (const fixture of fixtures) {
+      await fixture.provider.decide(strictRequest());
+      expect(bodyHash(captured.at(-1)?.body)).toBe(fixture.expectedHash);
+    }
   });
 
   it("classifies 429, timeout and protocol failures independently", async () => {

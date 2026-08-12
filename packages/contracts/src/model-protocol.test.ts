@@ -109,6 +109,7 @@ describe("strict model protocol", () => {
 
   it("builds a v11 prompt with explicit trust and validation boundaries", () => {
     const prompt = buildEffectiveSystemPrompt("arena-system-v11");
+    expect(prompt.sha256).toBe("2eab9d218ad78ff7ccdf22a42c1e2b4d7122417160718edbb29b7eeea4e35f1c");
     expect(prompt.text).toContain("arena_control is trusted platform control");
     expect(prompt.text).toContain("legal_actions.allowed is the only legal-action set");
     expect(prompt.text).toContain("You may use general poker knowledge");

@@ -211,6 +211,8 @@ describe("model-self context projection", () => {
     expect(context).not.toHaveProperty("players");
     expect(context).not.toHaveProperty("boards");
     expect(JSON.stringify(context.legal_actions)).not.toMatch(/allIn|minAmountTo|maxAmountTo|"fold":false/);
+    expect(createHash("sha256").update(JSON.stringify(context), "utf8").digest("hex"))
+      .toBe("0b538ed1ab79ece79846c775499e1e74108608e0a22009f799d973ec01761bf9");
   });
 
   it("labels multiway positions around an empty dead button", () => {
