@@ -70,7 +70,7 @@ describe("strict model protocol", () => {
     const second = buildEffectiveSystemPrompt();
     expect(first).toEqual(second);
     expect(first.version).toBe("arena-system-v10");
-    expect(first.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(first.sha256).toBe("ca88adeffeb516edda99ad0f01aaac0d17abced70d70b5cc4a53689e79f65444");
     expect(first.text).not.toContain("SHARED STRATEGY PROMPT");
     expect(first.text).not.toContain("shared strategy");
     expect(first.text).toContain('"kind":"recent_hands"');

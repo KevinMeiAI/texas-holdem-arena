@@ -7,7 +7,7 @@ describe("platform-owned structured output schema", () => {
     expect(action).toMatchObject({
       version: "arena-output-v2",
       name: "arena_action_or_history",
-      sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      sha256: "0530fe097a765006981baa37826fcf45119a49519e3b13e0fd981fb7f6762aeb",
       schema: {
         type: "object",
         additionalProperties: false,

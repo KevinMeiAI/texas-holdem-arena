@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CanonicalModelRequest } from "../../contracts/src/model-protocol.js";
 import { AnthropicMessagesProvider } from "./anthropic-messages.js";
@@ -12,6 +13,10 @@ interface CapturedRequest {
 }
 
 const captured: CapturedRequest[] = [];
+
+function bodyHash(body: unknown): string {
+  return createHash("sha256").update(JSON.stringify(body), "utf8").digest("hex");
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -112,6 +117,7 @@ describe("real provider transport adapters", () => {
     };
     expect(body.input?.[0]?.content[0]?.text).toBe("identical locked prompt");
     expect(body.text?.format).toMatchObject({ type: "json_schema", strict: true, schema: expect.any(Object) });
+    expect(bodyHash(body)).toBe("b0d5c3e2e3c1c20b0b7e49f8bd8be350d70494f5019d4422f70dead78bf28678");
   });
 
   it("maps Anthropic Messages", async () => {
@@ -128,6 +134,7 @@ describe("real provider transport adapters", () => {
     expect(captured.at(-1)?.body).toMatchObject({
       output_config: { format: { type: "json_schema", schema: expect.any(Object) } },
     });
+    expect(bodyHash(captured.at(-1)?.body)).toBe("2991559ae6c5c312fcf5213e987ed381e331af63011454fc424cdbc2df2edf32");
   });
 
   it("maps Gemini structured action output", async () => {
@@ -146,6 +153,7 @@ describe("real provider transport adapters", () => {
         responseSchema: expect.any(Object),
       },
     });
+    expect(bodyHash(captured.at(-1)?.body)).toBe("c677c0f59d45cee03d5afa5a6b675d1e319a1827f947de0b3b0157f027c76259");
   });
 
   it("maps OpenAI-compatible chat completions and history queries", async () => {
@@ -157,6 +165,7 @@ describe("real provider transport adapters", () => {
     const result = await provider.decide(request());
     expect(result.parsed).toMatchObject({ type: "history_query", query: { count: 2 } });
     expect(captured.at(-1)?.body).toMatchObject({ response_format: { type: "json_object" } });
+    expect(bodyHash(captured.at(-1)?.body)).toBe("8c4aa3f99fa1d5b07fbd3b5e05a2c2eae2511798e1e44ff88b39b8e9a749c8f0");
   });
 
   it("maps the xAI profile to OpenAI-compatible JSON Schema", async () => {

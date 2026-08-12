@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { cardCode, createDeck } from "../../../../packages/domain/src/cards.js";
 import { createTournament, reduceTournament, startTournamentHand } from "../../../../packages/domain/src/tournament.js";
@@ -152,6 +153,8 @@ describe("model-self context projection", () => {
     expect(context.history_budget).toBeUndefined();
     expect(JSON.stringify(context)).not.toContain("eventHash");
     expect(JSON.stringify(context)).not.toContain("createdAt");
+    expect(createHash("sha256").update(JSON.stringify(context), "utf8").digest("hex"))
+      .toBe("ad9ce0feff35a7ccad1be732965880cbcfc56fdabb88d5d92b052e09a0f762c7");
   });
 
   it("preserves the frozen v1 context contract for an in-progress legacy tournament", () => {
