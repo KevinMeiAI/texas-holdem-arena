@@ -14,6 +14,7 @@ import {
 import { cardCode, createDeck } from "../../../../packages/domain/src/cards.js";
 import { type TournamentConfig, type TournamentState, type TournamentTransition } from "../../../../packages/domain/src/tournament.js";
 import { deriveSeed, DeterministicRng, seedCommitment } from "../../../../packages/fairness/src/rng.js";
+import { scheduledHandSeed, type DealSchedule } from "../../../../packages/fairness/src/deal-schedule.js";
 import { canonicalJson } from "../../../../packages/fairness/src/canonical-json.js";
 import type { FrozenModelConfig, ModelProvider } from "../../../../packages/providers/src/provider.js";
 import {
@@ -54,6 +55,10 @@ export interface ArenaTournamentSetup {
   masterSeed?: Uint8Array;
   managedByArena?: boolean;
   decisionTimeoutMs?: number;
+  dealSchedule?: DealSchedule;
+  benchmarkSeriesId?: string;
+  benchmarkRotation?: number;
+  revealSeedOnCompletion?: boolean;
 }
 
 export interface OrchestratorRuntime {
@@ -76,6 +81,10 @@ export interface OrchestratorRuntime {
   pendingDecisionId: string | null;
   decisionTimeoutMs: number;
   decisionConfig?: DecisionRunnerConfig;
+  dealSchedule?: DealSchedule;
+  benchmarkSeriesId?: string;
+  benchmarkRotation?: number;
+  revealSeedOnCompletion?: boolean;
 }
 
 export interface OrchestratorDependencies {
@@ -109,6 +118,8 @@ function publicState(runtime: OrchestratorRuntime): unknown {
     protocolBundleId: runtime.protocolBundle.id,
     benchmarkTrackId: runtime.benchmarkTrack?.id ?? "legacy/native-unclassified",
     benchmarkCohortId: runtime.benchmarkTrack?.cohortId ?? "legacy/native-unclassified",
+    benchmarkSeriesId: runtime.benchmarkSeriesId ?? null,
+    benchmarkRotation: runtime.benchmarkRotation ?? null,
     promptHash: runtime.effectivePrompt.sha256,
     outputSchemaHash: runtime.effectiveOutputSchema?.sha256 ?? null,
     status: runtime.operationalStatus,
@@ -233,11 +244,15 @@ export class TournamentOrchestrator {
         ]),
       ),
       masterSeedBase64: Buffer.from(masterSeed).toString("base64"),
-      seedCommitment: seedCommitment(masterSeed, tournamentId, setup.rulesetVersion),
+      seedCommitment: setup.dealSchedule?.commitment ?? seedCommitment(masterSeed, tournamentId, setup.rulesetVersion),
       seedRevealed: false,
       pendingDecisionId: null,
       decisionTimeoutMs,
       decisionConfig: jsonSafe(this.#decisionConfig),
+      ...(setup.dealSchedule ? { dealSchedule: jsonSafe(setup.dealSchedule) } : {}),
+      ...(setup.benchmarkSeriesId ? { benchmarkSeriesId: setup.benchmarkSeriesId } : {}),
+      ...(setup.benchmarkRotation !== undefined ? { benchmarkRotation: setup.benchmarkRotation } : {}),
+      revealSeedOnCompletion: setup.revealSeedOnCompletion ?? true,
     };
     await this.#store.createTournament({
       id: tournamentId,
@@ -255,6 +270,11 @@ export class TournamentOrchestrator {
         historyProtocolVersion: protocolBundle.historyProtocolVersion,
         adapterProtocolVersion: protocolBundle.adapterProtocolVersion,
         benchmarkTrack: setup.benchmarkTrack ?? null,
+        dealScheduleId: setup.dealSchedule?.id ?? null,
+        dealScheduleCommitment: setup.dealSchedule?.commitment ?? null,
+        benchmarkSeriesId: setup.benchmarkSeriesId ?? null,
+        benchmarkRotation: setup.benchmarkRotation ?? null,
+        revealSeedOnCompletion: setup.revealSeedOnCompletion ?? true,
         outputSchemaVersion: effectiveOutputSchema.version,
         outputSchemaHash: effectiveOutputSchema.sha256,
         modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
@@ -266,6 +286,8 @@ export class TournamentOrchestrator {
       protocolBundleId: protocolBundle.id,
       benchmarkTrackId: setup.benchmarkTrack?.id ?? "legacy/native-unclassified",
       benchmarkCohortId: setup.benchmarkTrack?.cohortId ?? "legacy/native-unclassified",
+      ...(setup.benchmarkSeriesId ? { benchmarkSeriesId: setup.benchmarkSeriesId } : {}),
+      ...(setup.benchmarkRotation !== undefined ? { benchmarkRotation: setup.benchmarkRotation } : {}),
     });
     runtime = await this.#append(runtime, [
       publicArenaEvent("TOURNAMENT_CONFIG_FROZEN", {
@@ -308,6 +330,13 @@ export class TournamentOrchestrator {
     };
   }
 
+  async startReady(runtime: OrchestratorRuntime): Promise<OrchestratorRuntime> {
+    if (runtime.operationalStatus !== "READY" || runtime.pendingDecisionId) {
+      throw new Error("Tournament is not waiting for its initial hand");
+    }
+    return this.#advanceUntilDecision(runtime);
+  }
+
   async resume(runtime: OrchestratorRuntime): Promise<OrchestratorRuntime> {
     if (runtime.operationalStatus !== "PAUSED_INFRA" || !runtime.pendingDecisionId) {
       throw new Error("Tournament is not paused at a recoverable decision");
@@ -340,16 +369,19 @@ export class TournamentOrchestrator {
       throw new Error("Tournament is already terminal");
     }
     const pendingDecisionId = runtime.pendingDecisionId;
+    const revealSeed = runtime.revealSeedOnCompletion !== false;
     return this.#append(
       {
         ...runtime,
         operationalStatus: "CANCELLED",
-        seedRevealed: true,
+        seedRevealed: revealSeed,
         pendingDecisionId: null,
       },
       [
         publicArenaEvent("TOURNAMENT_CANCELLED", {}),
-        publicArenaEvent("RANDOMNESS_REVEALED", { masterSeedBase64: runtime.masterSeedBase64 }),
+        ...(revealSeed ? [publicArenaEvent("RANDOMNESS_REVEALED", {
+          masterSeedBase64: runtime.masterSeedBase64,
+        })] : []),
       ],
       pendingDecisionId ? { cancelDecisionId: pendingDecisionId } : {},
     );
@@ -469,7 +501,7 @@ export class TournamentOrchestrator {
       domain: transition.state,
       pendingDecisionId: null,
       operationalStatus: transition.state.status === "COMPLETED" ? "COMPLETED" : "RUNNING",
-      seedRevealed: transition.state.status === "COMPLETED",
+      seedRevealed: transition.state.status === "COMPLETED" && runtime.revealSeedOnCompletion !== false,
     };
     const decisionSummary = decision.response?.decision_summary ?? null;
     const events = [
@@ -489,7 +521,7 @@ export class TournamentOrchestrator {
       }, priorHandNo, claimed.playerId),
       ...arenaEventsForTransition(transition, priorHandNo),
     ];
-    if (runtime.operationalStatus === "COMPLETED") {
+    if (runtime.operationalStatus === "COMPLETED" && runtime.revealSeedOnCompletion !== false) {
       events.push(publicArenaEvent("RANDOMNESS_REVEALED", {
         masterSeedBase64: runtime.masterSeedBase64,
       }));
@@ -519,15 +551,16 @@ export class TournamentOrchestrator {
       if (next.domain.currentHand) throw new Error("Active hand is missing its persisted decision request");
       const handNo = next.domain.completedHands + 1;
       const seed = Buffer.from(next.masterSeedBase64, "base64");
-      const deck = new DeterministicRng(
-        deriveSeed(seed, `tournament:${next.tournamentId}:hand:${handNo}`),
-      ).shuffle(createDeck());
+      const handSeed = next.dealSchedule
+        ? scheduledHandSeed(next.dealSchedule, handNo)
+        : deriveSeed(seed, `tournament:${next.tournamentId}:hand:${handNo}`);
+      const deck = new DeterministicRng(handSeed).shuffle(createDeck());
       const transition = rulesetImplementation(next.rulesetVersion).startHand(next.domain, deck);
       next = {
         ...next,
         domain: transition.state,
         operationalStatus: transition.state.status === "COMPLETED" ? "COMPLETED" : "RUNNING",
-        seedRevealed: transition.state.status === "COMPLETED",
+        seedRevealed: transition.state.status === "COMPLETED" && next.revealSeedOnCompletion !== false,
       };
       const pending = nextDecision(next);
       if (pending) next.pendingDecisionId = pending.id;
@@ -535,7 +568,7 @@ export class TournamentOrchestrator {
         transition,
         transition.state.currentHand?.handNo ?? handNo,
       );
-      if (next.operationalStatus === "COMPLETED") {
+      if (next.operationalStatus === "COMPLETED" && next.revealSeedOnCompletion !== false) {
         events.push(publicArenaEvent("RANDOMNESS_REVEALED", {
           masterSeedBase64: next.masterSeedBase64,
         }));

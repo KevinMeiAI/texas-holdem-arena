@@ -38,6 +38,18 @@ export const createTournamentSchema = z.object({
   ]),
 }).strict();
 
+export const createBenchmarkSeriesSchema = createTournamentSchema.extend({
+  rotations: z.number().int().min(2).max(9).optional(),
+}).superRefine((input, context) => {
+  if (input.rotations !== undefined && input.rotations !== input.modelConfigIds.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["rotations"],
+      message: "rotations must equal the number of selected models",
+    });
+  }
+});
+
 interface StackHistoryPoint {
   handNo: number;
   stacks: Record<string, number>;
@@ -63,12 +75,13 @@ async function audit(
   pool: Pool,
   adminUserId: string,
   action: string,
-  tournamentId: string,
+  targetId: string,
+  targetType = "tournament",
 ): Promise<void> {
   await pool.query(
     `insert into audit_events (id, admin_user_id, action, target_type, target_id)
-     values ($1, $2, $3, 'tournament', $4)`,
-    [randomUUID(), adminUserId, action, tournamentId],
+     values ($1, $2, $3, $4, $5)`,
+    [randomUUID(), adminUserId, action, targetType, targetId],
   );
 }
 
@@ -98,6 +111,25 @@ export async function registerTournamentRoutes(
     }
   });
 
+  app.post("/api/admin/benchmark-series", async (request, reply) => {
+    const admin = await requireAdmin(request, reply, context, true);
+    if (!admin) return;
+    const parsed = createBenchmarkSeriesSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_benchmark_series", issues: parsed.error.issues });
+    }
+    try {
+      const created = await context.arena.createBenchmarkSeries(parsed.data);
+      await audit(context.pool, admin.adminUserId, "benchmark_series.create_and_start", created.seriesId, "benchmark_series");
+      return reply.code(201).send(created);
+    } catch (error) {
+      return reply.code(409).send({
+        error: "benchmark_series_start_failed",
+        message: error instanceof Error ? error.message : "Unable to start benchmark series",
+      });
+    }
+  });
+
   for (const action of ["pause", "resume", "cancel"] as const) {
     app.post<{ Params: { id: string } }>(`/api/admin/tournaments/:id/${action}`, async (request, reply) => {
       const admin = await requireAdmin(request, reply, context, true);
@@ -117,6 +149,7 @@ export async function registerTournamentRoutes(
 
   app.get("/api/public/live", async () => ({ state: await context.arena.publicState() }));
   app.get("/api/public/tournaments", async () => ({ tournaments: await context.arena.listTournaments() }));
+  app.get("/api/public/benchmark-series", async () => ({ series: await context.arena.listBenchmarkSeries() }));
   app.get<{ Params: { id: string } }>("/api/public/tournaments/:id", async (request, reply) => {
     const state = await context.arena.publicState(request.params.id);
     return state ? { state } : reply.code(404).send({ error: "tournament_not_found" });

@@ -3570,6 +3570,13 @@ select[aria-invalid="true"] {
   font-weight: 400;
 }
 
+.native-switch {
+  width: 1.25rem;
+  min-height: 1.25rem;
+  flex: 0 0 auto;
+  accent-color: var(--color-accent);
+}
+
 .blind-preview {
   margin-top: var(--space-sm);
   padding: var(--space-xs);

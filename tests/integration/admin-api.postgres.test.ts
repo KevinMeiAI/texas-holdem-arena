@@ -30,9 +30,6 @@ describePostgres("administrator auth and model configuration API", () => {
 
   it("bootstraps one admin, enforces CSRF and never returns a provider key", async () => {
     let tournamentId: string | undefined;
-    let providerId: string | undefined;
-    let adminUserId: string | undefined;
-    const modelIds: string[] = [];
     const { app } = await buildApp({
       host: "127.0.0.1",
       port: 0,
@@ -58,7 +55,6 @@ describePostgres("administrator auth and model configuration API", () => {
       });
       expect(login.statusCode).toBe(200);
       const loginBody = login.json<{ csrfToken: string; session: { adminUserId: string } }>();
-      adminUserId = loginBody.session.adminUserId;
       const cookie = cookiesFrom(login.headers["set-cookie"]);
       expect(cookie).toContain("arena_session=");
       expect(cookie).toContain("arena_csrf=");
@@ -81,7 +77,6 @@ describePostgres("administrator auth and model configuration API", () => {
       });
       expect(providerResponse.statusCode).toBe(201);
       const provider = providerResponse.json<{ provider: { id: string; keyLastFour: string; providerProfile: string; defaultOutputMode: string } }>().provider;
-      providerId = provider.id;
       expect(provider.keyLastFour).toBe("-KEY");
       expect(provider).toMatchObject({ providerProfile: "auto", defaultOutputMode: "auto" });
       expect(providerResponse.body).not.toContain("TOP-SECRET-KEY");
@@ -116,7 +111,6 @@ describePostgres("administrator auth and model configuration API", () => {
       });
       expect(modelResponse.statusCode).toBe(201);
       const modelId = modelResponse.json<{ model: { id: string } }>().model.id;
-      modelIds.push(modelId);
       const secondModelResponse = await app.inject({
         method: "POST",
         url: "/api/admin/models",
@@ -130,7 +124,6 @@ describePostgres("administrator auth and model configuration API", () => {
       });
       expect(secondModelResponse.statusCode).toBe(201);
       const secondModelId = secondModelResponse.json<{ model: { id: string } }>().model.id;
-      modelIds.push(secondModelId);
       const updatedModel = await app.inject({
         method: "PATCH",
         url: `/api/admin/models/${modelId}`,
@@ -146,6 +139,8 @@ describePostgres("administrator auth and model configuration API", () => {
           outputModeSupported: true,
         },
       });
+      const alphaRevisionId = updatedModel.json<{ model: { revisionId: string } }>().model.revisionId;
+      const betaRevisionId = secondModelResponse.json<{ model: { revisionId: string } }>().model.revisionId;
       const preflight = await app.inject({
         method: "POST",
         url: `/api/admin/models/${modelId}/preflight`,
@@ -226,8 +221,8 @@ describePostgres("administrator auth and model configuration API", () => {
       expect(stackPoints).toHaveLength(hands.length);
       expect(stackPoints.map((point) => point.handNo)).toEqual(hands.map((hand) => hand.handNo));
       expect(stackPoints.at(-1)?.stacks).toMatchObject({
-        [modelId]: expect.any(Number),
-        [secondModelId]: expect.any(Number),
+        [alphaRevisionId]: expect.any(Number),
+        [betaRevisionId]: expect.any(Number),
       });
       expect(Object.values(stackPoints.at(-1)?.stacks ?? {}).reduce((sum, stack) => sum + stack, 0)).toBe(200);
       const replay = await app.inject({
@@ -243,8 +238,8 @@ describePostgres("administrator auth and model configuration API", () => {
         leaderboard: { modelId: string; tournaments: number }[];
       }>().leaderboard;
       expect(leaderboardEntries).toEqual(expect.arrayContaining([
-        expect.objectContaining({ modelId, tournaments: expect.any(Number) }),
-        expect.objectContaining({ modelId: secondModelId, tournaments: expect.any(Number) }),
+        expect.objectContaining({ modelId: alphaRevisionId, tournaments: expect.any(Number) }),
+        expect.objectContaining({ modelId: betaRevisionId, tournaments: expect.any(Number) }),
       ]));
 
       const stored = await maintenancePool!.query<{ encrypted_api_key: string }>(
@@ -254,19 +249,6 @@ describePostgres("administrator auth and model configuration API", () => {
       expect(stored.rows[0]?.encrypted_api_key).not.toContain("TOP-SECRET-KEY");
     } finally {
       await app.close();
-      if (tournamentId) {
-        await maintenancePool!.query("delete from tournaments where id = $1", [tournamentId]);
-      }
-      if (modelIds.length > 0) {
-        await maintenancePool!.query("delete from model_configs where id = any($1::uuid[])", [modelIds]);
-      }
-      if (providerId) {
-        await maintenancePool!.query("delete from provider_connections where id = $1", [providerId]);
-      }
-      if (adminUserId) {
-        await maintenancePool!.query("delete from audit_events where admin_user_id = $1", [adminUserId]);
-        await maintenancePool!.query("delete from admin_users where id = $1", [adminUserId]);
-      }
     }
   }, 30_000);
 });

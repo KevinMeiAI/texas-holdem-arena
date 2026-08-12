@@ -6,6 +6,7 @@ export interface BenchmarkTrackInput {
   rulesetVersion: string;
   historyMode: "query_only" | "disabled" | "baseline_stats_plus_query";
   interfaceTrack: "native" | "normalized";
+  providerOutputModes: string[];
   tournamentFormat: unknown;
 }
 

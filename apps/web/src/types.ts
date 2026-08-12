@@ -29,6 +29,8 @@ export interface ArenaState {
   protocolBundleId?: string;
   benchmarkTrackId?: string;
   benchmarkCohortId?: string;
+  benchmarkSeriesId?: string | null;
+  benchmarkRotation?: number | null;
   promptHash: string;
   status: "READY" | "RUNNING" | "PAUSED_INFRA" | "COMPLETED" | "CANCELLED";
   completedHands: number;
@@ -90,8 +92,31 @@ export interface TournamentSummary {
   protocolBundleId?: string;
   benchmarkTrackId?: string;
   benchmarkCohortId?: string;
+  benchmarkSeriesId?: string | null;
+  benchmarkRotation?: number | null;
   championPlayerId: string | null;
   publicState: ArenaState;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BenchmarkSeriesSummary {
+  id: string;
+  name: string;
+  status: "READY" | "RUNNING" | "COMPLETED" | "CANCELLED";
+  protocolBundleId: string;
+  rulesetVersion: string;
+  benchmarkTrackId: string;
+  benchmarkCohortId: string;
+  competitorLabels: Record<string, string>;
+  dealScheduleId: string;
+  dealScheduleVersion: string;
+  dealScheduleCommitment: string;
+  rotationPolicyVersion: string;
+  rotationCount: number;
+  nextRotation: number;
+  revealedDealScheduleSeed: string | null;
+  tournaments: { id: string; rotation: number; status: ArenaState["status"]; createdAt: string }[];
   createdAt: string;
   updatedAt: string;
 }

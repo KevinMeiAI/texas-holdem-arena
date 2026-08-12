@@ -454,7 +454,7 @@ export class ModelConfigService {
          from competitor_revisions r
          join model_configs m on m.id = r.model_config_id
          join provider_connections p on p.id = r.provider_connection_id
-        where r.id = $1 and m.enabled = true`,
+        where r.id = $1`,
       [revisionId],
     );
     const row = result.rows[0];
@@ -481,6 +481,24 @@ export class ModelConfigService {
       [modelConfigId],
     );
     return result.rows[0] ? publicModel(result.rows[0]) : null;
+  }
+
+  async revisionDetails(revisionIds: readonly string[]) {
+    if (revisionIds.length === 0) return [];
+    const result = await this.pool.query<ModelRow>(
+      `select m.*, r.id as current_revision_id, p.label as provider_label,
+              r.provider_type, r.provider_profile,
+              r.provider_default_output_mode as default_output_mode,
+              r.model_id, r.parameters, r.output_mode, r.revision_number,
+              r.configuration_hash
+         from competitor_revisions r
+         join model_configs m on m.id = r.model_config_id
+         join provider_connections p on p.id = r.provider_connection_id
+        where r.id = any($1::uuid[])
+        order by array_position($1::uuid[], r.id)`,
+      [revisionIds],
+    );
+    return result.rows.map(publicModel);
   }
 
   async providerRuntimeConfig(
