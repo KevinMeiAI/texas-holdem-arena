@@ -16,8 +16,20 @@ const validTournament = {
 
 describe("create tournament timeout", () => {
   it("defaults to the Arena timeout and accepts a tournament-specific value", () => {
-    expect(createTournamentSchema.parse(validTournament).decisionTimeoutMs).toBe(ARENA_DECISION_TIMEOUT_MS);
+    expect(createTournamentSchema.parse(validTournament)).toMatchObject({
+      decisionTimeoutMs: ARENA_DECISION_TIMEOUT_MS,
+      interfaceTrack: "native",
+      historyMode: "query_only",
+    });
     expect(createTournamentSchema.parse({ ...validTournament, decisionTimeoutMs: 240_000 }).decisionTimeoutMs).toBe(240_000);
+  });
+
+  it("accepts a normalized history-disabled track", () => {
+    expect(createTournamentSchema.parse({
+      ...validTournament,
+      interfaceTrack: "normalized",
+      historyMode: "disabled",
+    })).toMatchObject({ interfaceTrack: "normalized", historyMode: "disabled" });
   });
 
   it("rejects values outside the supported 30 to 600 second range", () => {

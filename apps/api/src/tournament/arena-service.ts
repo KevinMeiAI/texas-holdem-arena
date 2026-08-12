@@ -40,6 +40,8 @@ export interface CreateArenaTournamentInput {
   handsPerLevel: number;
   decisionTimeoutMs: number;
   blindLevels: { smallBlind: number; bigBlind: number; bigBlindAnte: number }[];
+  interfaceTrack?: "native" | "normalized" | undefined;
+  historyMode?: "query_only" | "disabled" | undefined;
 }
 
 export interface CreateBenchmarkSeriesInput extends CreateArenaTournamentInput {
@@ -86,6 +88,23 @@ const delay = (milliseconds: number) => new Promise<void>((resolve) => setTimeou
 
 function providerOutputModes(configs: readonly FrozenModelConfig[]): string[] {
   return [...new Set(configs.map((config) => inspectOutputPolicy(config).effectiveMode))].sort();
+}
+
+function trackModelConfig(
+  config: FrozenModelConfig,
+  interfaceTrack: "native" | "normalized",
+): FrozenModelConfig {
+  return interfaceTrack === "normalized" ? { ...config, outputMode: "prompt" } : config;
+}
+
+function decisionConfig(historyMode: "query_only" | "disabled") {
+  return {
+    maxInfrastructureAttempts: 3,
+    infrastructureRetryDelaysMs: [2_000, 8_000],
+    history: historyMode === "disabled"
+      ? { maxQueries: 0, maxRecordsPerQuery: 80, maxApproxTokens: 0 }
+      : { maxQueries: 2, maxRecordsPerQuery: 80, maxApproxTokens: 4_000 },
+  };
 }
 
 function desiredStatusAfterAwait(record: ActiveArena): ActiveArena["desiredStatus"] {
@@ -169,8 +188,13 @@ export class ArenaService {
       if (!model) throw new Error(`Model configuration not found: ${id}`);
       return model;
     }));
+    const interfaceTrack = input.interfaceTrack ?? "native";
+    const historyMode = input.historyMode ?? "query_only";
     const frozenConfigByRevisionId = Object.fromEntries(await Promise.all(models.map(async (model) => (
-      [model.revisionId, { ...await this.models.runtimeConfigForRevision(model.revisionId), timeoutMs: input.decisionTimeoutMs }] as const
+      [model.revisionId, trackModelConfig({
+        ...await this.models.runtimeConfigForRevision(model.revisionId),
+        timeoutMs: input.decisionTimeoutMs,
+      }, interfaceTrack)] as const
     ))));
     const providers = this.#providersFromFrozen(frozenConfigByRevisionId);
     const masterSeed = randomBytes(32);
@@ -182,8 +206,8 @@ export class ArenaService {
     const track = benchmarkTrackIdentity({
       protocolBundleId,
       rulesetVersion,
-      historyMode: "query_only",
-      interfaceTrack: "native",
+      historyMode,
+      interfaceTrack,
       providerOutputModes: providerOutputModes(Object.values(frozenConfigByRevisionId)),
       tournamentFormat: {
         seatCount: seated.length,
@@ -215,6 +239,7 @@ export class ArenaService {
       ])),
       playerLabels: Object.fromEntries(seated.map((model) => [model.revisionId, model.displayName])),
       decisionTimeoutMs: input.decisionTimeoutMs,
+      decisionConfig: decisionConfig(historyMode),
       masterSeed,
       managedByArena: true,
     });
@@ -251,18 +276,20 @@ export class ArenaService {
       throw new Error(`A balanced benchmark series requires exactly ${rotationCount} rotations`);
     }
     const seriesId = randomUUID();
+    const interfaceTrack = input.interfaceTrack ?? "native";
+    const historyMode = input.historyMode ?? "query_only";
     const schedule = createDealSchedule();
     const rulesetVersion = CURRENT_RULESET_VERSION;
     const protocolBundleId = CURRENT_DECISION_PROTOCOL_BUNDLE_ID;
-    const frozenConfigs = await Promise.all(revisions.map(async (model) => ({
+    const frozenConfigs = await Promise.all(revisions.map(async (model) => trackModelConfig({
       ...await this.models.runtimeConfigForRevision(model.revisionId),
       timeoutMs: input.decisionTimeoutMs,
-    })));
+    }, interfaceTrack)));
     const track = benchmarkTrackIdentity({
       protocolBundleId,
       rulesetVersion,
-      historyMode: "query_only",
-      interfaceTrack: "native",
+      historyMode,
+      interfaceTrack,
       providerOutputModes: providerOutputModes(frozenConfigs),
       tournamentFormat: {
         seatCount: revisions.length,
@@ -280,6 +307,8 @@ export class ArenaService {
       handsPerLevel: input.handsPerLevel,
       decisionTimeoutMs: input.decisionTimeoutMs,
       blindLevels: input.blindLevels.map((level) => ({ ...level })),
+      interfaceTrack,
+      historyMode,
     };
     await this.pool.query(
       `insert into benchmark_series
@@ -740,10 +769,10 @@ export class ArenaService {
       const seated = rotateSeats(models, rotation, series.rotation_policy_version);
       const frozen = Object.fromEntries(await Promise.all(seated.map(async (model) => [
         model.revisionId,
-        {
+        trackModelConfig({
           ...await this.models.runtimeConfigForRevision(model.revisionId),
           timeoutMs: series.tournament_configuration.decisionTimeoutMs,
-        },
+        }, series.tournament_configuration.interfaceTrack ?? "native"),
       ] as const)));
       const providers = this.#providersFromFrozen(frozen);
       const orchestrator = new TournamentOrchestrator({ eventStore: this.#store, pool: this.pool, providers });
@@ -771,6 +800,7 @@ export class ArenaService {
             series.competitor_labels[model.revisionId] ?? model.displayName,
           ])),
           decisionTimeoutMs: series.tournament_configuration.decisionTimeoutMs,
+          decisionConfig: decisionConfig(series.tournament_configuration.historyMode ?? "query_only"),
           managedByArena: true,
           dealSchedule: schedule,
           benchmarkSeriesId: seriesId,

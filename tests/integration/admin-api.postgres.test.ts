@@ -203,6 +203,21 @@ describePostgres("administrator auth and model configuration API", () => {
       expect(liveState.state?.status).toBe("COMPLETED");
       expect(liveState.state?.decisionTimeoutMs).toBe(240_000);
 
+      const frozenTournament = await maintenancePool!.query<{
+        configuration: {
+          benchmarkTrack: { interfaceTrack: string; historyMode: string };
+          decisionConfig: { history: { maxQueries: number; maxApproxTokens: number } };
+        };
+      }>("select configuration from tournaments where id = $1", [tournamentId]);
+      expect(frozenTournament.rows[0]?.configuration.benchmarkTrack).toMatchObject({
+        interfaceTrack: "native",
+        historyMode: "query_only",
+      });
+      expect(frozenTournament.rows[0]?.configuration.decisionConfig.history).toMatchObject({
+        maxQueries: 2,
+        maxApproxTokens: 4_000,
+      });
+
       const handsResponse = await app.inject({
         method: "GET",
         url: `/api/public/tournaments/${tournamentId}/hands`,

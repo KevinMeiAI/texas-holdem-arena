@@ -97,6 +97,7 @@ function withFeedback(
   budget: HistoryBudget,
 ): CanonicalModelRequest {
   const strictControl = request.parserPolicy === "arena-parser-strict-v1";
+  const queriesRemaining = budget.state.maxQueries - budget.state.usedQueries;
   return {
     ...request,
     userPayload: strictControl ? {
@@ -106,7 +107,7 @@ function withFeedback(
         max_correction_attempts: 1,
         error_codes: correction ? [correction] : [],
         history_budget_remaining: {
-          queries: budget.state.maxQueries - budget.state.usedQueries,
+          queries: queriesRemaining,
           approximate_tokens: budget.state.maxApproxTokens - budget.state.usedApproxTokens,
           max_records_per_query: budget.state.maxRecordsPerQuery,
         },
@@ -117,7 +118,7 @@ function withFeedback(
       arena_state: request.userPayload,
       history_results: [...historyResults],
       history_budget_remaining: {
-        queries: budget.state.maxQueries - budget.state.usedQueries,
+        queries: queriesRemaining,
         approximate_tokens: budget.state.maxApproxTokens - budget.state.usedApproxTokens,
         max_records_per_query: budget.state.maxRecordsPerQuery,
       },
@@ -313,6 +314,9 @@ export async function runModelDecision(
       }
       if (decision.parsed.type === "history_query") {
         if (!input.executeHistoryQuery) throw new Error("History queries are not available");
+        if (budget.state.maxQueries === 0) {
+          throw new ModelProtocolError("HISTORY_QUERY_INVALID", "History queries are disabled for this track");
+        }
         pendingHistoryQuery = decision.parsed.query;
         await saveResumeState();
         try {

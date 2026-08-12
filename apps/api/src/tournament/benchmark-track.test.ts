@@ -20,5 +20,13 @@ describe("benchmark track identity", () => {
       ...base,
       providerOutputModes: ["json_object"],
     }).cohortId);
+    expect(benchmarkTrackIdentity(base).cohortId).not.toBe(benchmarkTrackIdentity({
+      ...base,
+      interfaceTrack: "normalized",
+    }).cohortId);
+    expect(benchmarkTrackIdentity(base).cohortId).not.toBe(benchmarkTrackIdentity({
+      ...base,
+      historyMode: "disabled",
+    }).cohortId);
   });
 });

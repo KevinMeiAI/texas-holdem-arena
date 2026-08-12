@@ -55,6 +55,7 @@ export interface ArenaTournamentSetup {
   masterSeed?: Uint8Array;
   managedByArena?: boolean;
   decisionTimeoutMs?: number;
+  decisionConfig?: DecisionRunnerConfig;
   dealSchedule?: DealSchedule;
   benchmarkSeriesId?: string;
   benchmarkRotation?: number;
@@ -216,6 +217,10 @@ export class TournamentOrchestrator {
       || decisionTimeoutMs > ARENA_DECISION_TIMEOUT_MAX_MS) {
       throw new Error(`decisionTimeoutMs must be between ${ARENA_DECISION_TIMEOUT_MIN_MS} and ${ARENA_DECISION_TIMEOUT_MAX_MS}`);
     }
+    const decisionConfig = jsonSafe(setup.decisionConfig ?? this.#decisionConfig);
+    // Validate the frozen history policy before writing the tournament. This
+    // also permits the explicit zero budget used by history-disabled tracks.
+    new HistoryBudget(decisionConfig.history);
     for (const player of setup.tournament.players) {
       const providerId = setup.providerIdByPlayer[player.id];
       if (!providerId || !this.#providers.has(providerId)) {
@@ -248,7 +253,7 @@ export class TournamentOrchestrator {
       seedRevealed: false,
       pendingDecisionId: null,
       decisionTimeoutMs,
-      decisionConfig: jsonSafe(this.#decisionConfig),
+      decisionConfig,
       ...(setup.dealSchedule ? { dealSchedule: jsonSafe(setup.dealSchedule) } : {}),
       ...(setup.benchmarkSeriesId ? { benchmarkSeriesId: setup.benchmarkSeriesId } : {}),
       ...(setup.benchmarkRotation !== undefined ? { benchmarkRotation: setup.benchmarkRotation } : {}),
@@ -280,6 +285,7 @@ export class TournamentOrchestrator {
         modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
           .map(([playerId, config]) => [playerId, modelConfigHash(config)])),
         decisionTimeoutMs,
+        decisionConfig,
         managedByArena: setup.managedByArena === true,
       },
       promptHash: effectivePrompt.sha256,
@@ -298,6 +304,7 @@ export class TournamentOrchestrator {
         outputSchemaVersion: effectiveOutputSchema.version,
         outputSchemaHash: effectiveOutputSchema.sha256,
         decisionTimeoutMs,
+        decisionConfig,
         rulesetVersion: setup.rulesetVersion,
         modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
           .map(([playerId, config]) => [playerId, modelConfigHash(config)])),

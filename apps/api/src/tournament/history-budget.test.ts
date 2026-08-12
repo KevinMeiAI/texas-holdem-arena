@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { HistoryBudget } from "./history-budget.js";
 
 describe("bounded model history queries", () => {
+  it("supports a zero-query history-disabled track", () => {
+    const budget = new HistoryBudget({ maxQueries: 0, maxRecordsPerQuery: 80, maxApproxTokens: 0 });
+    expect(budget.state).toMatchObject({ maxQueries: 0, maxBytes: 0, usedQueries: 0 });
+  });
+
   it("accounts for query, event and approximate token budgets", () => {
     const budget = new HistoryBudget({ maxQueries: 2, maxRecordsPerQuery: 3, maxApproxTokens: 100 });
     const query = { kind: "recent_hands", count: 1, limit: 3 } as const;

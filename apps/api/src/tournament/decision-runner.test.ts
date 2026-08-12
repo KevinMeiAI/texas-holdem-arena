@@ -115,6 +115,30 @@ describe("uniform model decision policy", () => {
     if (result.status === "ACTION") expect(result.historyResults).toHaveLength(2);
   });
 
+  it("rejects history queries when the frozen track disables history", async () => {
+    const executeHistoryQuery = vi.fn(async () => [{ handNo: 1 }]);
+    const result = await runModelDecision({
+      provider: new MockScriptedProvider([
+        { type: "history_query", query: { kind: "recent_hands", count: 1, limit: 10 } },
+        { type: "action", action: "check" },
+      ]),
+      request,
+      validateAction: () => ({ action: "check" }),
+      fallbackAction: () => ({ action: "fold" }),
+      executeHistoryQuery,
+    }, {
+      ...config,
+      history: { maxQueries: 0, maxRecordsPerQuery: 80, maxApproxTokens: 0 },
+    });
+    expect(result).toMatchObject({
+      status: "ACTION",
+      action: { action: "check" },
+      protocolFailures: 1,
+      historyResults: [],
+    });
+    expect(executeHistoryQuery).not.toHaveBeenCalled();
+  });
+
   it("returns history results and remaining budget in the next model request", async () => {
     const payloads: unknown[] = [];
     let call = 0;

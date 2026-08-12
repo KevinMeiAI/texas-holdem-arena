@@ -59,11 +59,12 @@ export class HistoryBudget {
   constructor(config: HistoryBudgetConfig) {
     if (!Number.isSafeInteger(config.maxQueries) || config.maxQueries < 0
       || !Number.isSafeInteger(config.maxRecordsPerQuery) || config.maxRecordsPerQuery < 1
-      || !Number.isSafeInteger(config.maxApproxTokens) || config.maxApproxTokens < 1) {
+      || !Number.isSafeInteger(config.maxApproxTokens) || config.maxApproxTokens < 0) {
       throw new Error("Invalid history budget configuration");
     }
     const maxBytes = config.maxBytes ?? config.maxApproxTokens * 4;
-    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error("Invalid history byte budget");
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0
+      || (config.maxQueries > 0 && maxBytes < 1)) throw new Error("Invalid history byte budget");
     this.#state = { ...config, maxBytes, usedQueries: 0, usedRecords: 0, usedApproxTokens: 0, usedBytes: 0 };
   }
 

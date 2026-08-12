@@ -36,6 +36,8 @@ export const createTournamentSchema = z.object({
     { smallBlind: 400, bigBlind: 800, bigBlindAnte: 800 },
     { smallBlind: 600, bigBlind: 1200, bigBlindAnte: 1200 },
   ]),
+  interfaceTrack: z.enum(["native", "normalized"]).default("native"),
+  historyMode: z.enum(["query_only", "disabled"]).default("query_only"),
 }).strict();
 
 export const createBenchmarkSeriesSchema = createTournamentSchema.extend({

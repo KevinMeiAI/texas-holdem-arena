@@ -5,7 +5,7 @@ import { runMigrations } from "../../db/migrate.js";
 import { ARENA_DECISION_TIMEOUT_MS } from "../../apps/api/src/model-runtime.js";
 import { PgEventStore } from "../../apps/api/src/persistence/event-store.js";
 import { TournamentOrchestrator } from "../../apps/api/src/tournament/orchestrator.js";
-import { MockPolicyProvider } from "../../packages/providers/src/mock-scripted.js";
+import { MockPolicyProvider, MockScriptedProvider } from "../../packages/providers/src/mock-scripted.js";
 import { ProviderCallError, type ModelProvider, type ProviderDecision } from "../../packages/providers/src/provider.js";
 import type { FrozenModelConfig } from "../../packages/providers/src/provider.js";
 import {
@@ -218,6 +218,50 @@ describePostgres("persisted model tournament orchestration", () => {
       expect(runtime.pendingDecisionId).not.toBe(originalDecision);
       expect(runtime.domain.currentHand?.players.find((player) => player.id === "alpha")?.folded).toBe(false);
       expect(new Set(observedTimeouts)).toEqual(new Set([decisionTimeoutMs]));
+    } finally {
+      await pool!.query("delete from tournaments where id = $1", [tournamentId]);
+    }
+  }, 30_000);
+
+  it("keeps the frozen v10 parser contract runnable and recoverable", async () => {
+    const tournamentId = randomUUID();
+    const key = Buffer.alloc(32, 43);
+    const store = new PgEventStore(pool!, key);
+    const providers = new Map<string, ModelProvider>([
+      ["legacy", new MockScriptedProvider([{ type: "action", action: "call" }])],
+      ["policy", new MockPolicyProvider()],
+    ]);
+    const orchestrator = new TournamentOrchestrator({ eventStore: store, pool: pool!, providers });
+    try {
+      let runtime = await orchestrator.createAndStart({
+        tournamentId,
+        name: "Frozen v10 compatibility",
+        rulesetVersion: "arena-rules-v1",
+        protocolBundleId: "arena-native-v10",
+        tournament: {
+          seatCount: 2,
+          players: [{ id: "alpha", seat: 0 }, { id: "beta", seat: 1 }],
+          initialStack: 100,
+          initialButton: 0,
+          handsPerLevel: 10,
+          blindLevels: [{ smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 }],
+        },
+        providerIdByPlayer: { alpha: "legacy", beta: "policy" },
+        masterSeed: new Uint8Array(32).fill(7),
+      });
+      expect(runtime.protocolBundle.id).toBe("arena-native-v10");
+      expect(runtime.effectivePrompt.version).toBe("arena-system-v10");
+      expect(runtime.effectiveOutputSchema?.version).toBe("arena-output-v2");
+      runtime = await orchestrator.runNextDecision(runtime, "legacy-worker");
+      expect(runtime.domain.currentHand?.players.find((player) => player.id === "alpha")?.folded).toBe(false);
+
+      const recovered = await new TournamentOrchestrator({ eventStore: store, pool: pool!, providers })
+        .recover(tournamentId);
+      expect(recovered).toMatchObject({
+        protocolBundle: { id: "arena-native-v10" },
+        effectivePrompt: { version: "arena-system-v10" },
+        effectiveOutputSchema: { version: "arena-output-v2" },
+      });
     } finally {
       await pool!.query("delete from tournaments where id = $1", [tournamentId]);
     }

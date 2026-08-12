@@ -69,6 +69,8 @@ describePostgres("paired benchmark series", () => {
       initialStack: 100,
       handsPerLevel: 1,
       decisionTimeoutMs: 30_000,
+      interfaceTrack: "normalized",
+      historyMode: "disabled",
       blindLevels: [
         { smallBlind: 25, bigBlind: 50, bigBlindAnte: 0 },
         { smallBlind: 50, bigBlind: 100, bigBlindAnte: 100 },
@@ -119,8 +121,12 @@ describePostgres("paired benchmark series", () => {
         masterSeedBase64?: string;
         players: { id: string; seat: number }[];
       };
+      configuration: {
+        benchmarkTrack: { interfaceTrack: string; historyMode: string };
+        decisionConfig: { history: { maxQueries: number; maxApproxTokens: number } };
+      };
     }>(
-      `select id, benchmark_rotation, public_state from tournaments
+      `select id, benchmark_rotation, public_state, configuration from tournaments
         where benchmark_series_id = $1 order by benchmark_rotation`,
       [created.seriesId],
     );
@@ -129,8 +135,27 @@ describePostgres("paired benchmark series", () => {
     expect(tournamentRows.rows.every((row) => row.public_state.masterSeedBase64 === undefined)).toBe(true);
     expect(tournamentRows.rows[0]!.public_state.players.map((player) => player.id)).toEqual([alpha!.revisionId, beta!.revisionId]);
     expect(tournamentRows.rows[1]!.public_state.players.map((player) => player.id)).toEqual([beta!.revisionId, alpha!.revisionId]);
-
     const store = new PgEventStore(pool!, key);
+    expect(tournamentRows.rows.map((row) => row.configuration.benchmarkTrack)).toEqual([
+      expect.objectContaining({ interfaceTrack: "normalized", historyMode: "disabled" }),
+      expect.objectContaining({ interfaceTrack: "normalized", historyMode: "disabled" }),
+    ]);
+    expect(tournamentRows.rows.map((row) => row.configuration.decisionConfig.history)).toEqual([
+      expect.objectContaining({ maxQueries: 0, maxApproxTokens: 0 }),
+      expect.objectContaining({ maxQueries: 0, maxApproxTokens: 0 }),
+    ]);
+
+    const snapshots = await Promise.all(tournamentRows.rows.map((row) => store.loadLatestSnapshot(row.id)));
+    for (const snapshot of snapshots) {
+      const runtime = snapshot?.privateState as {
+        frozenModelConfigByPlayer?: Record<string, { outputMode: string }>;
+        decisionConfig?: { history: { maxQueries: number; maxApproxTokens: number } };
+      } | undefined;
+      expect(Object.values(runtime?.frozenModelConfigByPlayer ?? {}).map((config) => config.outputMode))
+        .toEqual(["prompt", "prompt"]);
+      expect(runtime?.decisionConfig?.history).toMatchObject({ maxQueries: 0, maxApproxTokens: 0 });
+    }
+
     const handOneCards = await Promise.all(tournamentRows.rows.map(async (row) => (
       (await store.loadEvents(row.id, { includePrivate: true }))
         .filter((event) => event.event.handNo === 1 && ["HOLE_CARDS_DEALT", "BOARD_DEALT"].includes(event.event.type))
