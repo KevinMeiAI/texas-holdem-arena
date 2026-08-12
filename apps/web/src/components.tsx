@@ -1,5 +1,6 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
 import { Link, NavLink } from "react-router-dom";
+import { tableSeatLayout } from "./table-layout";
 import type { ArenaEvent, ArenaPlayer, ArenaState } from "./types";
 import { PreferenceControls, type UiLocale, uiText, useUiPreferences } from "./ui-preferences";
 
@@ -108,23 +109,27 @@ export function PokerTable({ state }: { state: ArenaState }) {
   return (
     <section className="table-broadcast" aria-label={`${state.name} ${text("牌桌", "table")}`}>
       <div className="table-room-light" />
-      <div className="poker-table-shell">
+      <div className="poker-table-shell" data-player-count={players.length}>
         <div className="poker-table-felt">
-          <div className="table-signature"><b>{text("第", "Hand")} {String(hand?.handNo ?? state.completedHands).padStart(3, "0")} {text("手", "")}</b></div>
           {hand ? <>
-            <div className="community-cards">
-              {Array.from({ length: 5 }, (_, index) => <PlayingCard card={board[index]} key={index} />)}
+            <div className="table-center" role="group" aria-label={text("公共牌与底池", "Board and pot")}>
+              <div className="community-cards">
+                {Array.from({ length: 5 }, (_, index) => <PlayingCard card={board[index]} key={index} />)}
+              </div>
+              <div className="pot-display"><span>{text("总底池", "Pot")}</span><strong>{formatChips(pot)}</strong></div>
             </div>
-            <div className="pot-display"><span>{text("总底池", "Pot")}</span><strong>{formatChips(pot)}</strong></div>
           </> : <div className="table-result"><span>♛ {text("冠军", "Champion")}</span><strong>{champion?.displayName ?? "—"}</strong></div>}
           {players.map((player, index) => {
-            const angle = -90 + (360 / players.length) * index;
-            const radians = angle * Math.PI / 180;
+            const placement = tableSeatLayout(players.length, index);
             const style = {
-              "--seat-x": `${50 + Math.cos(radians) * 30}%`,
-              "--seat-y": `${50 + Math.sin(radians) * 36}%`,
-              "--seat-x-wide": `${50 + Math.cos(radians) * 38}%`,
-              "--seat-y-wide": `${50 + Math.sin(radians) * 41}%`,
+              "--seat-x": `${placement.compact.x}%`,
+              "--seat-y": `${placement.compact.y}%`,
+              "--seat-x-wide": `${placement.wide.x}%`,
+              "--seat-y-wide": `${placement.wide.y}%`,
+              "--bet-shift-x": `${placement.compactBetShift.x}rem`,
+              "--bet-shift-y": `${placement.compactBetShift.y}rem`,
+              "--bet-shift-x-wide": `${placement.wideBetShift.x}rem`,
+              "--bet-shift-y-wide": `${placement.wideBetShift.y}rem`,
             } as CSSProperties;
             return <TableSeat key={player.id} player={player} state={state} style={style} />;
           })}
@@ -144,16 +149,17 @@ function TableSeat({ player, state, style }: { player: ArenaPlayer; state: Arena
   const hand = state.hand;
   const isActing = hand?.currentActorId === player.id;
   const isChampion = state.championPlayerId === player.id;
-  const position = hand?.positions.button === player.seat ? "D"
+  const position = hand?.positions.headsUp && hand.positions.button === player.seat ? "D · SB"
+    : hand?.positions.button === player.seat ? "D"
     : hand?.positions.smallBlind === player.seat ? "SB"
       : hand?.positions.bigBlind === player.seat ? "BB" : null;
   const playerStatus: Record<string, string> = { ACTIVE: text("在席", "Active"), ELIMINATED: text("已淘汰", "Out"), CHAMPION: text("冠军", "Champion") };
   return (
-    <article className={`table-seat${isActing ? " is-acting" : ""}${player.folded ? " is-folded" : ""}${player.status === "ELIMINATED" ? " is-out" : ""}`} data-acting-label={text("正在决策", "Thinking")} style={style}>
-      <div className="seat-meta"><span>{text("座位", "Seat")} {String(player.seat + 1).padStart(2, "0")}</span>{position && <b>{position}</b>}</div>
-      <div className="seat-name"><strong>{player.displayName}</strong>{isChampion && <span title={text("冠军", "Champion")}>♛</span>}</div>
-      <div className="seat-stack"><span>{player.allIn ? text("全下", "All-in") : player.folded ? text("弃牌", "Folded") : playerStatus[player.status] ?? player.status}</span><b>{formatChips(player.stack)}</b></div>
-      {player.streetCommitted > 0 && <span className="seat-bet">+{formatChips(player.streetCommitted)}</span>}
+    <article className={`table-seat${isActing ? " is-acting" : ""}${player.folded ? " is-folded" : ""}${player.status === "ELIMINATED" ? " is-out" : ""}`} style={style}>
+      <div className="seat-meta"><span><span className="seat-word">{text("座位", "Seat")} </span>{String(player.seat + 1).padStart(2, "0")}</span>{position && <b>{position}</b>}</div>
+      <div className="seat-name"><strong title={player.displayName}>{player.displayName}</strong>{isChampion && <span title={text("冠军", "Champion")}>♛</span>}</div>
+      <div className="seat-stack"><span className={isActing ? "seat-turn" : ""}>{isActing ? text("思考中", "Thinking") : player.allIn ? text("全下", "All-in") : player.folded ? text("弃牌", "Folded") : playerStatus[player.status] ?? player.status}</span><b>{formatChips(player.stack)}</b></div>
+      {player.streetCommitted > 0 && <span className="seat-bet"><i aria-hidden="true" />{formatChips(player.streetCommitted)}</span>}
     </article>
   );
 }
