@@ -3,7 +3,7 @@ import { arenaOutputSchema } from "./output-schema.js";
 
 describe("platform-owned structured output schema", () => {
   it("keeps a strict object root for provider schema modes", () => {
-    const action = arenaOutputSchema("ACTION_OR_HISTORY");
+    const action = arenaOutputSchema("ACTION_OR_HISTORY", "arena-output-v2");
     expect(action).toMatchObject({
       version: "arena-output-v2",
       name: "arena_action_or_history",

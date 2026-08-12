@@ -66,8 +66,8 @@ describe("strict model protocol", () => {
   });
 
   it("builds byte-identical prompts and hashes for every seat", () => {
-    const first = buildEffectiveSystemPrompt();
-    const second = buildEffectiveSystemPrompt();
+    const first = buildEffectiveSystemPrompt("arena-system-v10");
+    const second = buildEffectiveSystemPrompt("arena-system-v10");
     expect(first).toEqual(second);
     expect(first.version).toBe("arena-system-v10");
     expect(first.sha256).toBe("ca88adeffeb516edda99ad0f01aaac0d17abced70d70b5cc4a53689e79f65444");

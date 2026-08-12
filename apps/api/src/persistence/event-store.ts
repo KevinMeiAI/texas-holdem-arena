@@ -59,6 +59,9 @@ export interface CreateTournamentRecord {
   rulesetVersion: string;
   configuration: unknown;
   promptHash?: string;
+  protocolBundleId?: string;
+  benchmarkTrackId?: string;
+  benchmarkCohortId?: string;
 }
 
 export interface AppendSnapshot {
@@ -318,14 +321,18 @@ export class PgEventStore {
   async createTournament(input: CreateTournamentRecord): Promise<void> {
     await this.pool.query(
       `insert into tournaments
-        (id, name, status, ruleset_version, prompt_hash, configuration)
-       values ($1, $2, 'DRAFT', $3, $4, $5::jsonb)`,
+        (id, name, status, ruleset_version, prompt_hash, configuration,
+         protocol_bundle_id, benchmark_track_id, benchmark_cohort_id)
+       values ($1, $2, 'DRAFT', $3, $4, $5::jsonb, $6, $7, $8)`,
       [
         input.id,
         input.name,
         input.rulesetVersion,
         input.promptHash ?? null,
         JSON.stringify(input.configuration),
+        input.protocolBundleId ?? "legacy/native-unclassified",
+        input.benchmarkTrackId ?? "legacy/native-unclassified",
+        input.benchmarkCohortId ?? "legacy/native-unclassified",
       ],
     );
   }

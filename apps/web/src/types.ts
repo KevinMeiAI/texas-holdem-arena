@@ -26,6 +26,9 @@ export interface ArenaState {
   tournamentId: string;
   name: string;
   rulesetVersion: string;
+  protocolBundleId?: string;
+  benchmarkTrackId?: string;
+  benchmarkCohortId?: string;
   promptHash: string;
   status: "READY" | "RUNNING" | "PAUSED_INFRA" | "COMPLETED" | "CANCELLED";
   completedHands: number;
@@ -75,6 +78,9 @@ export interface TournamentSummary {
   status: ArenaState["status"];
   rulesetVersion: string;
   promptHash: string | null;
+  protocolBundleId?: string;
+  benchmarkTrackId?: string;
+  benchmarkCohortId?: string;
   championPlayerId: string | null;
   publicState: ArenaState;
   createdAt: string;
@@ -162,6 +168,9 @@ export interface ProviderConnection {
 
 export interface ModelConfig {
   id: string;
+  revisionId: string;
+  revisionNumber: number;
+  configurationHash: string;
   displayName: string;
   providerConnectionId: string;
   providerLabel: string;

@@ -26,15 +26,16 @@ export interface EffectiveSystemPrompt {
   sha256: string;
 }
 
-export function buildEffectiveSystemPrompt(): EffectiveSystemPrompt {
+export function buildEffectiveSystemPrompt(version = ARENA_PROMPT_VERSION): EffectiveSystemPrompt {
+  if (version !== "arena-system-v10") throw new Error(`Unsupported Arena system prompt version: ${version}`);
   const text = [
-    `[ARENA LOCKED PREFIX ${ARENA_PROMPT_VERSION}]`,
+    `[ARENA LOCKED PREFIX ${version}]`,
     LOCKED_PREFIX,
-    `[ARENA LOCKED OUTPUT PROTOCOL ${ARENA_PROMPT_VERSION}]`,
+    `[ARENA LOCKED OUTPUT PROTOCOL ${version}]`,
     LOCKED_SUFFIX,
   ].join("\n\n");
   return {
-    version: ARENA_PROMPT_VERSION,
+    version,
     text,
     sha256: createHash("sha256").update(text, "utf8").digest("hex"),
   };

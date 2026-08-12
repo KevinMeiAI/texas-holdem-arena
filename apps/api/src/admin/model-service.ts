@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import type { Pool } from "pg";
+import { createHash, randomUUID } from "node:crypto";
+import type { Pool, PoolClient } from "pg";
 import type {
   FrozenModelConfig,
   ModelOutputMode,
@@ -11,6 +11,7 @@ import { inspectOutputPolicy } from "../../../../packages/providers/src/output-p
 import { encryptedPayloadSchema } from "../../../../packages/contracts/src/events.js";
 import { decryptJson, encryptJson } from "../security/encryption.js";
 import { ARENA_DECISION_TIMEOUT_MS } from "../model-runtime.js";
+import { canonicalJson } from "../../../../packages/fairness/src/canonical-json.js";
 
 interface ProviderRow {
   id: string;
@@ -36,6 +37,9 @@ interface ModelRow {
   model_id: string;
   parameters: Record<string, unknown>;
   output_mode: ModelOutputMode;
+  current_revision_id: string;
+  revision_number: number;
+  configuration_hash: string;
   enabled: boolean;
   created_at: Date;
   updated_at: Date;
@@ -99,6 +103,9 @@ function publicModel(row: ModelRow) {
   });
   return {
     id: row.id,
+    revisionId: row.current_revision_id,
+    revisionNumber: row.revision_number,
+    configurationHash: row.configuration_hash,
     displayName: row.display_name,
     providerConnectionId: row.provider_connection_id,
     providerLabel: row.provider_label,
@@ -117,6 +124,95 @@ function publicModel(row: ModelRow) {
     updatedAt: row.updated_at.toISOString(),
   };
 }
+
+interface RevisionIdentity {
+  providerConnectionId: string;
+  providerType: ProviderKind;
+  providerProfile: ProviderProfile;
+  providerDefaultOutputMode: OutputMode;
+  baseUrl: string | null;
+  modelId: string;
+  parameters: Record<string, unknown>;
+  outputMode: ModelOutputMode;
+}
+
+function revisionHash(identity: RevisionIdentity): string {
+  return createHash("sha256").update(canonicalJson(identity)).digest("hex");
+}
+
+async function createRevision(
+  client: PoolClient,
+  modelConfigId: string,
+  revisionId: string,
+): Promise<void> {
+  const result = await client.query<ProviderRow & {
+    model_id: string;
+    parameters: Record<string, unknown>;
+    output_mode: ModelOutputMode;
+    provider_connection_id: string;
+  }>(
+    `select p.*, m.model_id, m.parameters, m.output_mode, m.provider_connection_id
+       from model_configs m join provider_connections p on p.id = m.provider_connection_id
+      where m.id = $1`,
+    [modelConfigId],
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error("Model configuration not found");
+  const identity: RevisionIdentity = {
+    providerConnectionId: row.provider_connection_id,
+    providerType: row.provider_type,
+    providerProfile: row.provider_profile,
+    providerDefaultOutputMode: row.default_output_mode,
+    baseUrl: row.base_url,
+    modelId: row.model_id,
+    parameters: row.parameters,
+    outputMode: row.output_mode,
+  };
+  const configurationHash = revisionHash(identity);
+  const existing = await client.query<{ id: string }>(
+    `select id from competitor_revisions
+      where model_config_id = $1 and configuration_hash = $2`,
+    [modelConfigId, configurationHash],
+  );
+  if (existing.rows[0]) {
+    await client.query(
+      "update model_configs set current_revision_id = $2 where id = $1",
+      [modelConfigId, existing.rows[0].id],
+    );
+    return;
+  }
+  await client.query(
+    `insert into competitor_revisions
+      (id, model_config_id, revision_number, provider_connection_id, provider_type,
+       provider_profile, provider_default_output_mode, base_url, model_id, parameters,
+       output_mode, configuration_hash)
+     select $2, $1, coalesce(max(revision_number), 0) + 1, $3, $4, $5, $6, $7, $8,
+            $9::jsonb, $10, $11
+       from competitor_revisions where model_config_id = $1`,
+    [
+      modelConfigId,
+      revisionId,
+      identity.providerConnectionId,
+      identity.providerType,
+      identity.providerProfile,
+      identity.providerDefaultOutputMode,
+      identity.baseUrl,
+      identity.modelId,
+      JSON.stringify(identity.parameters),
+      identity.outputMode,
+      configurationHash,
+    ],
+  );
+  await client.query(
+    "update model_configs set current_revision_id = $2 where id = $1",
+    [modelConfigId, revisionId],
+  );
+}
+
+const MODEL_SELECT = `select m.*, p.label as provider_label, p.provider_type,
+  p.provider_profile, p.default_output_mode, r.revision_number, r.configuration_hash
+  from model_configs m join provider_connections p on p.id = m.provider_connection_id
+  join competitor_revisions r on r.id = m.current_revision_id`;
 
 export class ModelConfigService {
   constructor(private readonly pool: Pool, private readonly masterKey: Uint8Array) {}
@@ -159,7 +255,10 @@ export class ModelConfigService {
     const apiKeyWasProvided = Object.hasOwn(input, "apiKey");
     const apiKey = input.apiKey || null;
     const encrypted = apiKey ? encryptJson(apiKey, this.masterKey, providerAad(id)) : null;
-    const result = await this.pool.query<ProviderRow>(
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const result = await client.query<ProviderRow>(
       `update provider_connections
           set label = coalesce($2, label),
               provider_type = coalesce($3, provider_type),
@@ -183,8 +282,31 @@ export class ModelConfigService {
         encrypted ? JSON.stringify(encrypted) : null,
         apiKey ? apiKey.slice(-4) : null,
       ],
-    );
-    return result.rows[0] ? publicProvider(result.rows[0]) : null;
+      );
+      const row = result.rows[0];
+      if (!row) {
+        await client.query("rollback");
+        return null;
+      }
+      const identityChanged = input.providerType !== undefined
+        || input.providerProfile !== undefined
+        || input.defaultOutputMode !== undefined
+        || input.baseUrl !== undefined;
+      if (identityChanged) {
+        const models = await client.query<{ id: string }>(
+          "select id from model_configs where provider_connection_id = $1 order by id for update",
+          [id],
+        );
+        for (const model of models.rows) await createRevision(client, model.id, randomUUID());
+      }
+      await client.query("commit");
+      return publicProvider(row);
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async deleteProvider(id: string): Promise<boolean> {
@@ -200,17 +322,35 @@ export class ModelConfigService {
     outputMode: ModelOutputMode;
   }) {
     const id = randomUUID();
-    await this.pool.query(
-      `insert into model_configs
-        (id, display_name, provider_connection_id, model_id, parameters, output_mode)
-       values ($1, $2, $3, $4, $5::jsonb, $6)`,
-      [id, input.displayName, input.providerConnectionId, input.modelId, JSON.stringify(input.parameters), input.outputMode],
-    );
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        `insert into model_configs
+          (id, display_name, provider_connection_id, model_id, parameters, output_mode, current_revision_id)
+         values ($1, $2, $3, $4, $5::jsonb, $6, $1)`,
+        [id, input.displayName, input.providerConnectionId, input.modelId, JSON.stringify(input.parameters), input.outputMode],
+      );
+      await createRevision(client, id, id);
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
     return this.getModel(id);
   }
 
   async updateModel(id: string, input: ModelConfigUpdate) {
-    const result = await this.pool.query<ModelRow>(
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const identityChanged = input.providerConnectionId !== undefined
+        || input.modelId !== undefined
+        || input.parameters !== undefined
+        || input.outputMode !== undefined;
+      const result = await client.query<ModelRow>(
       `update model_configs
           set display_name = coalesce($2, display_name),
               provider_connection_id = coalesce($3, provider_connection_id),
@@ -220,11 +360,7 @@ export class ModelConfigService {
               output_mode = coalesce($8, output_mode),
               updated_at = now()
         where id = $1
-        returning *,
-          (select label from provider_connections where id = model_configs.provider_connection_id) as provider_label,
-          (select provider_type from provider_connections where id = model_configs.provider_connection_id) as provider_type,
-          (select provider_profile from provider_connections where id = model_configs.provider_connection_id) as provider_profile,
-          (select default_output_mode from provider_connections where id = model_configs.provider_connection_id) as default_output_mode`,
+        returning *`,
       [
         id,
         input.displayName ?? null,
@@ -235,31 +371,42 @@ export class ModelConfigService {
         input.enabled ?? null,
         input.outputMode ?? null,
       ],
-    );
-    return result.rows[0] ? publicModel(result.rows[0]) : null;
+      );
+      if (!result.rows[0]) {
+        await client.query("rollback");
+        return null;
+      }
+      if (identityChanged) await createRevision(client, id, randomUUID());
+      await client.query("commit");
+      return this.getModel(id);
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async listModels() {
     const result = await this.pool.query<ModelRow>(
-      `select m.*, p.label as provider_label, p.provider_type, p.provider_profile, p.default_output_mode
-         from model_configs m join provider_connections p on p.id = m.provider_connection_id
-        order by m.created_at`,
+      `${MODEL_SELECT} order by m.created_at`,
     );
     return result.rows.map(publicModel);
   }
 
   async getModel(id: string) {
     const result = await this.pool.query<ModelRow>(
-      `select m.*, p.label as provider_label, p.provider_type, p.provider_profile, p.default_output_mode
-         from model_configs m join provider_connections p on p.id = m.provider_connection_id
-        where m.id = $1`,
+      `${MODEL_SELECT} where m.id = $1`,
       [id],
     );
     return result.rows[0] ? publicModel(result.rows[0]) : null;
   }
 
   async deleteModel(id: string): Promise<boolean> {
-    const result = await this.pool.query("delete from model_configs where id = $1", [id]);
+    const result = await this.pool.query(
+      "update model_configs set enabled = false, updated_at = now() where id = $1",
+      [id],
+    );
     return result.rowCount === 1;
   }
 
@@ -290,6 +437,50 @@ export class ModelConfigService {
       timeoutMs: ARENA_DECISION_TIMEOUT_MS,
       parameters: row.parameters,
     };
+  }
+
+  async runtimeConfigForRevision(revisionId: string): Promise<FrozenModelConfig> {
+    const result = await this.pool.query<ProviderRow & {
+      model_id: string;
+      parameters: Record<string, unknown>;
+      output_mode: ModelOutputMode;
+      revision_base_url: string | null;
+      secret_provider_connection_id: string;
+    }>(
+      `select p.*, r.model_id, r.parameters, r.output_mode, r.base_url as revision_base_url,
+              p.id as secret_provider_connection_id,
+              r.provider_type, r.provider_profile,
+              r.provider_default_output_mode as default_output_mode
+         from competitor_revisions r
+         join model_configs m on m.id = r.model_config_id
+         join provider_connections p on p.id = r.provider_connection_id
+        where r.id = $1 and m.enabled = true`,
+      [revisionId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error("Competitor revision not found or disabled");
+    const apiKey = row.encrypted_api_key
+      ? decryptJson(encryptedPayloadSchema.parse(row.encrypted_api_key), this.masterKey, providerAad(row.secret_provider_connection_id))
+      : undefined;
+    return {
+      provider: row.provider_type,
+      providerProfile: row.provider_profile,
+      providerDefaultOutputMode: row.default_output_mode,
+      outputMode: row.output_mode,
+      model: row.model_id,
+      ...(typeof apiKey === "string" ? { apiKey } : {}),
+      ...(row.revision_base_url ? { baseUrl: row.revision_base_url } : {}),
+      timeoutMs: ARENA_DECISION_TIMEOUT_MS,
+      parameters: row.parameters,
+    };
+  }
+
+  async currentRevision(modelConfigId: string) {
+    const result = await this.pool.query<ModelRow>(
+      `${MODEL_SELECT} where m.id = $1 and m.enabled = true`,
+      [modelConfigId],
+    );
+    return result.rows[0] ? publicModel(result.rows[0]) : null;
   }
 
   async providerRuntimeConfig(

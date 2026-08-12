@@ -89,12 +89,16 @@ export interface ArenaOutputSchema {
   sha256: string;
 }
 
-export function arenaOutputSchema(expected: ExpectedModelOutput): ArenaOutputSchema {
+export function arenaOutputSchema(
+  expected: ExpectedModelOutput,
+  version = ARENA_OUTPUT_SCHEMA_VERSION,
+): ArenaOutputSchema {
+  if (version !== "arena-output-v2") throw new Error(`Unsupported Arena output schema version: ${version}`);
   const name = "arena_action_or_history";
   const schema = actionOrHistorySchema;
   const serialized = JSON.stringify(schema);
   return {
-    version: ARENA_OUTPUT_SCHEMA_VERSION,
+    version,
     name,
     schema,
     sha256: createHash("sha256").update(serialized, "utf8").digest("hex"),

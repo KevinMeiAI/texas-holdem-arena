@@ -10,6 +10,7 @@ export interface ModelContextInput {
   tournamentId: string;
   rulesetVersion: string;
   promptVersion: string;
+  contextVersion?: string;
   state: TournamentState;
   playerId: string;
   currentHandEvents: ProjectedArenaEvent[];
@@ -280,11 +281,17 @@ export function buildModelContext(input: ModelContextInput): unknown {
   const hero = hand.players.find((player) => player.id === input.playerId);
   if (!hero) throw new Error("Model player is not active in the current hand");
   const legal = hand.betting?.currentActorId === input.playerId ? currentLegalActions(hand) : null;
-  const legacyV1 = input.promptVersion === "arena-system-v1";
+  const legacyV1 = input.contextVersion === "model-context-v1" || (!input.contextVersion && input.promptVersion === "arena-system-v1");
   const promptVersionNumber = Number(input.promptVersion.match(/^arena-system-v(\d+)$/)?.[1] ?? 0);
-  const professionalContext = promptVersionNumber >= 7;
+  const requestedContextVersion = input.contextVersion ?? (promptVersionNumber <= 1
+    ? "model-context-v1"
+    : promptVersionNumber >= 7 ? "model-context-v3" : "model-context-v2");
+  if (!new Set(["model-context-v1", "model-context-v2", "model-context-v3"]).has(requestedContextVersion)) {
+    throw new Error(`Unsupported model context version: ${requestedContextVersion}`);
+  }
+  const professionalContext = requestedContextVersion === "model-context-v3";
   return {
-    schema_version: legacyV1 ? "model-context-v1" : professionalContext ? "model-context-v3" : "model-context-v2",
+    schema_version: requestedContextVersion,
     tournament_id: input.tournamentId,
     ruleset_version: input.rulesetVersion,
     prompt_version: input.promptVersion,

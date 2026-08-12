@@ -19,6 +19,9 @@ import {
   type TournamentStatistics,
   type TournamentStatisticsComputation,
 } from "./statistics.js";
+import { benchmarkTrackIdentity } from "./benchmark-track.js";
+import { CURRENT_RULESET_VERSION } from "./ruleset-registry.js";
+import { CURRENT_DECISION_PROTOCOL_BUNDLE_ID } from "../../../../packages/contracts/src/decision-protocol.js";
 
 export interface CreateArenaTournamentInput {
   name: string;
@@ -92,37 +95,54 @@ export class ArenaService {
   async create(input: CreateArenaTournamentInput): Promise<OrchestratorRuntime> {
     if (this.#stopping) throw new Error("Arena service is shutting down");
     const models = await Promise.all(input.modelConfigIds.map(async (id) => {
-      const model = await this.models.getModel(id);
+      const model = await this.models.currentRevision(id);
       if (!model) throw new Error(`Model configuration not found: ${id}`);
       return model;
     }));
-    const frozenConfigByModelId = Object.fromEntries(await Promise.all(input.modelConfigIds.map(async (id) => (
-      [id, { ...await this.models.runtimeConfig(id), timeoutMs: input.decisionTimeoutMs }] as const
+    const frozenConfigByRevisionId = Object.fromEntries(await Promise.all(models.map(async (model) => (
+      [model.revisionId, { ...await this.models.runtimeConfigForRevision(model.revisionId), timeoutMs: input.decisionTimeoutMs }] as const
     ))));
-    const providers = this.#providersFromFrozen(frozenConfigByModelId);
+    const providers = this.#providersFromFrozen(frozenConfigByRevisionId);
     const masterSeed = randomBytes(32);
     const seatingRng = new DeterministicRng(deriveSeed(masterSeed, "tournament:seating"));
     const seated = seatingRng.shuffle(models);
     const tournamentId = randomUUID();
+    const rulesetVersion = CURRENT_RULESET_VERSION;
+    const protocolBundleId = CURRENT_DECISION_PROTOCOL_BUNDLE_ID;
+    const track = benchmarkTrackIdentity({
+      protocolBundleId,
+      rulesetVersion,
+      historyMode: "query_only",
+      interfaceTrack: "native",
+      tournamentFormat: {
+        seatCount: seated.length,
+        initialStack: input.initialStack,
+        handsPerLevel: input.handsPerLevel,
+        blindLevels: input.blindLevels,
+        decisionTimeoutMs: input.decisionTimeoutMs,
+      },
+    });
     const orchestrator = new TournamentOrchestrator({ eventStore: this.#store, pool: this.pool, providers });
     const runtime = await orchestrator.createAndStart({
       tournamentId,
       name: input.name,
-      rulesetVersion: "arena-rules-v2",
+      rulesetVersion,
+      protocolBundleId,
+      benchmarkTrack: track,
       tournament: {
         seatCount: seated.length,
-        players: seated.map((model, seat) => ({ id: model.id, seat })),
+        players: seated.map((model, seat) => ({ id: model.revisionId, seat })),
         initialStack: input.initialStack,
         initialButton: seatingRng.int(seated.length),
         handsPerLevel: input.handsPerLevel,
         blindLevels: input.blindLevels,
       },
-      providerIdByPlayer: Object.fromEntries(seated.map((model) => [model.id, model.id])),
+      providerIdByPlayer: Object.fromEntries(seated.map((model) => [model.revisionId, model.revisionId])),
       frozenModelConfigByPlayer: Object.fromEntries(seated.map((model) => [
-        model.id,
-        frozenConfigByModelId[model.id]!,
+        model.revisionId,
+        frozenConfigByRevisionId[model.revisionId]!,
       ])),
-      playerLabels: Object.fromEntries(seated.map((model) => [model.id, model.displayName])),
+      playerLabels: Object.fromEntries(seated.map((model) => [model.revisionId, model.displayName])),
       decisionTimeoutMs: input.decisionTimeoutMs,
       masterSeed,
       managedByArena: true,
@@ -199,10 +219,14 @@ export class ArenaService {
       prompt_hash: string | null;
       champion_player_id: string | null;
       public_state: unknown;
+      protocol_bundle_id: string;
+      benchmark_track_id: string;
+      benchmark_cohort_id: string;
       created_at: Date;
       updated_at: Date;
     }>(
       `select id, name, status, ruleset_version, prompt_hash, champion_player_id,
+              protocol_bundle_id, benchmark_track_id, benchmark_cohort_id,
               public_state, created_at, updated_at
          from tournaments order by created_at desc`,
     );
@@ -212,6 +236,9 @@ export class ArenaService {
       status: row.status,
       rulesetVersion: row.ruleset_version,
       promptHash: row.prompt_hash,
+      protocolBundleId: row.protocol_bundle_id,
+      benchmarkTrackId: row.benchmark_track_id,
+      benchmarkCohortId: row.benchmark_cohort_id,
       championPlayerId: row.champion_player_id,
       publicState: row.public_state,
       createdAt: row.created_at.toISOString(),
@@ -245,8 +272,15 @@ export class ArenaService {
       id: string;
       public_state: unknown;
       created_at: Date;
-    }>("select id, public_state, created_at from tournaments where status = 'COMPLETED' order by created_at");
+      benchmark_cohort_id: string;
+    }>(`select id, public_state, created_at, benchmark_cohort_id
+          from tournaments where status = 'COMPLETED' order by created_at`);
+    // The public board is always a single comparable cohort. Until the UI
+    // exposes a cohort selector, use the cohort of the most recently completed
+    // tournament and never merge incompatible historical protocols into it.
+    const selectedCohortId = result.rows.at(-1)?.benchmark_cohort_id ?? null;
     const completed = await Promise.all(result.rows.map(async (row) => {
+      if (row.benchmark_cohort_id !== selectedCohortId) return null;
       const calculation = await this.#calculateStatistics(row.id, row.public_state, false);
       return {
         createdAt: row.created_at.toISOString(),
@@ -254,7 +288,7 @@ export class ArenaService {
         internals: calculation.internals,
       };
     }));
-    return buildArenaLeaderboards(completed);
+    return buildArenaLeaderboards(completed.filter((record): record is NonNullable<typeof record> => record !== null));
   }
 
   async fairness(tournamentId: string): Promise<unknown> {

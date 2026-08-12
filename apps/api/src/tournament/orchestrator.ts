@@ -3,13 +3,16 @@ import type { Pool } from "pg";
 import {
   buildEffectiveSystemPrompt,
   arenaOutputSchema,
+  decisionProtocolBundle,
+  legacyDecisionProtocolBundle,
   projectArenaEvents,
   tournamentEventToArenaEvents,
   type CanonicalModelRequest,
+  type DecisionProtocolBundleDefinition,
   type NewArenaEvent,
 } from "../../../../packages/contracts/src/index.js";
 import { cardCode, createDeck } from "../../../../packages/domain/src/cards.js";
-import { createTournament as createDomainTournament, reduceTournament, startTournamentHand, type TournamentConfig, type TournamentState, type TournamentTransition } from "../../../../packages/domain/src/tournament.js";
+import { type TournamentConfig, type TournamentState, type TournamentTransition } from "../../../../packages/domain/src/tournament.js";
 import { deriveSeed, DeterministicRng, seedCommitment } from "../../../../packages/fairness/src/rng.js";
 import { canonicalJson } from "../../../../packages/fairness/src/canonical-json.js";
 import type { FrozenModelConfig, ModelProvider } from "../../../../packages/providers/src/provider.js";
@@ -33,6 +36,8 @@ import { HistoryBudget } from "./history-budget.js";
 import { HistoryQueryService } from "./history-query-service.js";
 import { protocolFallbackAction, toDomainAction } from "./model-action.js";
 import { buildModelContext } from "./model-context.js";
+import { rulesetImplementation } from "./ruleset-registry.js";
+import type { BenchmarkTrackIdentity } from "./benchmark-track.js";
 
 export type OperationalStatus = "READY" | "RUNNING" | "PAUSED_INFRA" | "COMPLETED" | "CANCELLED";
 
@@ -40,6 +45,8 @@ export interface ArenaTournamentSetup {
   tournamentId?: string;
   name: string;
   rulesetVersion: string;
+  protocolBundleId?: string;
+  benchmarkTrack?: BenchmarkTrackIdentity;
   tournament: TournamentConfig;
   providerIdByPlayer: Record<string, string>;
   frozenModelConfigByPlayer?: Record<string, FrozenModelConfig>;
@@ -53,6 +60,8 @@ export interface OrchestratorRuntime {
   tournamentId: string;
   name: string;
   rulesetVersion: string;
+  protocolBundle: DecisionProtocolBundleDefinition;
+  benchmarkTrack?: BenchmarkTrackIdentity;
   operationalStatus: OperationalStatus;
   aggregateVersion: number;
   domain: TournamentState;
@@ -97,6 +106,9 @@ function publicState(runtime: OrchestratorRuntime): unknown {
     tournamentId: runtime.tournamentId,
     name: runtime.name,
     rulesetVersion: runtime.rulesetVersion,
+    protocolBundleId: runtime.protocolBundle.id,
+    benchmarkTrackId: runtime.benchmarkTrack?.id ?? "legacy/native-unclassified",
+    benchmarkCohortId: runtime.benchmarkTrack?.cohortId ?? "legacy/native-unclassified",
     promptHash: runtime.effectivePrompt.sha256,
     outputSchemaHash: runtime.effectiveOutputSchema?.sha256 ?? null,
     status: runtime.operationalStatus,
@@ -181,8 +193,10 @@ export class TournamentOrchestrator {
 
   async createAndStart(setup: ArenaTournamentSetup): Promise<OrchestratorRuntime> {
     const tournamentId = setup.tournamentId ?? randomUUID();
-    const effectivePrompt = buildEffectiveSystemPrompt();
-    const effectiveOutputSchema = arenaOutputSchema("ACTION_OR_HISTORY");
+    const protocolBundle = decisionProtocolBundle(setup.protocolBundleId);
+    const ruleset = rulesetImplementation(setup.rulesetVersion);
+    const effectivePrompt = buildEffectiveSystemPrompt(protocolBundle.systemPromptVersion);
+    const effectiveOutputSchema = arenaOutputSchema("ACTION_OR_HISTORY", protocolBundle.outputSchemaVersion);
     const masterSeed = setup.masterSeed ?? randomBytes(32);
     if (masterSeed.byteLength !== 32) throw new Error("Tournament master seed must be 256 bits");
     const decisionTimeoutMs = setup.decisionTimeoutMs ?? ARENA_DECISION_TIMEOUT_MS;
@@ -201,9 +215,11 @@ export class TournamentOrchestrator {
       tournamentId,
       name: setup.name,
       rulesetVersion: setup.rulesetVersion,
+      protocolBundle,
+      ...(setup.benchmarkTrack ? { benchmarkTrack: jsonSafe(setup.benchmarkTrack) } : {}),
       operationalStatus: "READY",
       aggregateVersion: 0,
-      domain: createDomainTournament(setup.tournament),
+      domain: ruleset.createTournament(setup.tournament),
       effectivePrompt,
       effectiveOutputSchema,
       providerIdByPlayer: { ...setup.providerIdByPlayer },
@@ -232,6 +248,13 @@ export class TournamentOrchestrator {
         providerIdByPlayer: setup.providerIdByPlayer,
         playerLabels: setup.playerLabels ?? {},
         promptVersion: effectivePrompt.version,
+        protocolBundleId: protocolBundle.id,
+        contextVersion: protocolBundle.contextVersion,
+        parserPolicyVersion: protocolBundle.parserPolicyVersion,
+        correctionProtocolVersion: protocolBundle.correctionProtocolVersion,
+        historyProtocolVersion: protocolBundle.historyProtocolVersion,
+        adapterProtocolVersion: protocolBundle.adapterProtocolVersion,
+        benchmarkTrack: setup.benchmarkTrack ?? null,
         outputSchemaVersion: effectiveOutputSchema.version,
         outputSchemaHash: effectiveOutputSchema.sha256,
         modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
@@ -240,11 +263,16 @@ export class TournamentOrchestrator {
         managedByArena: setup.managedByArena === true,
       },
       promptHash: effectivePrompt.sha256,
+      protocolBundleId: protocolBundle.id,
+      benchmarkTrackId: setup.benchmarkTrack?.id ?? "legacy/native-unclassified",
+      benchmarkCohortId: setup.benchmarkTrack?.cohortId ?? "legacy/native-unclassified",
     });
     runtime = await this.#append(runtime, [
       publicArenaEvent("TOURNAMENT_CONFIG_FROZEN", {
         promptHash: effectivePrompt.sha256,
         promptVersion: effectivePrompt.version,
+        protocolBundleId: protocolBundle.id,
+        contextVersion: protocolBundle.contextVersion,
         outputSchemaVersion: effectiveOutputSchema.version,
         outputSchemaHash: effectiveOutputSchema.sha256,
         decisionTimeoutMs,
@@ -264,8 +292,16 @@ export class TournamentOrchestrator {
       () => { throw new Error("Tournament has no recovery snapshot"); },
       () => { throw new Error("Orchestrator snapshots must accompany every authoritative append"); },
     );
+    const protocolBundle = recovered.state.protocolBundle
+      ?? legacyDecisionProtocolBundle(
+        recovered.state.effectivePrompt.version,
+        recovered.state.effectiveOutputSchema?.version,
+      );
+    rulesetImplementation(recovered.state.rulesetVersion);
+    if (!protocolBundle.id.startsWith("legacy/")) decisionProtocolBundle(protocolBundle.id);
     return {
       ...recovered.state,
+      protocolBundle,
       // Snapshots created before decisionTimeoutMs became explicit inherit the
       // current Arena operational limit without mutating frozen model inputs.
       decisionTimeoutMs: recovered.state.decisionTimeoutMs ?? ARENA_DECISION_TIMEOUT_MS,
@@ -352,6 +388,7 @@ export class TournamentOrchestrator {
       tournamentId: runtime.tournamentId,
       rulesetVersion: runtime.rulesetVersion,
       promptVersion: runtime.effectivePrompt.version,
+      contextVersion: runtime.protocolBundle.contextVersion,
       state: runtime.domain,
       playerId: claimed.playerId,
       currentHandEvents,
@@ -422,7 +459,7 @@ export class TournamentOrchestrator {
 
     const priorHandNo = hand.handNo;
     const command = { type: "ACTION" as const, playerId: claimed.playerId, action: decision.action };
-    const transition = reduceTournament(runtime.domain, command);
+    const transition = rulesetImplementation(runtime.rulesetVersion).reduce(runtime.domain, command);
     runtime = {
       ...runtime,
       domain: transition.state,
@@ -481,7 +518,7 @@ export class TournamentOrchestrator {
       const deck = new DeterministicRng(
         deriveSeed(seed, `tournament:${next.tournamentId}:hand:${handNo}`),
       ).shuffle(createDeck());
-      const transition = startTournamentHand(next.domain, deck);
+      const transition = rulesetImplementation(next.rulesetVersion).startHand(next.domain, deck);
       next = {
         ...next,
         domain: transition.state,
