@@ -212,6 +212,15 @@ function ModelsAdmin({ csrfToken }: { csrfToken: string }) {
                     } catch (reason) { setError(reason instanceof Error ? reason.message : text("模型预检失败", "Model preflight failed")); }
                     finally { setPreflighting(null); }
                   }}>{preflighting === model.id ? text("检测中", "Checking") : text("预检", "Preflight")}</button>
+                  <button disabled={preflighting === model.id} onClick={async () => {
+                    setPreflighting(model.id); setError(null); setNotice(null);
+                    try {
+                      const response = await apiRequest<{ result: { ok: boolean; latencyMs: number; effectiveMode: string; checks: { scenario: string; ok: boolean; message: string }[] }; cached: boolean }>(`/api/admin/models/${model.id}/preflight?level=full`, { method: "POST", csrfToken });
+                      if (response.result.ok) setNotice(`${model.displayName} ${text("完整协议验收通过", "passed full protocol validation")} · ${response.cached ? text("缓存结果", "cached") : `${response.result.latencyMs}ms`}`);
+                      else setError(`${model.displayName} ${text("完整协议验收失败", "full validation failed")}: ${response.result.checks.filter((check) => !check.ok).map((check) => `${check.scenario}: ${check.message}`).join("; ")}`);
+                    } catch (reason) { setError(reason instanceof Error ? reason.message : text("完整协议验收失败", "Full protocol validation failed")); }
+                    finally { setPreflighting(null); }
+                  }}>{text("完整验收", "Full validation")}</button>
                   <button onClick={() => setModelDialog({ editing: model, draft: { displayName: model.displayName, providerConnectionId: model.providerConnectionId, modelId: model.modelId, outputMode: model.outputMode, parameters: JSON.stringify(model.parameters, null, 2) } })}>{text("编辑", "Edit")}</button>
                   <button onClick={() => setConfirmDelete({ kind: "model", id: model.id, label: model.displayName })}>{text("删除", "Delete")}</button>
                 </div>

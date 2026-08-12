@@ -9,6 +9,7 @@ import {
   type ModelProvider,
   type ProviderDecision,
 } from "./provider.js";
+import { transportAudit } from "./transport-audit.js";
 
 function outputText(body: unknown): string {
   const object = body as { output_text?: unknown; output?: { content?: { text?: unknown }[] }[] };
@@ -44,22 +45,28 @@ export class OpenAIResponsesProvider implements ModelProvider {
         ? { format: { type: "json_object" } }
         : undefined;
     const started = Date.now();
+    const renderedUserText = buildModelUserPrompt(request.userPayload, request.adapterProtocolVersion);
+    const wireBody = {
+      ...this.config.parameters,
+      model: this.config.model,
+      input: [
+        { role: "system", content: [{ type: "input_text", text: request.systemPrompt }] },
+        { role: "user", content: [{ type: "input_text", text: renderedUserText }] },
+      ],
+      ...(text ? { text } : {}),
+    };
     const response = await postJson(
       `${(this.config.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "")}/responses`,
       { authorization: `Bearer ${this.config.apiKey}` },
-      {
-        ...this.config.parameters,
-        model: this.config.model,
-        input: [
-          { role: "system", content: [{ type: "input_text", text: request.systemPrompt }] },
-          { role: "user", content: [{ type: "input_text", text: buildModelUserPrompt(request.userPayload, request.adapterProtocolVersion) }] },
-        ],
-        ...(text ? { text } : {}),
-      },
+      wireBody,
       request.timeoutMs,
     );
     const body = response.body as {
       id?: unknown;
+      model?: unknown;
+      status?: unknown;
+      incomplete_details?: { reason?: unknown };
+      output?: { content?: { type?: unknown; refusal?: unknown }[] }[];
       usage?: { input_tokens?: unknown; output_tokens?: unknown; total_tokens?: unknown };
     };
     const rawText = outputText(response.body);
@@ -68,6 +75,16 @@ export class OpenAIResponsesProvider implements ModelProvider {
       rawText,
       latencyMs: Date.now() - started,
       providerRequestId: typeof body.id === "string" ? body.id : null,
+      transportAudit: transportAudit({
+        adapterVersion: request.adapterProtocolVersion ?? "arena-adapters-v1",
+        renderedUserText,
+        wireBody,
+        appliedOutputMode: outputPolicy.effectiveMode,
+        schema: outputPolicy.schema,
+        finishReason: body.incomplete_details?.reason ?? body.status,
+        refusal: body.output?.flatMap((item) => item.content ?? []).find((item) => item.type === "refusal")?.refusal,
+        responseModel: body.model,
+      }),
       usage: {
         inputTokens: finiteToken(body.usage?.input_tokens),
         outputTokens: finiteToken(body.usage?.output_tokens),

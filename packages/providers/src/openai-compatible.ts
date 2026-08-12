@@ -2,6 +2,7 @@ import { buildModelUserPrompt, type CanonicalModelRequest } from "../../contract
 import { finiteToken, postJson, requiredString } from "./http.js";
 import { resolveOutputPolicy } from "./output-policy.js";
 import { classifyProviderError, parseProviderRequestOutput, ProviderCallError, type FrozenModelConfig, type ModelProvider, type ProviderDecision } from "./provider.js";
+import { transportAudit } from "./transport-audit.js";
 
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly kind = "openai-compatible" as const;
@@ -26,23 +27,27 @@ export class OpenAICompatibleProvider implements ModelProvider {
         ? { type: "json_object" }
         : undefined;
     const started = Date.now();
+    const renderedUserText = buildModelUserPrompt(request.userPayload, request.adapterProtocolVersion);
+    const wireBody = {
+      ...this.config.parameters,
+      model: this.config.model,
+      messages: [
+        { role: "system", content: request.systemPrompt },
+        { role: "user", content: renderedUserText },
+      ],
+      ...(responseFormat ? { response_format: responseFormat } : {}),
+    };
     const response = await postJson(
       `${this.config.baseUrl.replace(/\/$/, "")}/chat/completions`,
       this.config.apiKey ? { authorization: `Bearer ${this.config.apiKey}` } : {},
-      {
-        ...this.config.parameters,
-        model: this.config.model,
-        messages: [
-          { role: "system", content: request.systemPrompt },
-          { role: "user", content: buildModelUserPrompt(request.userPayload, request.adapterProtocolVersion) },
-        ],
-        ...(responseFormat ? { response_format: responseFormat } : {}),
-      },
+      wireBody,
       request.timeoutMs,
     );
     const body = response.body as {
       id?: unknown;
-      choices?: { message?: { content?: unknown } }[];
+      model?: unknown;
+      system_fingerprint?: unknown;
+      choices?: { finish_reason?: unknown; message?: { content?: unknown; refusal?: unknown } }[];
       usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown };
     };
     const rawText = requiredString(body.choices?.[0]?.message?.content, "choice content");
@@ -51,6 +56,17 @@ export class OpenAICompatibleProvider implements ModelProvider {
       rawText,
       latencyMs: Date.now() - started,
       providerRequestId: typeof body.id === "string" ? body.id : null,
+      transportAudit: transportAudit({
+        adapterVersion: request.adapterProtocolVersion ?? "arena-adapters-v1",
+        renderedUserText,
+        wireBody,
+        appliedOutputMode: outputPolicy.effectiveMode,
+        schema: outputPolicy.schema,
+        finishReason: body.choices?.[0]?.finish_reason,
+        refusal: body.choices?.[0]?.message?.refusal,
+        responseModel: body.model,
+        systemFingerprint: body.system_fingerprint,
+      }),
       usage: {
         inputTokens: finiteToken(body.usage?.prompt_tokens),
         outputTokens: finiteToken(body.usage?.completion_tokens),

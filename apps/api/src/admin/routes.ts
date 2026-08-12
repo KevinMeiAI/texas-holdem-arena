@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   arenaOutputSchema,
   buildEffectiveSystemPrompt,
+  decisionProtocolBundle,
   type CanonicalModelRequest,
   type ExpectedModelOutput,
 } from "../../../../packages/contracts/src/index.js";
@@ -86,21 +87,36 @@ async function audit(
   );
 }
 
-function preflightRequest(expectedOutput: ExpectedModelOutput): CanonicalModelRequest {
-  const prompt = buildEffectiveSystemPrompt();
+type PreflightScenario = "check" | "raise_exact" | "call_null" | "history_query" | "correction_recovery";
+
+function preflightRequest(expectedOutput: ExpectedModelOutput, scenario: PreflightScenario): CanonicalModelRequest {
+  const bundle = decisionProtocolBundle();
+  const prompt = buildEffectiveSystemPrompt(bundle.systemPromptVersion);
+  const legalActions = scenario === "raise_exact"
+    ? { allowed: ["raise"], call: null, bet: null, raise: { min_amount_to: 700, max_amount_to: 700 }, all_in: null }
+    : scenario === "call_null"
+      ? { allowed: ["call"], call: { amount: 200, will_be_all_in: false }, bet: null, raise: null, all_in: null }
+      : { allowed: ["check"], call: null, bet: null, raise: null, all_in: null };
   return {
     requestId: randomUUID(),
     expectedOutput,
     systemPrompt: prompt.text,
     systemPromptHash: prompt.sha256,
-    outputSchema: arenaOutputSchema(expectedOutput),
+    outputSchema: arenaOutputSchema(expectedOutput, bundle.outputSchemaVersion),
     userPayload: {
+      arena_control: {
+        mode: scenario === "correction_recovery" ? "protocol_correction" : "preflight",
+        preflight_task: scenario,
+        error_codes: scenario === "correction_recovery" ? ["AMOUNT_TO_MUST_BE_NULL"] : [],
+        history_budget_remaining: { queries: scenario === "history_query" ? 1 : 0, bytes: 16_000 },
+      },
       arena_state: {
-        schema_version: "arena-preflight-v2",
+        schema_version: "arena-preflight-v3",
         preflight: true,
         phase: "FLOP",
+        betting: { current_actor_id: "preflight-player" },
         hero: { player_id: "preflight-player", stack: 1_000, hole_cards: ["As", "Kh"] },
-        legal_actions: { check: true },
+        legal_actions: legalActions,
       },
       history_results: [],
       history_budget_remaining: {
@@ -110,26 +126,40 @@ function preflightRequest(expectedOutput: ExpectedModelOutput): CanonicalModelRe
       },
     },
     timeoutMs: 60_000,
+    parserPolicy: bundle.parserPolicyVersion,
+    adapterProtocolVersion: bundle.adapterProtocolVersion,
   };
 }
 
-async function runPreflight(config: FrozenModelConfig) {
+async function runPreflight(config: FrozenModelConfig, level: "quick" | "full" = "quick") {
   const provider = createProvider(config);
   const policy = inspectOutputPolicy(config);
-  const expectedOutputs: ExpectedModelOutput[] = ["ACTION_OR_HISTORY"];
+  const bundle = decisionProtocolBundle();
+  const scenarios: PreflightScenario[] = level === "quick"
+    ? ["check"]
+    : ["check", "raise_exact", "call_null", "history_query", "correction_recovery"];
   const checks = [];
-  for (const expectedOutput of expectedOutputs) {
-    const schema = arenaOutputSchema(expectedOutput);
+  for (const scenario of scenarios) {
+    const expectedOutput: ExpectedModelOutput = "ACTION_OR_HISTORY";
+    const schema = arenaOutputSchema(expectedOutput, bundle.outputSchemaVersion);
     const result = await preflightProvider(
       provider,
-      preflightRequest(expectedOutput),
+      preflightRequest(expectedOutput, scenario),
       (decision) => {
-        return decision.parsed.type === "action" && decision.parsed.action === "check"
-          ? null
-          : "Provider did not return the requested legal check action";
+        if (scenario === "history_query") {
+          return decision.parsed.type === "history_query" ? null : "Provider did not return a history query";
+        }
+        const expectedAction = scenario === "raise_exact" ? "raise" : scenario === "call_null" ? "call" : "check";
+        if (decision.parsed.type !== "action" || decision.parsed.action !== expectedAction) {
+          return `Provider did not return the requested legal ${expectedAction} action`;
+        }
+        return scenario === "raise_exact" && decision.parsed.amount_to !== 700
+          ? "Provider did not honor the exact raise bound"
+          : null;
       },
     );
     checks.push({
+      scenario,
       expectedOutput,
       schema: {
         version: schema.version,
@@ -146,9 +176,11 @@ async function runPreflight(config: FrozenModelConfig) {
     errorKind: checks.find((check) => !check.ok)?.errorKind ?? null,
     effectiveMode: policy.effectiveMode,
     effectiveProviderProfile: policy.effectiveProviderProfile,
+    level,
+    protocolBundleId: bundle.id,
     outputModeSupported: policy.supported,
     outputModeMessage: policy.message,
-    schemaVersion: arenaOutputSchema("ACTION_OR_HISTORY").version,
+    schemaVersion: arenaOutputSchema("ACTION_OR_HISTORY", bundle.outputSchemaVersion).version,
     checks,
   };
 }
@@ -314,12 +346,35 @@ export async function registerAdminModelRoutes(
     const admin = await requireAdmin(request, reply, context, true);
     if (!admin) return;
     try {
-      const result = await runPreflight(await context.models.runtimeConfig(request.params.id));
+      const level = (request.query as { level?: unknown } | undefined)?.level === "full" ? "full" : "quick";
+      const bundle = decisionProtocolBundle();
+      const model = await context.models.currentRevision(request.params.id);
+      if (!model) throw new Error("Model configuration not found or disabled");
+      const cached = await context.pool.query<{ result: unknown }>(
+        `select result from provider_preflight_cache
+          where configuration_hash = $1 and protocol_bundle_id = $2
+            and preflight_level = $3 and expires_at > now()`,
+        [model.configurationHash, bundle.id, level],
+      );
+      const result = (cached.rows[0]?.result as Awaited<ReturnType<typeof runPreflight>> | undefined) ?? await runPreflight(
+        await context.models.runtimeConfigForRevision(model.revisionId),
+        level,
+      );
+      if (!cached.rows[0]) {
+        await context.pool.query(
+          `insert into provider_preflight_cache
+            (configuration_hash, protocol_bundle_id, preflight_level, result, expires_at)
+           values ($1, $2, $3, $4::jsonb, now() + interval '24 hours')
+           on conflict (configuration_hash, protocol_bundle_id, preflight_level)
+           do update set result = excluded.result, expires_at = excluded.expires_at, created_at = now()`,
+          [model.configurationHash, bundle.id, level, JSON.stringify(result)],
+        );
+      }
       await audit(context.pool, admin.adminUserId, "model.preflight", "model", request.params.id, {
         ok: result.ok,
         errorKind: result.errorKind,
       });
-      return { result };
+      return { result, cached: Boolean(cached.rows[0]) };
     } catch (error) {
       return reply.code(400).send({
         error: "preflight_failed",

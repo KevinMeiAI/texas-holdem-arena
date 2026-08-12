@@ -67,6 +67,7 @@ export interface DecisionTurnAudit {
     rawText: string;
     parsed?: ProviderDecision["parsed"];
     providerRequestId: string | null;
+    transportAudit?: ProviderDecision["transportAudit"];
   };
 }
 
@@ -233,6 +234,7 @@ export async function runModelDecision(
             rawText: decision.rawText,
             parsed: decision.parsed,
             providerRequestId: decision.providerRequestId,
+            ...(decision.transportAudit ? { transportAudit: decision.transportAudit } : {}),
           },
         });
         await saveResumeState();

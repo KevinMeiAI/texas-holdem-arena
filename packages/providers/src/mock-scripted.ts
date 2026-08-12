@@ -35,6 +35,14 @@ function findArenaState(payload: unknown): Record<string, unknown> {
     : object;
 }
 
+function findArenaControl(payload: unknown): Record<string, unknown> {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {};
+  const control = (payload as Record<string, unknown>).arena_control;
+  return control && typeof control === "object" && !Array.isArray(control)
+    ? control as Record<string, unknown>
+    : {};
+}
+
 /** Deterministic no-cost player for local acceptance and recovery tests. */
 export class MockPolicyProvider implements ModelProvider {
   readonly kind = "mock-scripted" as const;
@@ -43,10 +51,16 @@ export class MockPolicyProvider implements ModelProvider {
 
   async decide(request: CanonicalModelRequest): Promise<ProviderDecision> {
     const state = findArenaState(request.userPayload);
+    const control = findArenaControl(request.userPayload);
     const legal = state.legal_actions as Record<string, unknown> | null | undefined;
     let response: object;
     const allowed = Array.isArray(legal?.allowed) ? legal.allowed : [];
-    if (allowed.includes("check") || legal?.check) response = { type: "action", action: "check", decision_summary: "No bet to call." };
+    if (control.preflight_task === "history_query") {
+      response = { type: "history_query", action: null, amount_to: null, decision_summary: null, query: { kind: "recent_hands", count: 1, limit: 10 } };
+    } else if (allowed.length === 1 && allowed[0] === "raise") {
+      const raise = legal?.raise as { min_amount_to?: unknown } | undefined;
+      response = { type: "action", action: "raise", amount_to: raise?.min_amount_to, decision_summary: "Use the exact legal bound.", query: null };
+    } else if (allowed.includes("check") || legal?.check) response = { type: "action", action: "check", decision_summary: "No bet to call." };
     else if (allowed.includes("call") || legal?.call) response = { type: "action", action: "call", decision_summary: "Continue at the offered price." };
     else if (allowed.includes("all_in") || legal?.allIn) response = { type: "action", action: "all_in", decision_summary: "Only stack-sized action remains." };
     else response = { type: "action", action: "fold", decision_summary: "No continuing action is available." };

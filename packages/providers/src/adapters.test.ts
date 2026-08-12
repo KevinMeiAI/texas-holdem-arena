@@ -118,6 +118,12 @@ describe("real provider transport adapters", () => {
     expect(body.input?.[0]?.content[0]?.text).toBe("identical locked prompt");
     expect(body.text?.format).toMatchObject({ type: "json_schema", strict: true, schema: expect.any(Object) });
     expect(bodyHash(body)).toBe("b0d5c3e2e3c1c20b0b7e49f8bd8be350d70494f5019d4422f70dead78bf28678");
+    expect(result.transportAudit).toMatchObject({
+      adapterVersion: "arena-adapters-v1",
+      appliedOutputMode: "json_schema",
+      renderedUserTextSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      redactedWireBodySha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
   });
 
   it("maps Anthropic Messages", async () => {
@@ -135,6 +141,7 @@ describe("real provider transport adapters", () => {
       output_config: { format: { type: "json_schema", schema: expect.any(Object) } },
     });
     expect(bodyHash(captured.at(-1)?.body)).toBe("2991559ae6c5c312fcf5213e987ed381e331af63011454fc424cdbc2df2edf32");
+    expect(result.transportAudit?.appliedOutputMode).toBe("json_schema");
   });
 
   it("maps Gemini structured action output", async () => {
@@ -154,6 +161,7 @@ describe("real provider transport adapters", () => {
       },
     });
     expect(bodyHash(captured.at(-1)?.body)).toBe("c677c0f59d45cee03d5afa5a6b675d1e319a1827f947de0b3b0157f027c76259");
+    expect(result.transportAudit?.appliedSchemaSha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it("maps OpenAI-compatible chat completions and history queries", async () => {
@@ -166,6 +174,7 @@ describe("real provider transport adapters", () => {
     expect(result.parsed).toMatchObject({ type: "history_query", query: { count: 2 } });
     expect(captured.at(-1)?.body).toMatchObject({ response_format: { type: "json_object" } });
     expect(bodyHash(captured.at(-1)?.body)).toBe("8c4aa3f99fa1d5b07fbd3b5e05a2c2eae2511798e1e44ff88b39b8e9a749c8f0");
+    expect(result.transportAudit?.appliedOutputMode).toBe("json_object");
   });
 
   it("maps the xAI profile to OpenAI-compatible JSON Schema", async () => {

@@ -110,6 +110,17 @@ export interface DecisionTurnAuditInput {
   outputSchemaHash: string;
   latencyMs: number | null;
   usage: unknown | null;
+  transportAudit?: {
+    adapterVersion: string;
+    renderedUserTextSha256: string;
+    redactedWireBodySha256: string;
+    appliedOutputMode: string;
+    appliedSchemaSha256: string | null;
+    finishReason: string | null;
+    refusal: string | null;
+    responseModel: string | null;
+    systemFingerprint: string | null;
+  };
 }
 
 export interface LoadedSnapshot {
@@ -235,8 +246,12 @@ export class PgEventStore {
       `insert into decision_turns
         (decision_id, turn_index, request_hash, encrypted_request, response_hash,
          encrypted_response, outcome, error_kind, provider_config_hash,
-         output_schema_version, output_schema_hash, latency_ms, usage)
-       values ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13::jsonb)
+         output_schema_version, output_schema_hash, latency_ms, usage,
+         adapter_version, rendered_user_text_hash, redacted_wire_body_hash,
+         applied_output_mode, applied_schema_hash, finish_reason, refusal,
+         response_model, system_fingerprint)
+       values ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13::jsonb,
+               $14, $15, $16, $17, $18, $19, $20, $21, $22)
        on conflict (decision_id, turn_index) do nothing`,
       [
         input.decisionId,
@@ -252,6 +267,15 @@ export class PgEventStore {
         input.outputSchemaHash,
         input.latencyMs,
         input.usage === null ? null : JSON.stringify(input.usage),
+        input.transportAudit?.adapterVersion ?? null,
+        input.transportAudit?.renderedUserTextSha256 ?? null,
+        input.transportAudit?.redactedWireBodySha256 ?? null,
+        input.transportAudit?.appliedOutputMode ?? null,
+        input.transportAudit?.appliedSchemaSha256 ?? null,
+        input.transportAudit?.finishReason ?? null,
+        input.transportAudit?.refusal ?? null,
+        input.transportAudit?.responseModel ?? null,
+        input.transportAudit?.systemFingerprint ?? null,
       ],
     );
   }
@@ -272,12 +296,24 @@ export class PgEventStore {
       output_schema_hash: string;
       latency_ms: number | null;
       usage: unknown | null;
+      adapter_version: string | null;
+      rendered_user_text_hash: string | null;
+      redacted_wire_body_hash: string | null;
+      applied_output_mode: string | null;
+      applied_schema_hash: string | null;
+      finish_reason: string | null;
+      refusal: string | null;
+      response_model: string | null;
+      system_fingerprint: string | null;
       created_at: Date | string;
     }>(
       `select d.id as decision_id, d.player_id, t.turn_index, t.request_hash,
               t.encrypted_request, t.response_hash, t.encrypted_response, t.outcome,
               t.error_kind, t.provider_config_hash, t.output_schema_version,
-              t.output_schema_hash, t.latency_ms, t.usage, t.created_at
+              t.output_schema_hash, t.latency_ms, t.usage, t.adapter_version,
+              t.rendered_user_text_hash, t.redacted_wire_body_hash,
+              t.applied_output_mode, t.applied_schema_hash, t.finish_reason,
+              t.refusal, t.response_model, t.system_fingerprint, t.created_at
          from decision_requests d join decision_turns t on t.decision_id = d.id
         where d.tournament_id = $1 and d.hand_no = $2
         order by d.created_at, t.turn_index`,
@@ -313,6 +349,15 @@ export class PgEventStore {
         output_schema_hash: row.output_schema_hash,
         latency_ms: row.latency_ms,
         usage: row.usage,
+        adapter_version: row.adapter_version,
+        rendered_user_text_hash: row.rendered_user_text_hash,
+        redacted_wire_body_hash: row.redacted_wire_body_hash,
+        applied_output_mode: row.applied_output_mode,
+        applied_schema_hash: row.applied_schema_hash,
+        finish_reason: row.finish_reason,
+        refusal: row.refusal,
+        response_model: row.response_model,
+        system_fingerprint: row.system_fingerprint,
         created_at: iso(row.created_at),
       };
     });

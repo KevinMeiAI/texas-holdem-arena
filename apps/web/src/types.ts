@@ -69,6 +69,15 @@ export interface DecisionAuditTurn {
   output_schema_hash: string;
   latency_ms: number | null;
   usage: Record<string, unknown> | null;
+  adapter_version?: string | null;
+  rendered_user_text_hash?: string | null;
+  redacted_wire_body_hash?: string | null;
+  applied_output_mode?: string | null;
+  applied_schema_hash?: string | null;
+  finish_reason?: string | null;
+  refusal?: string | null;
+  response_model?: string | null;
+  system_fingerprint?: string | null;
   created_at: string;
 }
 

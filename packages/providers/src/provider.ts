@@ -33,6 +33,19 @@ export interface ProviderDecision {
   usage: ProviderUsage;
   latencyMs: number;
   providerRequestId: string | null;
+  transportAudit?: ProviderTransportAudit;
+}
+
+export interface ProviderTransportAudit {
+  adapterVersion: string;
+  renderedUserTextSha256: string;
+  redactedWireBodySha256: string;
+  appliedOutputMode: OutputMode;
+  appliedSchemaSha256: string | null;
+  finishReason: string | null;
+  refusal: string | null;
+  responseModel: string | null;
+  systemFingerprint: string | null;
 }
 
 export type ProviderErrorKind =

@@ -431,6 +431,7 @@ export class TournamentOrchestrator {
         outputSchemaHash: outputSchema.sha256,
         latencyMs: turn.latencyMs,
         usage: turn.usage,
+        ...(turn.response?.transportAudit ? { transportAudit: turn.response.transportAudit } : {}),
       }),
       validateAction: (response) => toDomainAction(hand, response),
       fallbackAction: () => protocolFallbackAction(hand),
