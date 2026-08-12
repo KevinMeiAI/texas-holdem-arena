@@ -439,6 +439,7 @@ export class TournamentOrchestrator {
         hand.handNo,
         query,
       ),
+      historyProtocolVersion: runtime.protocolBundle.historyProtocolVersion,
     }, decisionConfig);
 
     if (decision.status === "PAUSED_INFRA") {

@@ -20,6 +20,7 @@ export interface DecisionRunnerConfig {
     maxQueries: number;
     maxRecordsPerQuery: number;
     maxApproxTokens: number;
+    maxBytes?: number;
   };
 }
 
@@ -33,6 +34,7 @@ export interface DecisionRunnerInput {
   validateAction?: (response: ActionResponse) => ActionCommand;
   fallbackAction?: () => ActionCommand;
   executeHistoryQuery?: (query: HistoryQuery) => Promise<unknown[]>;
+  historyProtocolVersion?: "arena-history-legacy-v1" | "arena-history-v2";
   resumeState?: DecisionResumeState | null;
   saveResumeState?: (state: DecisionResumeState) => Promise<void>;
   auditTurn?: (turn: DecisionTurnAudit) => Promise<void>;
@@ -51,6 +53,7 @@ export interface DecisionResumeState {
   protocolFailures: number;
   correction: string | null;
   calls: CallAudit[];
+  pendingHistoryQuery?: HistoryQuery | null;
 }
 
 export interface DecisionTurnAudit {
@@ -144,19 +147,63 @@ export async function runModelDecision(
   const budget = new HistoryBudget(config.history);
   const historyResults: HistoryQueryResult[] = [];
   for (const result of input.resumeState?.historyResults ?? []) {
-    historyResults.push(budget.consume(result.query, result.records));
+    const reconstructed = input.historyProtocolVersion === "arena-history-v2"
+      ? budget.consumeBounded(result.query, result.records)
+      : budget.consume(result.query, result.records);
+    historyResults.push({ ...reconstructed, ...result, records: reconstructed.records });
   }
   const calls: CallAudit[] = [...(input.resumeState?.calls ?? [])];
   let protocolFailures = input.resumeState?.protocolFailures ?? 0;
   let correction: string | null = input.resumeState?.correction ?? null;
+  let pendingHistoryQuery: HistoryQuery | null = input.resumeState?.pendingHistoryQuery ?? null;
   const saveResumeState = async () => input.saveResumeState?.({
     historyResults: [...historyResults],
     protocolFailures,
     correction,
     calls: [...calls],
+    pendingHistoryQuery,
   });
 
   while (true) {
+    if (pendingHistoryQuery) {
+      try {
+        if (!input.executeHistoryQuery) throw new Error("History queries are not available");
+        const records = await input.executeHistoryQuery(pendingHistoryQuery);
+        historyResults.push(input.historyProtocolVersion === "arena-history-v2"
+          ? budget.consumeBounded(pendingHistoryQuery, records)
+          : budget.consume(pendingHistoryQuery, records));
+        pendingHistoryQuery = null;
+        correction = null;
+        await saveResumeState();
+      } catch (error) {
+        if (error instanceof ModelProtocolError) {
+          pendingHistoryQuery = null;
+          protocolFailures += 1;
+          correction = error.code;
+          await saveResumeState();
+          if (protocolFailures <= 1) continue;
+          if (!input.fallbackAction) throw new Error("Poker fallback action is not configured");
+          return {
+            status: "ACTION",
+            action: input.fallbackAction(),
+            response: null,
+            usedFallback: true,
+            protocolFailures,
+            historyResults,
+            calls,
+          };
+        }
+        await saveResumeState();
+        return {
+          status: "PAUSED_INFRA",
+          errorKind: "SERVER",
+          message: "Arena history service is unavailable",
+          protocolFailures,
+          historyResults,
+          calls,
+        };
+      }
+    }
     let decision: ProviderDecision | null = null;
     for (let infrastructureAttempt = 1; infrastructureAttempt <= config.maxInfrastructureAttempts; infrastructureAttempt += 1) {
       const turnRequest = withFeedback(input.request, historyResults, correction, budget);
@@ -264,10 +311,32 @@ export async function runModelDecision(
       }
       if (decision.parsed.type === "history_query") {
         if (!input.executeHistoryQuery) throw new Error("History queries are not available");
-        const records = await input.executeHistoryQuery(decision.parsed.query);
-        historyResults.push(budget.consume(decision.parsed.query, records));
-        correction = null;
+        pendingHistoryQuery = decision.parsed.query;
         await saveResumeState();
+        try {
+          const records = await input.executeHistoryQuery(pendingHistoryQuery);
+          historyResults.push(input.historyProtocolVersion === "arena-history-v2"
+            ? budget.consumeBounded(pendingHistoryQuery, records)
+            : budget.consume(pendingHistoryQuery, records));
+          pendingHistoryQuery = null;
+          correction = null;
+          await saveResumeState();
+        } catch (error) {
+          if (error instanceof ModelProtocolError) {
+            pendingHistoryQuery = null;
+            throw error;
+          }
+          if (input.historyProtocolVersion !== "arena-history-v2") throw error;
+          await saveResumeState();
+          return {
+            status: "PAUSED_INFRA",
+            errorKind: "SERVER",
+            message: "Arena history service is unavailable",
+            protocolFailures,
+            historyResults,
+            calls,
+          };
+        }
         continue;
       }
       if (decision.parsed.type !== "action" || !input.validateAction) {

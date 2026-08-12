@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import type { HistoryQuery } from "../../../../packages/contracts/src/model-protocol.js";
+import { ModelProtocolError, type HistoryQuery } from "../../../../packages/contracts/src/model-protocol.js";
 
 interface PublicEventRow {
   sequence: string;
@@ -321,7 +321,9 @@ export class HistoryQueryService {
       throw new Error("currentHandNo must be positive");
     }
     if (query.kind === "hand") {
-      if (query.hand_no >= currentHandNo) throw new Error("History cannot query the current or a future hand");
+      if (query.hand_no >= currentHandNo) {
+        throw new ModelProtocolError("HISTORY_QUERY_INVALID", "History cannot query the current or a future hand");
+      }
       const summary = summarizeHistoryHand(await this.#loadHands(tournamentId, [query.hand_no]), query.limit);
       return summary ? [summary] : [];
     }

@@ -311,4 +311,66 @@ describe("uniform model decision policy", () => {
     });
     if (resumed.status === "ACTION") expect(resumed.calls.at(-1)?.attempt).toBe(5);
   });
+
+  it("pauses v2 history infrastructure without charging a protocol failure and resumes the same query", async () => {
+    let saved: DecisionResumeState | null = null;
+    let queryAttempts = 0;
+    const provider = new MockScriptedProvider([
+      { type: "history_query", action: null, amount_to: null, decision_summary: null, query: { kind: "recent_hands", count: 1, limit: 10 } },
+    ]);
+    const strictRequest = {
+      ...request,
+      parserPolicy: "arena-parser-strict-v1" as const,
+      adapterProtocolVersion: "arena-adapters-v2",
+    };
+    const paused = await runModelDecision({
+      provider,
+      request: strictRequest,
+      historyProtocolVersion: "arena-history-v2",
+      validateAction: () => ({ action: "check" }),
+      fallbackAction: () => ({ action: "fold" }),
+      executeHistoryQuery: async () => {
+        queryAttempts += 1;
+        throw new Error("database unavailable");
+      },
+      saveResumeState: async (state) => { saved = structuredClone(state); },
+    }, config);
+    expect(paused).toMatchObject({ status: "PAUSED_INFRA", errorKind: "SERVER", protocolFailures: 0 });
+    expect(saved).toMatchObject({ pendingHistoryQuery: { kind: "recent_hands", count: 1, limit: 10 } });
+
+    const resumed = await runModelDecision({
+      provider: new MockScriptedProvider([
+        { type: "action", action: "check", amount_to: null, decision_summary: null, query: null },
+      ]),
+      request: strictRequest,
+      resumeState: saved,
+      historyProtocolVersion: "arena-history-v2",
+      validateAction: () => ({ action: "check" }),
+      fallbackAction: () => ({ action: "fold" }),
+      executeHistoryQuery: async () => {
+        queryAttempts += 1;
+        return [{ kind: "hand_summary", hand_no: 1, complete: true }];
+      },
+    }, config);
+    expect(resumed).toMatchObject({ status: "ACTION", protocolFailures: 0, usedFallback: false });
+    expect(queryAttempts).toBe(2);
+  });
+
+  it("truncates an oversized v2 history result without consuming correction", async () => {
+    const result = await runModelDecision({
+      provider: new MockScriptedProvider([
+        { type: "history_query", action: null, amount_to: null, decision_summary: null, query: { kind: "recent_hands", count: 1, limit: 10 } },
+        { type: "action", action: "check", amount_to: null, decision_summary: null, query: null },
+      ]),
+      request: { ...request, parserPolicy: "arena-parser-strict-v1", adapterProtocolVersion: "arena-adapters-v2" },
+      historyProtocolVersion: "arena-history-v2",
+      validateAction: () => ({ action: "check" }),
+      fallbackAction: () => ({ action: "fold" }),
+      executeHistoryQuery: async () => [{ kind: "hand_summary", actions: Array.from({ length: 1_000 }, (_, index) => ({ index })) }],
+    }, { ...config, history: { ...config.history, maxBytes: 180 } });
+    expect(result).toMatchObject({ status: "ACTION", protocolFailures: 0, usedFallback: false });
+    if (result.status === "ACTION") {
+      expect(result.historyResults[0]).toMatchObject({ truncated: true, truncationReason: "BYTE_BUDGET" });
+    }
+  });
 });
