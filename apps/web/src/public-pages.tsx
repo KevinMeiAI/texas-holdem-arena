@@ -9,6 +9,7 @@ import {
   type LeaderboardSortValue,
 } from "./leaderboard-sort";
 import { StackHistoryChart } from "./stack-history-chart";
+import { spectatorTimeline } from "./spectator-event-timeline";
 import { TournamentStatisticsReport } from "./tournament-statistics";
 import {
   EmptyState,
@@ -84,8 +85,8 @@ export function LivePage() {
       <div className="live-layout">
         <PokerTable state={state} />
         <aside className="broadcast-sidebar">
-          <div className="panel-heading"><div><h2>{text("事件", "Events")}</h2></div>{isTerminal ? <span className="stream-state">{text("赛事已结束", "Tournament ended")}</span> : <span className={`stream-state ${streamStatus}`}><i />{streamStatus === "connected" ? text("同步中", "Synced") : streamStatus === "reconnecting" ? text("正在重连", "Reconnecting") : text("正在连接", "Connecting")}</span>}</div>
-          <EventTape events={events.slice(-28)} players={state.players} emptyLabel={isTerminal ? text("赛事已结束，可打开回放查看完整记录。", "Tournament ended — open the replay for the full record.") : undefined} />
+          <div className="panel-heading"><div><h2>{text("牌局时间线", "Game timeline")}</h2></div>{isTerminal ? <span className="stream-state">{text("赛事已结束", "Tournament ended")}</span> : <span className={`stream-state ${streamStatus}`}><i />{streamStatus === "connected" ? text("同步中", "Synced") : streamStatus === "reconnecting" ? text("正在重连", "Reconnecting") : text("正在连接", "Connecting")}</span>}</div>
+          <EventTape events={events} players={state.players} limit={28} emptyLabel={isTerminal ? text("赛事已结束，可打开回放查看完整记录。", "Tournament ended — open the replay for the full record.") : undefined} />
           <div className="broadcast-facts">
             <div><span>{text("阶段", "Stage")}</span><b>{formatArenaPhase(hand?.phase ?? state.status, locale)}</b></div>
             <div><span>{text("在席", "Active")}</span><b>{state.players.filter((player) => player.status !== "ELIMINATED").length} / {state.players.length}</b></div>
@@ -418,6 +419,7 @@ export function ReplayPage() {
   const state = tournament.data?.state;
   if (!state) return <main className="page-shell"><EmptyState title={text("赛事不存在", "Tournament not found")} body={text("无法找到对应的赛事记录。", "The requested tournament could not be found.")} /></main>;
   const events = replay.data?.events ?? [];
+  const spectatorEventCount = spectatorTimeline(events).length;
   const decisions = replay.data?.decisions ?? [];
   const initialStack = performance.data?.statistics.initialStack
     ?? (state.players.length > 0
@@ -461,13 +463,13 @@ export function ReplayPage() {
           <aside className={`replay-events${eventsCollapsed ? " is-collapsed" : ""}`}>
             {eventsCollapsed ? (
               <button className="replay-events-reveal" type="button" onClick={() => setEventsCollapsed(false)} aria-expanded="false">
-                <i aria-hidden="true">‹</i><span>{text("逐事件记录", "Event log")}</span><b>{events.length}</b>
+                <i aria-hidden="true">‹</i><span>{text("牌局时间线", "Game timeline")}</span><b>{spectatorEventCount}</b>
               </button>
             ) : (
               <>
                 <div className="panel-heading replay-events-heading">
-                  <div><h2>{text("逐事件记录", "Event log")}</h2></div>
-                  <div><span>{events.length} {text("条事件", "events")}</span><button type="button" onClick={() => setEventsCollapsed(true)} aria-expanded="true">{text("收起", "Collapse")}</button></div>
+                  <div><h2>{text("牌局时间线", "Game timeline")}</h2></div>
+                  <div><span>{spectatorEventCount} {text("条记录", "entries")}</span><button type="button" onClick={() => setEventsCollapsed(true)} aria-expanded="true">{text("收起", "Collapse")}</button></div>
                 </div>
                 <EventTape compact events={events} players={state.players} />
               </>

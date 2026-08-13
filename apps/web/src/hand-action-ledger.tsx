@@ -106,8 +106,9 @@ export function HandActionLedger({ players, events, holeCards }: {
         </table>
       </div>
       <footer className="hand-action-legend">
-        <span><i className="aggressive" />{text("主动动作", "Aggressive")}</span>
+        <span><i className="aggressive" />{text("下注 / 加注", "Bet / raise")}</span>
         <span><i />{text("跟注 / 过牌", "Call / check")}</span>
+        <span><i className="fold" />{text("弃牌", "Fold")}</span>
       </footer>
     </section>
   );

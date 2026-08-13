@@ -1006,13 +1006,43 @@ button:disabled {
 .event-pin {
   width: 0.5rem;
   height: 0.5rem;
+  box-sizing: border-box;
   margin-top: var(--space-3xs);
   border-radius: var(--radius-pill);
   background: var(--color-rule);
 }
 
-.event-pin.is-action {
+.event-pin.is-aggressive {
   background: var(--color-accent);
+}
+
+.event-pin.is-passive {
+  background: var(--color-rule);
+}
+
+.event-pin.is-fold {
+  background: var(--color-transparent);
+  border: var(--rule-hair) solid var(--color-neutral);
+}
+
+.event-pin.is-deal,
+.event-pin.is-result {
+  border-radius: 0;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.event-pin.is-deal {
+  background: var(--color-neutral);
+}
+
+.event-pin.is-result {
+  background: var(--color-success);
+}
+
+.event-pin.is-warning {
+  background: var(--color-warning);
+  border-radius: var(--radius-xs);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
 
 .event-row strong {
@@ -2403,6 +2433,8 @@ span.hand-nav {
 
 .hand-action.terminal {
   opacity: 0.76;
+  border-inline-start-color: var(--color-neutral);
+  border-inline-start-style: dashed;
 }
 
 .hand-action + .hand-action {
@@ -2491,7 +2523,7 @@ span.hand-nav {
   gap: var(--space-3xs);
 }
 
-.hand-action-legend span:last-child {
+.hand-action-legend span:nth-child(2) {
   margin-inline-start: auto;
 }
 
@@ -2505,6 +2537,11 @@ span.hand-nav {
 
 .hand-action-legend i.aggressive {
   background: var(--color-accent);
+}
+
+.hand-action-legend i.fold {
+  background: var(--color-transparent);
+  border: var(--rule-hair) solid var(--color-neutral);
 }
 
 .hand-action-legend b {

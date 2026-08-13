@@ -1,5 +1,6 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
 import { Link, NavLink } from "react-router-dom";
+import { spectatorTimeline, type SpectatorEventTone } from "./spectator-event-timeline";
 import { tableSeatLayout } from "./table-layout";
 import type { ArenaEvent, ArenaPlayer, ArenaState } from "./types";
 import { PreferenceControls, type UiLocale, uiText, useUiPreferences } from "./ui-preferences";
@@ -184,12 +185,12 @@ const eventLabels: Record<string, [string, string]> = {
   HOLE_CARDS_DEALT: ["底牌发出", "Hole cards dealt"],
   BETTING_ROUND_STARTED: ["下注轮开始", "Betting round started"],
   MODEL_DECISION_RECORDED: ["模型完成决策", "Model decision recorded"],
-  ACTION_APPLIED: ["行动执行", "Action applied"],
+  ACTION_APPLIED: ["玩家行动", "Player action"],
   STREET_DEALT: ["公共牌发出", "Board dealt"],
   SHOWDOWN_REVEALED: ["摊牌", "Showdown"],
   POT_CREATED: ["底池形成", "Pot created"],
-  POT_AWARDED: ["底池结算", "Pot awarded"],
-  UNCALLED_BET_RETURNED: ["未跟注筹码退回", "Uncalled bet returned"],
+  POT_AWARDED: ["赢得底池", "Pot won"],
+  UNCALLED_BET_RETURNED: ["收回筹码", "Chips returned"],
   HAND_COMPLETED: ["本手结束", "Hand completed"],
   PLAYER_ELIMINATED: ["玩家淘汰", "Player eliminated"],
   TOURNAMENT_COMPLETED: ["冠军产生", "Champion decided"],
@@ -200,60 +201,126 @@ const eventLabels: Record<string, [string, string]> = {
   RANDOMNESS_REVEALED: ["随机种子公开", "Seed revealed"],
 };
 
+function actionLabel(event: ArenaEvent, locale: UiLocale): string {
+  const command = event.publicPayload.command as { action?: string } | undefined;
+  const rawAction = command?.action?.replaceAll("_", " ").toUpperCase() ?? "ACTION";
+  const labels: Record<string, [string, string]> = {
+    CHECK: ["过牌", "Check"],
+    CALL: ["跟注", "Call"],
+    FOLD: ["弃牌", "Fold"],
+    BET: ["下注", "Bet"],
+    RAISE: ["加注", "Raise"],
+    "ALL IN": ["全下", "All-in"],
+    ACTION: ["玩家行动", "Player action"],
+  };
+  const label = labels[rawAction];
+  return label ? uiText(locale, ...label) : rawAction;
+}
+
+function eventTitle(event: ArenaEvent, locale: UiLocale): string {
+  if (event.type === "ACTION_APPLIED") return actionLabel(event, locale);
+  if (event.type === "FORCED_BET_POSTED") {
+    const kind = String(event.publicPayload.kind ?? "BET");
+    const labels: Record<string, [string, string]> = {
+      SMALL_BLIND: ["小盲", "Small blind"],
+      BIG_BLIND: ["大盲", "Big blind"],
+      BIG_BLIND_ANTE: ["大盲前注", "Big blind ante"],
+      ANTE: ["前注", "Ante"],
+      BET: ["强制下注", "Forced bet"],
+    };
+    const label = labels[kind];
+    return label ? uiText(locale, ...label) : kind;
+  }
+  if (event.type === "STREET_DEALT") {
+    const street = String(event.publicPayload.street ?? "BOARD");
+    const labels: Record<string, [string, string]> = {
+      FLOP: ["翻牌", "Flop"],
+      TURN: ["转牌", "Turn"],
+      RIVER: ["河牌", "River"],
+      BOARD: ["公共牌", "Board"],
+    };
+    const label = labels[street];
+    return label ? uiText(locale, ...label) : street;
+  }
+  const label = eventLabels[event.type];
+  return label ? uiText(locale, ...label) : event.type.replaceAll("_", " ");
+}
+
 function actionText(event: ArenaEvent, locale: UiLocale, playerNames?: Map<string, string>): string {
   const payload = event.publicPayload;
-  const actor = event.actorId ? playerNames?.get(event.actorId) ?? event.actorId.slice(0, 8) : null;
+  const payloadPlayerId = typeof payload.playerId === "string" ? payload.playerId : null;
+  const actorId = event.actorId ?? payloadPlayerId;
+  const actor = actorId ? playerNames?.get(actorId) ?? actorId.slice(0, 8) : null;
   if (event.type === "ACTION_APPLIED") {
     const command = payload.command as { action?: string; amount_to?: number } | undefined;
     const rawAction = command?.action?.replaceAll("_", " ").toUpperCase() ?? "ACTION";
-    const actionLabels: Record<string, [string, string]> = {
-      CHECK: ["过牌", "Check"], CALL: ["跟注", "Call"], FOLD: ["弃牌", "Fold"], BET: ["下注", "Bet"], RAISE: ["加注", "Raise"], "ALL IN": ["全下", "All-in"], ACTION: ["行动", "Action"],
-    };
-    const actionLabel = actionLabels[rawAction];
-    const action = actionLabel ? uiText(locale, ...actionLabel) : rawAction;
     const paid = Number(payload.paid ?? 0);
     const amountTo = Number(payload.amountTo ?? command?.amount_to ?? 0);
     const amount = rawAction === "CALL" || rawAction === "ALL IN" ? paid
       : rawAction === "BET" || rawAction === "RAISE" ? amountTo : 0;
-    return `${actor ?? uiText(locale, "玩家", "Player")} · ${action}${amount > 0 ? ` · ${formatChips(amount)}` : ""}`;
+    return `${actor ?? uiText(locale, "玩家", "Player")}${amount > 0 ? ` · ${formatChips(amount)}` : ""}`;
   }
   if (event.type === "FORCED_BET_POSTED") {
-    const kind = String(payload.kind ?? "BET");
-    const forcedLabels: Record<string, [string, string]> = { SMALL_BLIND: ["小盲", "Small blind"], BIG_BLIND: ["大盲", "Big blind"], BIG_BLIND_ANTE: ["大盲前注", "Big blind ante"], ANTE: ["前注", "Ante"], BET: ["强制下注", "Forced bet"] };
-    const forcedLabel = forcedLabels[kind];
-    return `${forcedLabel ? uiText(locale, ...forcedLabel) : kind} · ${formatChips(Number(payload.amount ?? 0))}`;
+    return `${actor ? `${actor} · ` : ""}${formatChips(Number(payload.amount ?? 0))}`;
+  }
+  if (event.type === "BLIND_LEVEL_SELECTED") {
+    const level = payload.level as { smallBlind?: number; bigBlind?: number; bigBlindAnte?: number } | undefined;
+    if (!level) return "";
+    const blinds = `${formatChips(level.smallBlind)} / ${formatChips(level.bigBlind)}`;
+    return Number(level.bigBlindAnte ?? 0) > 0 ? `${blinds} · BBA ${formatChips(level.bigBlindAnte)}` : blinds;
   }
   if (event.type === "STREET_DEALT") {
-    const street = String(payload.street ?? "BOARD");
-    const streetLabels: Record<string, [string, string]> = { FLOP: ["翻牌", "Flop"], TURN: ["转牌", "Turn"], RIVER: ["河牌", "River"], BOARD: ["公共牌", "Board"] };
-    const streetLabel = streetLabels[street];
     const cardCount = Array.isArray(payload.cards) ? payload.cards.length : 0;
-    return `${streetLabel ? uiText(locale, ...streetLabel) : street} · ${cardCount} ${uiText(locale, "张牌", cardCount === 1 ? "card" : "cards")}`;
+    return `${cardCount} ${uiText(locale, "张公共牌", cardCount === 1 ? "community card" : "community cards")}`;
   }
-  if (event.type === "MODEL_DECISION_RECORDED") return `${actor ?? uiText(locale, "模型", "Model")} · ${uiText(locale, "调用", "calls")} ${Number(payload.providerCalls ?? 0)}${uiText(locale, " 次", "")}${Number(payload.usedFallback) ? uiText(locale, " · 启用兜底", " · fallback") : ""}`;
+  if (event.type === "HOLE_CARDS_DEALT") return uiText(locale, "底牌已发给所有在席玩家", "Hole cards dealt to every active player");
+  if (event.type === "SHOWDOWN_REVEALED") {
+    const revealed = Array.isArray(payload.players) ? payload.players : [];
+    const names = revealed.flatMap((item) => {
+      if (!item || typeof item !== "object" || !("playerId" in item) || typeof item.playerId !== "string") return [];
+      return [playerNames?.get(item.playerId) ?? item.playerId.slice(0, 8)];
+    });
+    return names.join(" · ");
+  }
   if (event.type === "POT_AWARDED") {
     const award = payload.award as { playerId?: string; amount?: number } | undefined;
-    return `${playerNames?.get(award?.playerId ?? "") ?? award?.playerId ?? uiText(locale, "玩家", "Player")} · +${formatChips(award?.amount)}`;
+    return `${playerNames?.get(award?.playerId ?? "") ?? award?.playerId ?? uiText(locale, "玩家", "Player")} · ${uiText(locale, "赢得", "wins")} ${formatChips(award?.amount)}`;
   }
+  if (event.type === "UNCALLED_BET_RETURNED") return `${actor ?? uiText(locale, "玩家", "Player")} · ${uiText(locale, "收回未跟注筹码", "uncalled chips returned")} ${formatChips(Number(payload.amount ?? 0))}`;
+  if (event.type === "PLAYER_ELIMINATED") return `${actor ?? uiText(locale, "玩家", "Player")} · ${uiText(locale, "第", "finishes")} ${Number(payload.finishingPosition ?? 0)} ${uiText(locale, "名", "")}`;
   return actor ?? "";
 }
 
-export function EventTape({ events, players, compact = false, emptyLabel }: {
-  events: ArenaEvent[]; players?: ArenaPlayer[]; compact?: boolean; emptyLabel?: string | undefined;
+function eventToneLabel(tone: SpectatorEventTone, locale: UiLocale): string {
+  const labels: Record<SpectatorEventTone, [string, string]> = {
+    aggressive: ["下注或加注", "Bet or raise"],
+    passive: ["跟注或过牌", "Call or check"],
+    fold: ["弃牌", "Fold"],
+    deal: ["牌局流程", "Game flow"],
+    result: ["牌局结果", "Result"],
+    warning: ["赛事状态", "Tournament status"],
+  };
+  return uiText(locale, ...labels[tone]);
+}
+
+export function EventTape({ events, players, compact = false, emptyLabel, limit }: {
+  events: ArenaEvent[]; players?: ArenaPlayer[]; compact?: boolean; emptyLabel?: string | undefined; limit?: number | undefined;
 }) {
   const { locale, text } = useUiPreferences();
   const names = new Map(players?.map((player) => [player.id, player.displayName]) ?? []);
+  const timeline = spectatorTimeline(events);
+  const visibleTimeline = typeof limit === "number" ? timeline.slice(-limit) : timeline;
   return (
     <div className={`event-tape${compact ? " compact" : ""}`}>
-      {events.length === 0 ? (
+      {visibleTimeline.length === 0 ? (
         <div className="tape-quiet"><i /><p>{emptyLabel ?? text("等待下一条事件。", "Waiting for the next event.")}</p></div>
-      ) : [...events].sort((a, b) => b.sequence - a.sequence).map((event) => {
+      ) : [...visibleTimeline].reverse().map(({ event, tone }) => {
         const detail = actionText(event, locale, names);
         return (
           <article className="event-row" key={event.sequence}>
             <time>{String(event.sequence).padStart(4, "0")}</time>
-            <span className={`event-pin${event.type === "ACTION_APPLIED" ? " is-action" : ""}`} />
-            <div><strong>{eventLabels[event.type] ? uiText(locale, ...eventLabels[event.type]!) : event.type.replaceAll("_", " ")}</strong>{detail && <p>{detail}</p>}</div>
+            <span className={`event-pin is-${tone}`} role="img" aria-label={eventToneLabel(tone, locale)} title={eventToneLabel(tone, locale)} />
+            <div><strong>{eventTitle(event, locale)}</strong>{detail && <p>{detail}</p>}</div>
             {event.handNo && <b>H{event.handNo}</b>}
           </article>
         );
