@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AdminArea } from "./admin-pages";
-import { AppHeader } from "./components";
+import { AppHeader, SiteFooter } from "./components";
 import { LeaderboardPage, LivePage, ReplayPage, TournamentsPage } from "./public-pages";
 
 export function App() {
@@ -17,6 +17,7 @@ export function App() {
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <SiteFooter />
     </>
   );
 }

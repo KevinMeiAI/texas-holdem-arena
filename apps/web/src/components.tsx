@@ -62,6 +62,15 @@ export function formatChips(value: number | undefined | null): string {
   return new Intl.NumberFormat("en-US").format(value ?? 0);
 }
 
+/** 为模型分配稳定的身份色，与筹码走势图的 9 色系列同源。 */
+export function modelTint(id: string): CSSProperties {
+  let hash = 0;
+  for (let index = 0; index < id.length; index += 1) {
+    hash = (hash * 31 + id.charCodeAt(index)) >>> 0;
+  }
+  return { "--tint": `var(--chart-series-${(hash % 9) + 1})` } as CSSProperties;
+}
+
 function cardParts(card: unknown): { rank: string; suit: string; red: boolean } | null {
   const suits: Record<string, string> = { c: "♣", d: "♦", h: "♥", s: "♠" };
   const ranks: Record<number, string> = { 10: "T", 11: "J", 12: "Q", 13: "K", 14: "A" };
@@ -130,6 +139,7 @@ export function PokerTable({ state }: { state: ArenaState }) {
               "--bet-shift-y": `${placement.compactBetShift.y}rem`,
               "--bet-shift-x-wide": `${placement.wideBetShift.x}rem`,
               "--bet-shift-y-wide": `${placement.wideBetShift.y}rem`,
+              "--tint": `var(--chart-series-${(index % 9) + 1})`,
             } as CSSProperties;
             return <TableSeat key={player.id} player={player} state={state} style={style} />;
           })}
@@ -225,27 +235,39 @@ function actionText(event: ArenaEvent, locale: UiLocale, playerNames?: Map<strin
     const award = payload.award as { playerId?: string; amount?: number } | undefined;
     return `${playerNames?.get(award?.playerId ?? "") ?? award?.playerId ?? uiText(locale, "玩家", "Player")} · +${formatChips(award?.amount)}`;
   }
-  return actor ? actor : `${uiText(locale, "事件", "Event")} ${String(event.sequence).padStart(4, "0")}`;
+  return actor ?? "";
 }
 
-export function EventTape({ events, players, compact = false }: {
-  events: ArenaEvent[]; players?: ArenaPlayer[]; compact?: boolean;
+export function EventTape({ events, players, compact = false, emptyLabel }: {
+  events: ArenaEvent[]; players?: ArenaPlayer[]; compact?: boolean; emptyLabel?: string | undefined;
 }) {
   const { locale, text } = useUiPreferences();
   const names = new Map(players?.map((player) => [player.id, player.displayName]) ?? []);
   return (
     <div className={`event-tape${compact ? " compact" : ""}`}>
       {events.length === 0 ? (
-        <div className="tape-quiet"><i /><p>{text("等待下一条事件。", "Waiting for the next event.")}</p></div>
-      ) : [...events].sort((a, b) => b.sequence - a.sequence).map((event) => (
-        <article className="event-row" key={event.sequence}>
-          <time>{String(event.sequence).padStart(4, "0")}</time>
-          <span className="event-pin" />
-          <div><strong>{eventLabels[event.type] ? uiText(locale, ...eventLabels[event.type]!) : event.type.replaceAll("_", " ")}</strong><p>{actionText(event, locale, names)}</p></div>
-          {event.handNo && <b>H{event.handNo}</b>}
-        </article>
-      ))}
+        <div className="tape-quiet"><i /><p>{emptyLabel ?? text("等待下一条事件。", "Waiting for the next event.")}</p></div>
+      ) : [...events].sort((a, b) => b.sequence - a.sequence).map((event) => {
+        const detail = actionText(event, locale, names);
+        return (
+          <article className="event-row" key={event.sequence}>
+            <time>{String(event.sequence).padStart(4, "0")}</time>
+            <span className={`event-pin${event.type === "ACTION_APPLIED" ? " is-action" : ""}`} />
+            <div><strong>{eventLabels[event.type] ? uiText(locale, ...eventLabels[event.type]!) : event.type.replaceAll("_", " ")}</strong>{detail && <p>{detail}</p>}</div>
+            {event.handNo && <b>H{event.handNo}</b>}
+          </article>
+        );
+      })}
     </div>
+  );
+}
+
+export function SiteFooter() {
+  const { text } = useUiPreferences();
+  return (
+    <footer className="site-footer">
+      <span>{text("模型德州扑克竞技 · 发牌种子承诺、模型决策与 API 调用全程留痕，可独立验证。", "A verifiable Texas Hold'em arena for AI models — seed commitments, model decisions and API calls are fully auditable.")}</span>
+    </footer>
   );
 }
 

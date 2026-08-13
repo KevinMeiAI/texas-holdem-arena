@@ -83,7 +83,11 @@ export function PreferenceControls({ className = "" }: { className?: string }) {
         aria-label={theme === "dark" ? text("切换为明亮模式", "Switch to light mode") : text("切换为深色模式", "Switch to dark mode")}
         title={theme === "dark" ? text("切换为明亮模式", "Switch to light mode") : text("切换为深色模式", "Switch to dark mode")}
       >
-        {theme === "dark" ? text("明", "Light") : text("暗", "Dark")}
+        {theme === "dark" ? (
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.1" /><path d="M8 1.4v1.7M8 12.9v1.7M1.4 8h1.7M12.9 8h1.7M3.3 3.3l1.2 1.2M11.5 11.5l1.2 1.2M12.7 3.3l-1.2 1.2M4.5 11.5l-1.2 1.2" /></svg>
+        ) : (
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13.6 9.4A5.9 5.9 0 1 1 6.6 2.4a4.7 4.7 0 0 0 7 7Z" /></svg>
+        )}
       </button>
     </div>
   );

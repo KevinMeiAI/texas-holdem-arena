@@ -106,6 +106,9 @@ export function StackHistoryChart({ players, points, initialStack }: {
   const ranking = orderedPlayers
     .map((player, index) => ({ player, color: SERIES_COLORS[index % SERIES_COLORS.length]!, stack: selected.stacks[player.id] ?? 0 }))
     .sort((left, right) => right.stack - left.stack || left.player.seat - right.player.seat);
+  const xLabelIndexes = [0, ...sampledIndexes(points.length, 8).map((index) => index + 1)];
+  // 首个采样标签与「初始 / Origin」间距过近时省略它，避免文字重叠
+  if (xLabelIndexes.length > 1 && xAt(xLabelIndexes[1]!) - xAt(0) < 44) xLabelIndexes.splice(1, 1);
 
   const selectFromPointer = (event: PointerEvent<SVGSVGElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -140,7 +143,7 @@ export function StackHistoryChart({ players, points, initialStack }: {
                 </g>
               );
             })}
-            {[0, ...sampledIndexes(points.length, 8).map((index) => index + 1)].map((index) => (
+            {xLabelIndexes.map((index) => (
               <text className="stack-chart-x-label" x={xAt(index)} y={chart.height - 18} key={seriesPoints[index]!.key}>
                 {seriesPoints[index]!.handNo === null ? text("初始", "Origin") : `H${seriesPoints[index]!.handNo}`}
               </text>

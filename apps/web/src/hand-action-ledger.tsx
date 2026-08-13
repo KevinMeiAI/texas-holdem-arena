@@ -70,7 +70,11 @@ export function HandActionLedger({ players, events, holeCards }: {
               <th scope="col">{text("模型", "Model")}</th>
               <th scope="col">{text("手牌", "Cards")}</th>
               {HAND_STREETS.map((street) => (
-                <th scope="col" key={street}><b>{streetLabels[street].title}</b>{locale === "zh-CN" && <small>{streetLabels[street].note[0]}</small>}</th>
+                <th scope="col" key={street}>
+                  {locale === "zh-CN"
+                    ? <><b>{streetLabels[street].note[0]}</b><small>{streetLabels[street].title}</small></>
+                    : <b>{streetLabels[street].title}</b>}
+                </th>
               ))}
             </tr>
           </thead>

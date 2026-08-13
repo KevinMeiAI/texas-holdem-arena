@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { formatChips } from "./components";
+import { formatChips, modelTint } from "./components";
 import type { TournamentPlayerStatistics, TournamentStatistics } from "./types";
 import { type UiLocale, uiText, useUiPreferences } from "./ui-preferences";
 
@@ -99,7 +99,7 @@ export function TournamentStatisticsReport({ statistics }: { statistics: Tournam
       </header>
       <div className="report-overview">
         <div className="report-champion">
-          <span className="model-monogram">{champion?.displayName.slice(0, 1).toUpperCase() ?? "—"}</span>
+          <span className="model-monogram" style={modelTint(champion?.playerId ?? "")}>{champion?.displayName.slice(0, 1).toUpperCase() ?? "—"}</span>
           <div><small>{text("本场冠军", "Champion")}</small><strong>{champion?.displayName ?? text("尚未产生", "Pending")}</strong></div>
         </div>
         <dl>
@@ -127,7 +127,7 @@ export function TournamentStatisticsReport({ statistics }: { statistics: Tournam
           <article className="report-player" role="row" key={player.playerId}>
             <div className="report-player-identity" role="rowheader">
               <b>{player.finishingPosition ?? "—"}</b>
-              <span className="model-monogram">{player.displayName.slice(0, 1).toUpperCase()}</span>
+              <span className="model-monogram" style={modelTint(player.playerId)}>{player.displayName.slice(0, 1).toUpperCase()}</span>
               <div><strong>{player.displayName}</strong><small>{player.finishingPosition === 1 ? text("冠军", "Champion") : `${text("第", "Rank")} ${player.finishingPosition ?? "—"} ${text("名", "")}`}</small></div>
             </div>
             <div className="report-player-metrics">

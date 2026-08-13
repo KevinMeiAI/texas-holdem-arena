@@ -23,6 +23,7 @@
   --color-felt-deep: oklch(23% 0.052 156);
   --color-success: oklch(72% 0.11 151);
   --color-success-ink: oklch(18% 0.025 155);
+  --color-success-text: oklch(74% 0.13 151);
   --color-warning: oklch(78% 0.12 82);
   --color-warning-ink: oklch(20% 0.025 155);
   --color-danger: oklch(66% 0.15 28);
@@ -125,6 +126,7 @@
   --color-accent-ink: oklch(18% 0.03 154);
   --color-focus: oklch(52% 0.14 74);
   --color-success: oklch(66% 0.12 151);
+  --color-success-text: oklch(52% 0.13 151);
   --color-warning: oklch(55% 0.13 76);
   --color-danger: oklch(64% 0.16 28);
   --color-danger-text: oklch(55% 0.16 28);
