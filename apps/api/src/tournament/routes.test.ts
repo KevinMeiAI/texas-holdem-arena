@@ -32,6 +32,13 @@ describe("create tournament timeout", () => {
     })).toMatchObject({ interfaceTrack: "normalized", historyMode: "disabled" });
   });
 
+  it("accepts an explicit immutable system prompt version", () => {
+    expect(createTournamentSchema.parse({
+      ...validTournament,
+      systemPromptVersionId: "33333333-3333-4333-8333-333333333333",
+    }).systemPromptVersionId).toBe("33333333-3333-4333-8333-333333333333");
+  });
+
   it("rejects values outside the supported 30 to 600 second range", () => {
     expect(createTournamentSchema.safeParse({ ...validTournament, decisionTimeoutMs: ARENA_DECISION_TIMEOUT_MIN_MS - 1 }).success).toBe(false);
     expect(createTournamentSchema.safeParse({ ...validTournament, decisionTimeoutMs: ARENA_DECISION_TIMEOUT_MAX_MS + 1 }).success).toBe(false);

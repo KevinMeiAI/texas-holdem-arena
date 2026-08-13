@@ -38,6 +38,7 @@ export const createTournamentSchema = z.object({
   ]),
   interfaceTrack: z.enum(["native", "normalized"]).default("native"),
   historyMode: z.enum(["query_only", "disabled"]).default("query_only"),
+  systemPromptVersionId: z.string().uuid().optional(),
 }).strict();
 
 export const createBenchmarkSeriesSchema = createTournamentSchema.extend({

@@ -29,6 +29,7 @@ export interface ArenaState {
   protocolBundleId?: string;
   benchmarkTrackId?: string;
   benchmarkCohortId?: string;
+  systemPromptVersionId?: string | null;
   benchmarkSeriesId?: string | null;
   benchmarkRotation?: number | null;
   promptHash: string;
@@ -90,6 +91,7 @@ export interface TournamentSummary {
   rulesetVersion: string;
   promptHash: string | null;
   protocolBundleId?: string;
+  systemPromptVersionId?: string | null;
   benchmarkTrackId?: string;
   benchmarkCohortId?: string;
   benchmarkSeriesId?: string | null;
@@ -116,7 +118,25 @@ export interface BenchmarkSeriesSummary {
   rotationCount: number;
   nextRotation: number;
   revealedDealScheduleSeed: string | null;
+  systemPromptVersionId: string | null;
   tournaments: { id: string; rotation: number; status: ArenaState["status"]; createdAt: string }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SystemPromptVersion {
+  id: string;
+  name: string;
+  runtimeVersion: string;
+  protocolBundleId: string;
+  systemPrompt: string;
+  sha256: string;
+  source: "BUNDLED" | "CUSTOM" | "HISTORICAL";
+  status: "ACTIVE" | "ARCHIVED";
+  isDefault: boolean;
+  tournamentCount: number;
+  seriesCount: number;
+  createdByAdminUserId: string | null;
   createdAt: string;
   updatedAt: string;
 }

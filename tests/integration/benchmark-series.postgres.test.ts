@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import { runMigrations } from "../../db/migrate.js";
 import { ModelConfigService } from "../../apps/api/src/admin/model-service.js";
+import { SystemPromptVersionService } from "../../apps/api/src/admin/system-prompt-service.js";
 import { ArenaService } from "../../apps/api/src/tournament/arena-service.js";
 import { PgEventStore } from "../../apps/api/src/persistence/event-store.js";
 import { createDealSchedule } from "../../packages/fairness/src/deal-schedule.js";
@@ -62,6 +63,8 @@ describePostgres("paired benchmark series", () => {
     expect(beta).not.toBeNull();
 
     const firstService = new ArenaService(pool!, key, models, 10);
+    const promptVersion = (await new SystemPromptVersionService(pool!, key).list())
+      .find((version) => version.isDefault)!;
     const created = await firstService.createBenchmarkSeries({
       name: "Paired acceptance",
       modelConfigIds: [alpha!.id, beta!.id],
@@ -71,6 +74,7 @@ describePostgres("paired benchmark series", () => {
       decisionTimeoutMs: 30_000,
       interfaceTrack: "normalized",
       historyMode: "disabled",
+      systemPromptVersionId: promptVersion.id,
       blindLevels: [
         { smallBlind: 25, bigBlind: 50, bigBlindAnte: 0 },
         { smallBlind: 50, bigBlind: 100, bigBlindAnte: 100 },
@@ -125,8 +129,11 @@ describePostgres("paired benchmark series", () => {
         benchmarkTrack: { interfaceTrack: string; historyMode: string };
         decisionConfig: { history: { maxQueries: number; maxApproxTokens: number } };
       };
+      system_prompt_version_id: string | null;
+      prompt_hash: string | null;
     }>(
-      `select id, benchmark_rotation, public_state, configuration from tournaments
+      `select id, benchmark_rotation, public_state, configuration,
+              system_prompt_version_id, prompt_hash from tournaments
         where benchmark_series_id = $1 order by benchmark_rotation`,
       [created.seriesId],
     );
@@ -143,6 +150,14 @@ describePostgres("paired benchmark series", () => {
     expect(tournamentRows.rows.map((row) => row.configuration.decisionConfig.history)).toEqual([
       expect.objectContaining({ maxQueries: 0, maxApproxTokens: 0 }),
       expect.objectContaining({ maxQueries: 0, maxApproxTokens: 0 }),
+    ]);
+    expect(tournamentRows.rows.map((row) => row.system_prompt_version_id)).toEqual([
+      promptVersion.id,
+      promptVersion.id,
+    ]);
+    expect(tournamentRows.rows.map((row) => row.prompt_hash)).toEqual([
+      promptVersion.sha256,
+      promptVersion.sha256,
     ]);
 
     const snapshots = await Promise.all(tournamentRows.rows.map((row) => store.loadLatestSnapshot(row.id)));

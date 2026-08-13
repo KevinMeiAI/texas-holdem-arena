@@ -48,6 +48,8 @@ export interface ArenaTournamentSetup {
   rulesetVersion: string;
   protocolBundleId?: string;
   benchmarkTrack?: BenchmarkTrackIdentity;
+  effectiveSystemPrompt?: ReturnType<typeof buildEffectiveSystemPrompt>;
+  systemPromptVersionId?: string;
   tournament: TournamentConfig;
   providerIdByPlayer: Record<string, string>;
   frozenModelConfigByPlayer?: Record<string, FrozenModelConfig>;
@@ -68,6 +70,7 @@ export interface OrchestratorRuntime {
   rulesetVersion: string;
   protocolBundle: DecisionProtocolBundleDefinition;
   benchmarkTrack?: BenchmarkTrackIdentity;
+  systemPromptVersionId?: string;
   operationalStatus: OperationalStatus;
   aggregateVersion: number;
   domain: TournamentState;
@@ -119,6 +122,7 @@ function publicState(runtime: OrchestratorRuntime): unknown {
     protocolBundleId: runtime.protocolBundle.id,
     benchmarkTrackId: runtime.benchmarkTrack?.id ?? "legacy/native-unclassified",
     benchmarkCohortId: runtime.benchmarkTrack?.cohortId ?? "legacy/native-unclassified",
+    systemPromptVersionId: runtime.systemPromptVersionId ?? null,
     benchmarkSeriesId: runtime.benchmarkSeriesId ?? null,
     benchmarkRotation: runtime.benchmarkRotation ?? null,
     promptHash: runtime.effectivePrompt.sha256,
@@ -207,7 +211,12 @@ export class TournamentOrchestrator {
     const tournamentId = setup.tournamentId ?? randomUUID();
     const protocolBundle = decisionProtocolBundle(setup.protocolBundleId);
     const ruleset = rulesetImplementation(setup.rulesetVersion);
-    const effectivePrompt = buildEffectiveSystemPrompt(protocolBundle.systemPromptVersion);
+    const effectivePrompt = setup.effectiveSystemPrompt
+      ? jsonSafe(setup.effectiveSystemPrompt)
+      : buildEffectiveSystemPrompt(protocolBundle.systemPromptVersion);
+    if (createHash("sha256").update(effectivePrompt.text, "utf8").digest("hex") !== effectivePrompt.sha256) {
+      throw new Error("Frozen system prompt hash does not match its text");
+    }
     const effectiveOutputSchema = arenaOutputSchema("ACTION_OR_HISTORY", protocolBundle.outputSchemaVersion);
     const masterSeed = setup.masterSeed ?? randomBytes(32);
     if (masterSeed.byteLength !== 32) throw new Error("Tournament master seed must be 256 bits");
@@ -233,6 +242,7 @@ export class TournamentOrchestrator {
       rulesetVersion: setup.rulesetVersion,
       protocolBundle,
       ...(setup.benchmarkTrack ? { benchmarkTrack: jsonSafe(setup.benchmarkTrack) } : {}),
+      ...(setup.systemPromptVersionId ? { systemPromptVersionId: setup.systemPromptVersionId } : {}),
       operationalStatus: "READY",
       aggregateVersion: 0,
       domain: ruleset.createTournament(setup.tournament),
@@ -275,6 +285,7 @@ export class TournamentOrchestrator {
         historyProtocolVersion: protocolBundle.historyProtocolVersion,
         adapterProtocolVersion: protocolBundle.adapterProtocolVersion,
         benchmarkTrack: setup.benchmarkTrack ?? null,
+        systemPromptVersionId: setup.systemPromptVersionId ?? null,
         dealScheduleId: setup.dealSchedule?.id ?? null,
         dealScheduleCommitment: setup.dealSchedule?.commitment ?? null,
         benchmarkSeriesId: setup.benchmarkSeriesId ?? null,
@@ -292,6 +303,7 @@ export class TournamentOrchestrator {
       protocolBundleId: protocolBundle.id,
       benchmarkTrackId: setup.benchmarkTrack?.id ?? "legacy/native-unclassified",
       benchmarkCohortId: setup.benchmarkTrack?.cohortId ?? "legacy/native-unclassified",
+      ...(setup.systemPromptVersionId ? { systemPromptVersionId: setup.systemPromptVersionId } : {}),
       ...(setup.benchmarkSeriesId ? { benchmarkSeriesId: setup.benchmarkSeriesId } : {}),
       ...(setup.benchmarkRotation !== undefined ? { benchmarkRotation: setup.benchmarkRotation } : {}),
     });
@@ -299,6 +311,7 @@ export class TournamentOrchestrator {
       publicArenaEvent("TOURNAMENT_CONFIG_FROZEN", {
         promptHash: effectivePrompt.sha256,
         promptVersion: effectivePrompt.version,
+        systemPromptVersionId: setup.systemPromptVersionId ?? null,
         protocolBundleId: protocolBundle.id,
         contextVersion: protocolBundle.contextVersion,
         outputSchemaVersion: effectiveOutputSchema.version,

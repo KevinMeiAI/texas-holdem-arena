@@ -141,6 +141,89 @@ describePostgres("administrator auth and model configuration API", () => {
       });
       const alphaRevisionId = updatedModel.json<{ model: { revisionId: string } }>().model.revisionId;
       const betaRevisionId = secondModelResponse.json<{ model: { revisionId: string } }>().model.revisionId;
+      const promptVersionsResponse = await app.inject({
+        method: "GET",
+        url: "/api/admin/system-prompts",
+        headers: { cookie },
+      });
+      expect(promptVersionsResponse.statusCode).toBe(200);
+      const promptVersions = promptVersionsResponse.json<{
+        versions: { id: string; name: string; sha256: string; isDefault: boolean }[];
+      }>().versions;
+      const defaultPrompt = promptVersions.find((version) => version.isDefault)!;
+      expect(defaultPrompt).toMatchObject({ name: "Arena System v11", sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
+      const customPromptResponse = await app.inject({
+        method: "POST",
+        url: "/api/admin/system-prompts",
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+        payload: {
+          name: "Acceptance prompt",
+          protocolBundleId: "arena-native-v11",
+          systemPrompt: `${defaultPrompt.name}\nAlways obey the frozen Arena output contract.`,
+        },
+      });
+      expect(customPromptResponse.statusCode).toBe(201);
+      const customPrompt = customPromptResponse.json<{
+        version: { id: string; name: string; sha256: string; status: "ACTIVE" | "ARCHIVED" };
+      }>().version;
+
+      await expect(maintenancePool!.query(
+        "update system_prompt_versions set name = 'Mutated in place' where id = $1",
+        [customPrompt.id],
+      )).rejects.toThrow(/immutable/);
+      await expect(maintenancePool!.query(
+        "delete from system_prompt_versions where id = $1",
+        [customPrompt.id],
+      )).rejects.toThrow(/cannot be deleted/);
+      await expect(maintenancePool!.query(
+        "update system_prompt_versions set status = 'ARCHIVED' where id = $1",
+        [defaultPrompt.id],
+      )).rejects.toThrow(/only custom/);
+
+      const rejectBundledArchive = await app.inject({
+        method: "PATCH",
+        url: `/api/admin/system-prompts/${defaultPrompt.id}/status`,
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+        payload: { archived: true },
+      });
+      expect(rejectBundledArchive.statusCode).toBe(409);
+
+      const archiveCustom = await app.inject({
+        method: "PATCH",
+        url: `/api/admin/system-prompts/${customPrompt.id}/status`,
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+        payload: { archived: true },
+      });
+      expect(archiveCustom).toMatchObject({ statusCode: 200 });
+      expect(archiveCustom.json()).toMatchObject({ version: { status: "ARCHIVED" } });
+
+      const rejectedArchivedTournament = await app.inject({
+        method: "POST",
+        url: "/api/admin/tournaments",
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+        payload: {
+          name: "Archived prompt must not start",
+          modelConfigIds: [modelId, secondModelId],
+          initialStack: 100,
+          handsPerLevel: 1,
+          systemPromptVersionId: customPrompt.id,
+          blindLevels: [{ smallBlind: 25, bigBlind: 50, bigBlindAnte: 0 }],
+        },
+      });
+      expect(rejectedArchivedTournament.statusCode).toBe(409);
+      expect(rejectedArchivedTournament.json()).toMatchObject({
+        error: "tournament_start_failed",
+        message: expect.stringMatching(/Archived system prompt/),
+      });
+
+      const restoreCustom = await app.inject({
+        method: "PATCH",
+        url: `/api/admin/system-prompts/${customPrompt.id}/status`,
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+        payload: { archived: false },
+      });
+      expect(restoreCustom).toMatchObject({ statusCode: 200 });
+      expect(restoreCustom.json()).toMatchObject({ version: { status: "ACTIVE" } });
       const preflight = await app.inject({
         method: "POST",
         url: `/api/admin/models/${modelId}/preflight`,
@@ -184,6 +267,7 @@ describePostgres("administrator auth and model configuration API", () => {
           initialStack: 100,
           handsPerLevel: 1,
           decisionTimeoutMs: 240_000,
+          systemPromptVersionId: customPrompt.id,
           blindLevels: [
             { smallBlind: 25, bigBlind: 50, bigBlindAnte: 0 },
             { smallBlind: 50, bigBlind: 100, bigBlindAnte: 100 },
@@ -202,13 +286,16 @@ describePostgres("administrator auth and model configuration API", () => {
       }
       expect(liveState.state?.status).toBe("COMPLETED");
       expect(liveState.state?.decisionTimeoutMs).toBe(240_000);
+      expect((liveState.state as { systemPromptVersionId?: string } | undefined)?.systemPromptVersionId).toBe(customPrompt.id);
 
       const frozenTournament = await maintenancePool!.query<{
         configuration: {
-          benchmarkTrack: { interfaceTrack: string; historyMode: string };
+          benchmarkTrack: { interfaceTrack: string; historyMode: string; systemPromptHash: string };
           decisionConfig: { history: { maxQueries: number; maxApproxTokens: number } };
         };
-      }>("select configuration from tournaments where id = $1", [tournamentId]);
+        system_prompt_version_id: string | null;
+        prompt_hash: string | null;
+      }>("select configuration, system_prompt_version_id, prompt_hash from tournaments where id = $1", [tournamentId]);
       expect(frozenTournament.rows[0]?.configuration.benchmarkTrack).toMatchObject({
         interfaceTrack: "native",
         historyMode: "query_only",
@@ -217,6 +304,9 @@ describePostgres("administrator auth and model configuration API", () => {
         maxQueries: 2,
         maxApproxTokens: 4_000,
       });
+      expect(frozenTournament.rows[0]?.system_prompt_version_id).toBe(customPrompt.id);
+      expect(frozenTournament.rows[0]?.prompt_hash).toBe(customPrompt.sha256);
+      expect(frozenTournament.rows[0]?.configuration.benchmarkTrack.systemPromptHash).toBe(customPrompt.sha256);
 
       const handsResponse = await app.inject({
         method: "GET",

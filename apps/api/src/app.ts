@@ -7,6 +7,8 @@ import { Pool } from "pg";
 import { runMigrations } from "../../../db/migrate.js";
 import { ModelConfigService } from "./admin/model-service.js";
 import { registerAdminModelRoutes } from "./admin/routes.js";
+import { registerSystemPromptRoutes } from "./admin/system-prompt-routes.js";
+import { SystemPromptVersionService } from "./admin/system-prompt-service.js";
 import { AuthService } from "./auth/auth-service.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import type { AppConfig } from "./config.js";
@@ -51,6 +53,8 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
     if (masterKey) {
       const authContext = { auth, config };
       const models = new ModelConfigService(pool, masterKey);
+      const systemPrompts = new SystemPromptVersionService(pool, masterKey);
+      await systemPrompts.syncCatalog();
       arena = new ArenaService(pool, masterKey, models);
       await registerAuthRoutes(app, authContext);
       await registerAdminModelRoutes(app, {
@@ -58,6 +62,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
         pool,
         models,
       });
+      await registerSystemPromptRoutes(app, { ...authContext, pool, systemPrompts });
       await registerTournamentRoutes(app, { ...authContext, pool, arena });
       await arena.restoreActive();
     }

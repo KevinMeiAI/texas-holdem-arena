@@ -9,7 +9,7 @@ import {
   StatusBadge,
   formatChips,
 } from "./components";
-import type { AdminSession, ArenaState, ModelConfig, ProviderConnection, TournamentSummary } from "./types";
+import type { AdminSession, ArenaState, ModelConfig, ProviderConnection, SystemPromptVersion, TournamentSummary } from "./types";
 import { PreferenceControls, type UiLocale, uiText, useUiPreferences } from "./ui-preferences";
 
 interface AuthPayload { session: AdminSession; csrfToken: string }
@@ -31,6 +31,7 @@ export function AdminArea() {
         <nav aria-label={text("控制室导航", "Admin navigation")}>
           <NavLink to="/admin" end>{text("总览", "Overview")}</NavLink>
           <NavLink to="/admin/models">{text("模型与 API", "Models & API")}</NavLink>
+          <NavLink to="/admin/prompts">{text("提示词版本", "Prompt versions")}</NavLink>
           <NavLink to="/admin/tournaments/new">{text("创建赛事", "Create")}</NavLink>
           <Link to="/tournaments">{text("赛事档案", "Archive")}</Link>
         </nav>
@@ -44,6 +45,7 @@ export function AdminArea() {
         <Routes>
           <Route path="/admin" element={<AdminDashboard csrfToken={authenticated.csrfToken} />} />
           <Route path="/admin/models" element={<ModelsAdmin csrfToken={authenticated.csrfToken} />} />
+          <Route path="/admin/prompts" element={<SystemPromptsAdmin csrfToken={authenticated.csrfToken} />} />
           <Route path="/admin/tournaments/new" element={<NewTournament csrfToken={authenticated.csrfToken} />} />
         </Routes>
       </main>
@@ -277,6 +279,64 @@ function ModelModal({ value, providers, onClose, onSave }: { value: { draft: Mod
   </Modal>;
 }
 
+type PromptDraft = { name: string; protocolBundleId: string; systemPrompt: string };
+
+function promptSourceLabel(source: SystemPromptVersion["source"], locale: UiLocale) {
+  return source === "BUNDLED" ? uiText(locale, "平台内置", "Bundled")
+    : source === "HISTORICAL" ? uiText(locale, "赛事归档", "Historical")
+      : uiText(locale, "自定义", "Custom");
+}
+
+function SystemPromptsAdmin({ csrfToken }: { csrfToken: string }) {
+  const { locale, text } = useUiPreferences();
+  const versions = useApiResource<{ versions: SystemPromptVersion[] }>("/api/admin/system-prompts");
+  const [draft, setDraft] = useState<PromptDraft | null>(null);
+  const [viewing, setViewing] = useState<SystemPromptVersion | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (versions.loading) return <LoadingBlock label={text("正在读取提示词版本", "Loading prompt versions")} />;
+  if (versions.error) return <ErrorBlock message={versions.error} onRetry={() => void versions.refresh()} />;
+  const all = versions.data?.versions ?? [];
+  const canDuplicate = (version: SystemPromptVersion) => ["arena-native-v10", "arena-native-v11"]
+    .includes(version.protocolBundleId);
+  const startDraft = (source?: SystemPromptVersion) => setDraft({
+    name: source ? `${source.name} · ${text("副本", "Copy")}` : "",
+    protocolBundleId: source && ["arena-native-v10", "arena-native-v11"].includes(source.protocolBundleId)
+      ? source.protocolBundleId
+      : "arena-native-v11",
+    systemPrompt: source?.systemPrompt ?? "",
+  });
+  return <>
+    <div className="admin-heading"><div><h1>{text("System Prompt 版本", "System prompt versions")}</h1></div><button className="button primary" onClick={() => startDraft()}>{text("新建版本", "New version")}</button></div>
+    {notice && <div className="notice success" role="status">{notice}<button aria-label={text("关闭通知", "Dismiss notification")} onClick={() => setNotice(null)}>×</button></div>}
+    {error && <div className="notice error" role="alert">{error}<button aria-label={text("关闭错误提示", "Dismiss error")} onClick={() => setError(null)}>×</button></div>}
+    <section className="admin-section prompt-version-list">
+      {all.map((version) => <article className={`prompt-version-card${version.status === "ARCHIVED" ? " archived" : ""}`} key={version.id}>
+        <header><div><div className="prompt-version-kicker"><span>{promptSourceLabel(version.source, locale)}</span>{version.isDefault && <b>{text("默认", "Default")}</b>}{version.status === "ARCHIVED" && <em>{text("已归档", "Archived")}</em>}</div><h2>{version.name}</h2></div><code>{version.sha256.slice(0, 10)}</code></header>
+        <dl><div><dt>{text("执行协议", "Protocol")}</dt><dd>{version.protocolBundleId}</dd></div><div><dt>{text("已用于", "Usage")}</dt><dd>{version.tournamentCount} {text("场赛事", "events")} · {version.seriesCount} {text("个系列", "series")}</dd></div><div><dt>{text("保存时间", "Saved")}</dt><dd>{new Date(version.createdAt).toLocaleString(locale)}</dd></div></dl>
+        <p className="prompt-version-preview">{version.systemPrompt}</p>
+        <footer><button onClick={() => setViewing(version)}>{text("查看全文", "View")}</button>{canDuplicate(version) && <button onClick={() => startDraft(version)}>{text("复制为新版本", "Duplicate")}</button>}{version.source === "CUSTOM" && <button onClick={async () => { try { await apiRequest(`/api/admin/system-prompts/${version.id}/status`, { method: "PATCH", csrfToken, body: JSON.stringify({ archived: version.status !== "ARCHIVED" }) }); setNotice(version.status === "ARCHIVED" ? text("版本已恢复", "Version restored") : text("版本已归档", "Version archived")); await versions.refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : text("状态更新失败", "Unable to update status")); } }}>{version.status === "ARCHIVED" ? text("恢复", "Restore") : text("归档", "Archive")}</button>}</footer>
+      </article>)}
+    </section>
+    {draft && <PromptVersionModal draft={draft} onClose={() => setDraft(null)} onSave={async (next) => { try { await apiRequest("/api/admin/system-prompts", { method: "POST", csrfToken, body: JSON.stringify(next) }); setDraft(null); setNotice(text("提示词版本已保存", "Prompt version saved")); await versions.refresh(); } catch (reason) { throw reason; } }} />}
+    {viewing && <Modal title={viewing.name} onClose={() => setViewing(null)}><div className="prompt-version-view"><div><span>{viewing.protocolBundleId}</span><code>SHA-256 {viewing.sha256}</code></div><pre>{viewing.systemPrompt}</pre><div className="modal-actions"><button className="button secondary" onClick={() => setViewing(null)}>{text("关闭", "Close")}</button>{canDuplicate(viewing) && <button className="button primary" onClick={() => { startDraft(viewing); setViewing(null); }}>{text("复制为新版本", "Duplicate")}</button>}</div></div></Modal>}
+  </>;
+}
+
+function PromptVersionModal({ draft: initial, onClose, onSave }: { draft: PromptDraft; onClose: () => void; onSave: (draft: PromptDraft) => Promise<void> }) {
+  const { text } = useUiPreferences();
+  const [draft, setDraft] = useState(initial);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return <Modal title={text("保存新的提示词版本", "Save new prompt version")} onClose={onClose}>
+    <form className="modal-form prompt-version-form" onSubmit={async (event) => { event.preventDefault(); setWorking(true); setError(null); try { await onSave(draft); } catch (reason) { setError(reason instanceof Error ? reason.message : text("保存提示词失败", "Unable to save prompt")); } finally { setWorking(false); } }}>
+      <div className="form-grid"><label><span>{text("版本名称", "Version name")}</span><input value={draft.name} maxLength={120} onChange={(event) => setDraft({ ...draft, name: event.target.value })} required autoFocus /></label><label><span>{text("执行协议", "Protocol")}</span><select value={draft.protocolBundleId} onChange={(event) => setDraft({ ...draft, protocolBundleId: event.target.value })}><option value="arena-native-v11">Arena v11</option><option value="arena-native-v10">Arena v10</option></select></label><label className="full"><span>System Prompt</span><textarea rows={22} spellCheck={false} value={draft.systemPrompt} maxLength={100_000} onChange={(event) => setDraft({ ...draft, systemPrompt: event.target.value })} required /></label></div>
+      {error && <p className="form-error">{error}</p>}
+      <div className="modal-actions"><button className="button secondary" type="button" onClick={onClose}>{text("取消", "Cancel")}</button><button className="button primary" disabled={working}>{working ? text("保存中…", "Saving…") : text("保存为新版本", "Save version")}</button></div>
+    </form>
+  </Modal>;
+}
+
 const blindLevels = [
   { smallBlind: 100, bigBlind: 200, bigBlindAnte: 0 },
   { smallBlind: 150, bigBlind: 300, bigBlindAnte: 0 },
@@ -297,6 +357,7 @@ const blindLevels = [
 function NewTournament({ csrfToken }: { csrfToken: string }) {
   const { locale, text } = useUiPreferences();
   const models = useApiResource<{ models: ModelConfig[] }>("/api/admin/models");
+  const prompts = useApiResource<{ versions: SystemPromptVersion[] }>("/api/admin/system-prompts");
   const navigate = useNavigate();
   const [name, setName] = useState(`${uiText(locale, "模型锦标赛", "Model Tournament")} · ${new Date().toLocaleDateString(locale)}`);
   const [selected, setSelected] = useState<string[]>([]);
@@ -306,21 +367,27 @@ function NewTournament({ csrfToken }: { csrfToken: string }) {
   const [benchmarkSeries, setBenchmarkSeries] = useState(false);
   const [interfaceTrack, setInterfaceTrack] = useState<"native" | "normalized">("native");
   const [historyMode, setHistoryMode] = useState<"query_only" | "disabled">("query_only");
+  const [systemPromptVersionId, setSystemPromptVersionId] = useState("");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (models.loading) return <LoadingBlock label={text("正在读取可用模型", "Loading available models")} />;
-  if (models.error) return <ErrorBlock message={models.error} onRetry={() => void models.refresh()} />;
+  if (models.loading || prompts.loading) return <LoadingBlock label={text("正在读取赛事配置", "Loading tournament configuration")} />;
+  if (models.error || prompts.error) return <ErrorBlock message={models.error ?? prompts.error ?? text("服务暂时不可用", "Service temporarily unavailable")} onRetry={() => void Promise.all([models.refresh(), prompts.refresh()])} />;
   const enabledModels = models.data?.models.filter((model) => model.enabled) ?? [];
+  const activePrompts = prompts.data?.versions.filter((version) => version.status === "ACTIVE") ?? [];
+  const selectedPrompt = activePrompts.find((version) => version.id === systemPromptVersionId)
+    ?? activePrompts.find((version) => version.isDefault)
+    ?? activePrompts[0];
   const toggle = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : current.length < 9 ? [...current, id] : current);
   return (
     <>
       <div className="admin-heading"><div><h1>{text("创建锦标赛", "Create tournament")}</h1></div><Link className="text-button" to="/admin">{text("放弃并返回", "Cancel")}</Link></div>
-      {enabledModels.length < 2 ? <EmptyState title={text("至少需要两个可用模型", "At least two models required")} body={text("先添加并启用模型。", "Add and enable models first.")} action={<Link className="button primary" to="/admin/models">{text("配置模型", "Configure models")}</Link>} /> : <form className="tournament-form" onSubmit={async (event) => { event.preventDefault(); if (selected.length < 2) { setError(text("请选择 2—9 个不同模型", "Select 2–9 different models")); return; } setWorking(true); setError(null); try { const result = await apiRequest<{ tournamentId: string }>(benchmarkSeries ? "/api/admin/benchmark-series" : "/api/admin/tournaments", { method: "POST", csrfToken, body: JSON.stringify({ name, modelConfigIds: selected, initialStack, handsPerLevel, decisionTimeoutMs: decisionTimeoutSeconds * 1_000, blindLevels, interfaceTrack, historyMode }) }); navigate(`/?tournament=${result.tournamentId}`); } catch (reason) { setError(reason instanceof Error ? reason.message : text("锦标赛创建失败", "Unable to create tournament")); } finally { setWorking(false); } }}>
+      {enabledModels.length < 2 ? <EmptyState title={text("至少需要两个可用模型", "At least two models required")} body={text("先添加并启用模型。", "Add and enable models first.")} action={<Link className="button primary" to="/admin/models">{text("配置模型", "Configure models")}</Link>} /> : <form className="tournament-form" onSubmit={async (event) => { event.preventDefault(); if (selected.length < 2) { setError(text("请选择 2—9 个不同模型", "Select 2–9 different models")); return; } if (!selectedPrompt) { setError(text("没有可用的 System Prompt 版本", "No active system prompt version")); return; } setWorking(true); setError(null); try { const result = await apiRequest<{ tournamentId: string }>(benchmarkSeries ? "/api/admin/benchmark-series" : "/api/admin/tournaments", { method: "POST", csrfToken, body: JSON.stringify({ name, modelConfigIds: selected, initialStack, handsPerLevel, decisionTimeoutMs: decisionTimeoutSeconds * 1_000, blindLevels, interfaceTrack, historyMode, systemPromptVersionId: selectedPrompt.id }) }); navigate(`/?tournament=${result.tournamentId}`); } catch (reason) { setError(reason instanceof Error ? reason.message : text("锦标赛创建失败", "Unable to create tournament")); } finally { setWorking(false); } }}>
         <section className="form-section"><header><div><h2>{text("赛事身份", "Tournament")}</h2></div></header><label className="field-large"><span>{text("赛事名称", "Name")}</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={120} required /></label></section>
+        <section className="form-section"><header><div><h2>System Prompt</h2></div><Link className="text-button" to="/admin/prompts">{text("版本管理", "Manage versions")} →</Link></header><label className="field-large"><span>{text("提示词版本", "Prompt version")}</span><select value={selectedPrompt?.id ?? ""} onChange={(event) => setSystemPromptVersionId(event.target.value)}>{activePrompts.map((version) => <option value={version.id} key={version.id}>{version.name}{version.isDefault ? ` · ${text("默认", "Default")}` : ""} · {version.sha256.slice(0, 8)}</option>)}</select></label>{selectedPrompt && <div className="selected-prompt-summary"><strong>{selectedPrompt.protocolBundleId}</strong><span>SHA-256 {selectedPrompt.sha256}</span><p>{selectedPrompt.systemPrompt}</p></div>}</section>
         <section className="form-section"><header><div><h2>{text("选择模型席位", "Select models")}</h2></div><b>{text("已选", "Selected")} {selected.length} / 9</b></header><div className="model-picker">{enabledModels.map((model) => <button className={selected.includes(model.id) ? "selected" : ""} type="button" onClick={() => toggle(model.id)} key={model.id}><span className="model-monogram">{model.displayName.slice(0, 1)}</span><div><strong>{model.displayName}</strong><small>{model.providerLabel} · {model.modelId}</small></div><i>{selected.includes(model.id) ? "✓" : "+"}</i></button>)}</div></section>
         <section className="form-section"><header><div><h2>{text("锦标赛结构", "Structure")}</h2></div></header><div className="structure-grid"><label><span>{text("初始筹码", "Starting stack")}</span><input type="number" min={100} max={10_000_000} value={initialStack} onChange={(event) => setInitialStack(Number(event.target.value))} /></label><label><span>{text("每级手数", "Hands per level")}</span><input type="number" min={1} max={1000} value={handsPerLevel} onChange={(event) => setHandsPerLevel(Number(event.target.value))} /></label><label><span>{text("模型调用超时（秒）", "Model timeout (seconds)")}</span><input type="number" min={30} max={600} step={10} value={decisionTimeoutSeconds} onChange={(event) => setDecisionTimeoutSeconds(Number(event.target.value))} /></label><label><span>{text("接口赛道", "Interface track")}</span><select value={interfaceTrack} onChange={(event) => setInterfaceTrack(event.target.value as "native" | "normalized")}><option value="native">{text("Native · 各模型最佳官方输出", "Native · best official output")}</option><option value="normalized">{text("Normalized · 统一 Prompt JSON", "Normalized · prompt JSON only")}</option></select></label><label><span>{text("历史信息", "History access")}</span><select value={historyMode} onChange={(event) => setHistoryMode(event.target.value as "query_only" | "disabled")}><option value="query_only">{text("允许按需查询", "On-demand queries")}</option><option value="disabled">{text("关闭历史查询", "Disabled")}</option></select></label><label className="switch-field"><span><b>{text("公平轮换系列", "Paired benchmark series")}</b><small>{benchmarkSeries ? text(`${selected.length || 2} 场 · 同牌序 · 轮换座位`, `${selected.length || 2} events · same deals · rotating seats`) : text("单场锦标赛", "Single tournament")}</small></span><input className="native-switch" type="checkbox" checked={benchmarkSeries} onChange={(event) => setBenchmarkSeries(event.target.checked)} /></label></div><div className="blind-preview"><span>{text("盲注级别", "Blind levels")}</span>{blindLevels.slice(0, 7).map((level, index) => <b key={index}>{level.smallBlind}/{level.bigBlind}{level.bigBlindAnte ? ` + ${text("大盲前注", "BBA")}` : ""}</b>)}<em>{text("另有 7 级", "7 more")}</em></div></section>
         {error && <p className="form-error standalone">{error}</p>}
-        <div className="launch-bar"><div><span>{text("席位准备", "Seats")}</span><strong>{selected.length >= 2 ? `${selected.length} ${text("个模型", "models")} · ${benchmarkSeries ? text(`${selected.length} 场轮换`, `${selected.length} rotations`) : text("单场", "single")} · ${interfaceTrack === "native" ? "Native" : "Normalized"} · ${historyMode === "query_only" ? text("可查历史", "history on") : text("无历史", "history off")} · ${formatChips(initialStack)} · ${decisionTimeoutSeconds} ${text("秒超时", "s timeout")}` : text("请选择至少两个模型", "Select at least two models")}</strong></div><button className="button primary launch" disabled={working || selected.length < 2}>{working ? text("正在锁定配置…", "Locking…") : `${benchmarkSeries ? text("开始公平系列", "Start paired series") : text("开始赛事", "Start tournament")} →`}</button></div>
+        <div className="launch-bar"><div><span>{text("席位准备", "Seats")}</span><strong>{selected.length >= 2 ? `${selected.length} ${text("个模型", "models")} · ${benchmarkSeries ? text(`${selected.length} 场轮换`, `${selected.length} rotations`) : text("单场", "single")} · ${selectedPrompt?.name ?? "—"} · ${interfaceTrack === "native" ? "Native" : "Normalized"} · ${historyMode === "query_only" ? text("可查历史", "history on") : text("无历史", "history off")} · ${formatChips(initialStack)} · ${decisionTimeoutSeconds} ${text("秒超时", "s timeout")}` : text("请选择至少两个模型", "Select at least two models")}</strong></div><button className="button primary launch" disabled={working || selected.length < 2 || !selectedPrompt}>{working ? text("正在锁定配置…", "Locking…") : `${benchmarkSeries ? text("开始公平系列", "Start paired series") : text("开始赛事", "Start tournament")} →`}</button></div>
       </form>}
     </>
   );

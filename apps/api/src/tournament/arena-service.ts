@@ -6,6 +6,7 @@ import { createProvider } from "../../../../packages/providers/src/provider-fact
 import type { FrozenModelConfig, ModelProvider } from "../../../../packages/providers/src/provider.js";
 import { inspectOutputPolicy } from "../../../../packages/providers/src/output-policy.js";
 import { ModelConfigService } from "../admin/model-service.js";
+import { SystemPromptVersionService } from "../admin/system-prompt-service.js";
 import { PgEventStore } from "../persistence/event-store.js";
 import {
   TournamentOrchestrator,
@@ -22,7 +23,6 @@ import {
 } from "./statistics.js";
 import { benchmarkTrackIdentity, type BenchmarkTrackIdentity } from "./benchmark-track.js";
 import { CURRENT_RULESET_VERSION } from "./ruleset-registry.js";
-import { CURRENT_DECISION_PROTOCOL_BUNDLE_ID } from "../../../../packages/contracts/src/decision-protocol.js";
 import {
   createDealSchedule,
   DEAL_SCHEDULE_VERSION,
@@ -42,6 +42,7 @@ export interface CreateArenaTournamentInput {
   blindLevels: { smallBlind: number; bigBlind: number; bigBlindAnte: number }[];
   interfaceTrack?: "native" | "normalized" | undefined;
   historyMode?: "query_only" | "disabled" | undefined;
+  systemPromptVersionId?: string | undefined;
 }
 
 export interface CreateBenchmarkSeriesInput extends CreateArenaTournamentInput {
@@ -66,6 +67,7 @@ interface BenchmarkSeriesRow {
   rotation_count: number;
   next_rotation: number;
   revealed_deal_schedule_seed: string | null;
+  system_prompt_version_id: string | null;
 }
 
 interface SeriesTournamentRow {
@@ -117,6 +119,7 @@ export class ArenaService {
   readonly #statisticsCache = new Map<string, TournamentStatisticsComputation>();
   readonly #statisticsPending = new Map<string, Promise<TournamentStatisticsComputation>>();
   readonly #store: PgEventStore;
+  readonly #systemPrompts: SystemPromptVersionService;
   #stopping = false;
 
   constructor(
@@ -126,6 +129,7 @@ export class ArenaService {
     private readonly displayDelayMs = 120,
   ) {
     this.#store = new PgEventStore(pool, masterKey);
+    this.#systemPrompts = new SystemPromptVersionService(pool, masterKey);
   }
 
   async restoreActive(): Promise<void> {
@@ -190,6 +194,8 @@ export class ArenaService {
     }));
     const interfaceTrack = input.interfaceTrack ?? "native";
     const historyMode = input.historyMode ?? "query_only";
+    const selectedPrompt = await this.#systemPrompts.resolve(input.systemPromptVersionId);
+    if (selectedPrompt.version.status !== "ACTIVE") throw new Error("Archived system prompt versions cannot start new tournaments");
     const frozenConfigByRevisionId = Object.fromEntries(await Promise.all(models.map(async (model) => (
       [model.revisionId, trackModelConfig({
         ...await this.models.runtimeConfigForRevision(model.revisionId),
@@ -202,10 +208,11 @@ export class ArenaService {
     const seated = seatingRng.shuffle(models);
     const tournamentId = randomUUID();
     const rulesetVersion = CURRENT_RULESET_VERSION;
-    const protocolBundleId = CURRENT_DECISION_PROTOCOL_BUNDLE_ID;
+    const protocolBundleId = selectedPrompt.version.protocolBundleId;
     const track = benchmarkTrackIdentity({
       protocolBundleId,
       rulesetVersion,
+      systemPromptHash: selectedPrompt.prompt.sha256,
       historyMode,
       interfaceTrack,
       providerOutputModes: providerOutputModes(Object.values(frozenConfigByRevisionId)),
@@ -224,6 +231,8 @@ export class ArenaService {
       rulesetVersion,
       protocolBundleId,
       benchmarkTrack: track,
+      effectiveSystemPrompt: selectedPrompt.prompt,
+      systemPromptVersionId: selectedPrompt.version.id,
       tournament: {
         seatCount: seated.length,
         players: seated.map((model, seat) => ({ id: model.revisionId, seat })),
@@ -278,9 +287,11 @@ export class ArenaService {
     const seriesId = randomUUID();
     const interfaceTrack = input.interfaceTrack ?? "native";
     const historyMode = input.historyMode ?? "query_only";
+    const selectedPrompt = await this.#systemPrompts.resolve(input.systemPromptVersionId);
+    if (selectedPrompt.version.status !== "ACTIVE") throw new Error("Archived system prompt versions cannot start new benchmark series");
     const schedule = createDealSchedule();
     const rulesetVersion = CURRENT_RULESET_VERSION;
-    const protocolBundleId = CURRENT_DECISION_PROTOCOL_BUNDLE_ID;
+    const protocolBundleId = selectedPrompt.version.protocolBundleId;
     const frozenConfigs = await Promise.all(revisions.map(async (model) => trackModelConfig({
       ...await this.models.runtimeConfigForRevision(model.revisionId),
       timeoutMs: input.decisionTimeoutMs,
@@ -288,6 +299,7 @@ export class ArenaService {
     const track = benchmarkTrackIdentity({
       protocolBundleId,
       rulesetVersion,
+      systemPromptHash: selectedPrompt.prompt.sha256,
       historyMode,
       interfaceTrack,
       providerOutputModes: providerOutputModes(frozenConfigs),
@@ -309,6 +321,7 @@ export class ArenaService {
       blindLevels: input.blindLevels.map((level) => ({ ...level })),
       interfaceTrack,
       historyMode,
+      systemPromptVersionId: selectedPrompt.version.id,
     };
     await this.pool.query(
       `insert into benchmark_series
@@ -316,9 +329,9 @@ export class ArenaService {
          benchmark_cohort_id, benchmark_track, competitor_revision_ids, competitor_labels,
          tournament_configuration, deal_schedule_id, deal_schedule_version,
          deal_schedule_commitment, encrypted_deal_schedule, rotation_policy_version,
-         rotation_count)
+         rotation_count, system_prompt_version_id)
        values ($1, $2, 'READY', $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb,
-               $10::jsonb, $11, $12, $13, $14::jsonb, $15, $16)`,
+               $10::jsonb, $11, $12, $13, $14::jsonb, $15, $16, $17)`,
       [
         seriesId,
         input.name,
@@ -336,6 +349,7 @@ export class ArenaService {
         JSON.stringify(encryptJson(schedule, this.masterKey, `arena:benchmark-series:${seriesId}:deal-schedule`)),
         SEAT_ROTATION_POLICY_VERSION,
         rotationCount,
+        selectedPrompt.version.id,
       ],
     );
     try {
@@ -364,6 +378,7 @@ export class ArenaService {
       rotation_count: number;
       next_rotation: number;
       revealed_deal_schedule_seed: string | null;
+      system_prompt_version_id: string | null;
       tournaments: { id: string; rotation: number; status: string; createdAt: string }[];
       created_at: Date;
       updated_at: Date;
@@ -372,7 +387,7 @@ export class ArenaService {
               benchmark_track_id, benchmark_cohort_id, competitor_labels,
               deal_schedule_id,
               deal_schedule_version, deal_schedule_commitment, rotation_policy_version,
-              rotation_count, next_rotation,
+              rotation_count, next_rotation, system_prompt_version_id,
               revealed_deal_schedule_seed, created_at, updated_at,
               (select coalesce(jsonb_agg(jsonb_build_object(
                  'id', t.id,
@@ -399,6 +414,7 @@ export class ArenaService {
       rotationCount: row.rotation_count,
       nextRotation: row.next_rotation,
       revealedDealScheduleSeed: row.revealed_deal_schedule_seed,
+      systemPromptVersionId: row.system_prompt_version_id,
       tournaments: row.tournaments,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
@@ -467,6 +483,7 @@ export class ArenaService {
       protocol_bundle_id: string;
       benchmark_track_id: string;
       benchmark_cohort_id: string;
+      system_prompt_version_id: string | null;
       benchmark_series_id: string | null;
       benchmark_rotation: number | null;
       created_at: Date;
@@ -474,6 +491,7 @@ export class ArenaService {
     }>(
       `select id, name, status, ruleset_version, prompt_hash, champion_player_id,
               protocol_bundle_id, benchmark_track_id, benchmark_cohort_id,
+              system_prompt_version_id,
               benchmark_series_id, benchmark_rotation,
               public_state, created_at, updated_at
          from tournaments order by created_at desc`,
@@ -487,6 +505,7 @@ export class ArenaService {
       protocolBundleId: row.protocol_bundle_id,
       benchmarkTrackId: row.benchmark_track_id,
       benchmarkCohortId: row.benchmark_cohort_id,
+      systemPromptVersionId: row.system_prompt_version_id,
       benchmarkSeriesId: row.benchmark_series_id,
       benchmarkRotation: row.benchmark_rotation,
       championPlayerId: row.champion_player_id,
@@ -767,6 +786,13 @@ export class ArenaService {
         throw new Error("Benchmark competitor revision is unavailable");
       }
       const seated = rotateSeats(models, rotation, series.rotation_policy_version);
+      const selectedPrompt = await this.#systemPrompts.resolve(
+        series.system_prompt_version_id ?? series.tournament_configuration.systemPromptVersionId,
+      );
+      if (typeof series.benchmark_track.systemPromptHash === "string"
+        && selectedPrompt.prompt.sha256 !== series.benchmark_track.systemPromptHash) {
+        throw new Error("Benchmark series system prompt no longer matches its frozen track");
+      }
       const frozen = Object.fromEntries(await Promise.all(seated.map(async (model) => [
         model.revisionId,
         trackModelConfig({
@@ -785,6 +811,8 @@ export class ArenaService {
           rulesetVersion: series.ruleset_version,
           protocolBundleId: series.protocol_bundle_id,
           benchmarkTrack: series.benchmark_track,
+          effectiveSystemPrompt: selectedPrompt.prompt,
+          systemPromptVersionId: selectedPrompt.version.id,
           tournament: {
             seatCount: seated.length,
             players: seated.map((model, seat) => ({ id: model.revisionId, seat })),

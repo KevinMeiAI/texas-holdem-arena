@@ -6,6 +6,7 @@ describe("benchmark track identity", () => {
     const base = {
       protocolBundleId: "arena-native-v10",
       rulesetVersion: "arena-rules-v2",
+      systemPromptHash: "a".repeat(64),
       historyMode: "query_only" as const,
       interfaceTrack: "native" as const,
       providerOutputModes: ["json_schema"],
@@ -27,6 +28,10 @@ describe("benchmark track identity", () => {
     expect(benchmarkTrackIdentity(base).cohortId).not.toBe(benchmarkTrackIdentity({
       ...base,
       historyMode: "disabled",
+    }).cohortId);
+    expect(benchmarkTrackIdentity(base).cohortId).not.toBe(benchmarkTrackIdentity({
+      ...base,
+      systemPromptHash: "b".repeat(64),
     }).cohortId);
   });
 });

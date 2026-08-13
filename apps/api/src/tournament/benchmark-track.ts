@@ -4,6 +4,7 @@ import { canonicalJson } from "../../../../packages/fairness/src/canonical-json.
 export interface BenchmarkTrackInput {
   protocolBundleId: string;
   rulesetVersion: string;
+  systemPromptHash: string;
   historyMode: "query_only" | "disabled" | "baseline_stats_plus_query";
   interfaceTrack: "native" | "normalized";
   providerOutputModes: string[];
