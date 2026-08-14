@@ -7,6 +7,8 @@ import { Pool } from "pg";
 import { runMigrations } from "../../../db/migrate.js";
 import { ModelConfigService } from "./admin/model-service.js";
 import { registerAdminModelRoutes } from "./admin/routes.js";
+import { registerConsistencyRoutes } from "./admin/consistency-routes.js";
+import { ConsistencyTestService } from "./admin/consistency-service.js";
 import { registerSystemPromptRoutes } from "./admin/system-prompt-routes.js";
 import { SystemPromptVersionService } from "./admin/system-prompt-service.js";
 import { AuthService } from "./auth/auth-service.js";
@@ -46,6 +48,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
   const pool = config.databaseUrl ? new Pool({ connectionString: config.databaseUrl, max: 8 }) : null;
   const masterKey = config.masterKeyBase64 ? decodeMasterKey(config.masterKeyBase64) : null;
   let arena: ArenaService | null = null;
+  let consistency: ConsistencyTestService | null = null;
   if (pool) {
     await runMigrations(pool);
     const auth = new AuthService(pool);
@@ -55,6 +58,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
       const models = new ModelConfigService(pool, masterKey);
       const systemPrompts = new SystemPromptVersionService(pool, masterKey);
       await systemPrompts.syncCatalog();
+      consistency = new ConsistencyTestService(pool, models, masterKey);
       arena = new ArenaService(pool, masterKey, models);
       await registerAuthRoutes(app, authContext);
       await registerAdminModelRoutes(app, {
@@ -62,8 +66,10 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
         pool,
         models,
       });
+      await registerConsistencyRoutes(app, { ...authContext, pool, consistency });
       await registerSystemPromptRoutes(app, { ...authContext, pool, systemPrompts });
       await registerTournamentRoutes(app, { ...authContext, pool, arena });
+      await consistency.restorePending();
       await arena.restoreActive();
     }
   }
@@ -123,6 +129,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
   }
 
   app.addHook("onClose", async () => {
+    consistency?.shutdown();
     await arena?.shutdown();
     await pool?.end();
   });
