@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Link, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { apiRequest, useApiResource } from "./api";
+import { ConsistencyTestModal } from "./consistency-admin";
 import {
   EmptyState,
   ErrorBlock,
@@ -162,6 +163,7 @@ function ModelsAdmin({ csrfToken }: { csrfToken: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preflighting, setPreflighting] = useState<string | null>(null);
+  const [consistencyModel, setConsistencyModel] = useState<ModelConfig | null>(null);
   const refresh = async () => { await Promise.all([providers.refresh(), models.refresh()]); };
 
   if (providers.loading || models.loading) return <LoadingBlock label={text("正在读取模型配置", "Loading model configuration")} />;
@@ -228,6 +230,7 @@ function ModelsAdmin({ csrfToken }: { csrfToken: string }) {
                     } catch (reason) { setError(reason instanceof Error ? reason.message : text("完整协议验收失败", "Full protocol validation failed")); }
                     finally { setPreflighting(null); }
                   }}>{text("完整验收", "Full validation")}</button>
+                  <button onClick={() => setConsistencyModel(model)}>{text("一致性检测", "Consistency")}</button>
                   <button onClick={() => setModelDialog({ editing: model, draft: { displayName: model.displayName, providerConnectionId: model.providerConnectionId, modelId: model.modelId, outputMode: model.outputMode, parameters: JSON.stringify(model.parameters, null, 2) } })}>{text("编辑", "Edit")}</button>
                   <button onClick={() => setConfirmDelete({ kind: "model", id: model.id, label: model.displayName })}>{text("删除", "Delete")}</button>
                 </div>
@@ -238,6 +241,7 @@ function ModelsAdmin({ csrfToken }: { csrfToken: string }) {
       </section>
       {providerDialog && <ProviderModal value={providerDialog} onClose={() => setProviderDialog(null)} onSave={async (draft, editing) => { const payload: Record<string, unknown> = { label: draft.label, providerType: draft.providerType, providerProfile: draft.providerProfile, defaultOutputMode: draft.defaultOutputMode, baseUrl: draft.baseUrl || null }; if (draft.apiKey || !editing) payload.apiKey = draft.apiKey || null; await apiRequest(editing ? `/api/admin/providers/${editing.id}` : "/api/admin/providers", { method: editing ? "PATCH" : "POST", csrfToken, body: JSON.stringify(payload) }); setProviderDialog(null); setNotice(editing ? text("Provider 已更新", "Provider updated") : text("Provider 已创建", "Provider created")); await refresh(); }} />}
       {modelDialog && <ModelModal value={modelDialog} providers={providers.data?.providers ?? []} onClose={() => setModelDialog(null)} onSave={async (draft, editing) => { const payload = { displayName: draft.displayName, providerConnectionId: draft.providerConnectionId, modelId: draft.modelId, outputMode: draft.outputMode, parameters: JSON.parse(draft.parameters) as unknown }; await apiRequest(editing ? `/api/admin/models/${editing.id}` : "/api/admin/models", { method: editing ? "PATCH" : "POST", csrfToken, body: JSON.stringify(payload) }); setModelDialog(null); setNotice(editing ? text("模型配置已更新", "Model updated") : text("模型配置已创建", "Model created")); await refresh(); }} />}
+      {consistencyModel && <ConsistencyTestModal model={consistencyModel} csrfToken={csrfToken} onClose={() => setConsistencyModel(null)} />}
       {confirmDelete && <Modal title={`${text("删除", "Delete")} ${confirmDelete.label}?`} onClose={() => setConfirmDelete(null)}><div className="confirm-body"><p>{confirmDelete.kind === "provider" ? text("正在使用的 Provider 无法删除。", "Providers in use cannot be deleted.") : text("历史赛事不会被删除。", "Historical tournaments will remain.")}</p><div className="modal-actions"><button className="button secondary" type="button" onClick={() => setConfirmDelete(null)}>{text("取消", "Cancel")}</button><button className="button danger" type="button" onClick={async () => { try { await apiRequest(`/api/admin/${confirmDelete.kind === "provider" ? "providers" : "models"}/${confirmDelete.id}`, { method: "DELETE", csrfToken }); setNotice(`${confirmDelete.label} ${text("已删除", "deleted")}`); setConfirmDelete(null); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : text("删除失败", "Delete failed")); setConfirmDelete(null); } }}>{text("确认删除", "Delete")}</button></div></div></Modal>}
     </>
   );

@@ -346,8 +346,8 @@ export function EmptyState({ title, body, action }: { title: string; body: strin
   return <div className="empty-state"><span className="empty-suit">♠</span><h2>{title}</h2><p>{body}</p>{action}</div>;
 }
 
-export function Modal({ title, onClose, children }: {
-  title: string; onClose: () => void; children: ReactNode;
+export function Modal({ title, onClose, children, className = "" }: {
+  title: string; onClose: () => void; children: ReactNode; className?: string;
 }) {
   const { text } = useUiPreferences();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -358,7 +358,7 @@ export function Modal({ title, onClose, children }: {
     return () => { if (dialog.open) dialog.close(); };
   }, []);
   return (
-    <dialog ref={dialogRef} className="modal" aria-labelledby="modal-title" onCancel={(event) => { event.preventDefault(); onClose(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <dialog ref={dialogRef} className={`modal${className ? ` ${className}` : ""}`} aria-labelledby="modal-title" onCancel={(event) => { event.preventDefault(); onClose(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <header><h2 id="modal-title">{title}</h2><button className="icon-button" type="button" onClick={onClose} aria-label={text("关闭弹窗", "Close dialog")}>×</button></header>
       {children}
     </dialog>

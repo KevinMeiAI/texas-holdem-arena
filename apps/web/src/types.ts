@@ -243,6 +243,134 @@ export interface ModelConfig {
   updatedAt: string;
 }
 
+export type ConsistencyTier = "single" | "quick" | "standard" | "full";
+export type ConsistencyRunStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "CANCELLED" | "FAILED";
+export type ConsistencySampleOutcome = "VALID_ACTION" | "INVALID_DECISION" | "PROTOCOL_ERROR" | "INFRA_ERROR";
+
+export interface ConsistencyScenario {
+  id: string;
+  version: number;
+  registryVersion: string;
+  title: { zh: string; en: string };
+  summary: { zh: string; en: string };
+  role: "ANCHOR" | "MIXED" | "PRESSURE";
+  tags: {
+    street: "PREFLOP" | "FLOP" | "TURN" | "RIVER";
+    tableSize: number;
+    contenders: number;
+    potType: "UNOPENED" | "OPEN_RAISED" | "HEADS_UP" | "MULTIWAY" | "SIDE_POT";
+    position: "EARLY" | "IN_POSITION" | "OUT_OF_POSITION" | "SANDWICH";
+    stackDepth: "SHORT" | "MEDIUM" | "DEEP";
+    handClass: string;
+    boardTexture: string;
+    pressure: string;
+  };
+  preview: {
+    heroPosition: string;
+    heroStack: number;
+    heroStackBb: number;
+    holeCards: string[];
+    board: string[];
+    potBeforeAction: number;
+    legalActions: string[];
+    actionHistory: Record<string, unknown>[];
+  };
+  arenaState: Record<string, unknown>;
+}
+
+export interface ConsistencyScenarioRegistry {
+  version: string;
+  scenarios: ConsistencyScenario[];
+  presets: Record<"quick" | "standard" | "full", string[]>;
+}
+
+export interface ConsistencySample {
+  id: string;
+  scenarioId: string;
+  sampleIndex: number;
+  outcome: ConsistencySampleOutcome;
+  action: string | null;
+  amountTo: number | null;
+  decisionSummary: string | null;
+  parsedOutput: Record<string, unknown> | null;
+  rawText: string | null;
+  errorKind: string | null;
+  errorMessage: string | null;
+  latencyMs: number;
+  usage: { inputTokens?: number | null; outputTokens?: number | null; totalTokens?: number | null } | null;
+  transportAudit: Record<string, unknown> | null;
+  visibleInputHash: string;
+  createdAt: string;
+}
+
+export interface ScenarioConsistencySummary {
+  scenarioId: string;
+  completedSamples: number;
+  validActions: number;
+  validityRate: number | null;
+  dominantAction: string | null;
+  dominantCount: number;
+  dominantShare: number | null;
+  pairwiseAgreement: number | null;
+  actionDistribution: Record<string, number>;
+  sizing: Record<string, { count: number; median: number; min: number; max: number; values: number[] }>;
+  outcomes: Record<ConsistencySampleOutcome, number>;
+  averageLatencyMs: number | null;
+  p95LatencyMs: number | null;
+  uniqueInputHashes: string[];
+}
+
+export interface ConsistencySummary {
+  completedSamples: number;
+  validActions: number;
+  validityRate: number | null;
+  meanDominantShare: number | null;
+  meanPairwiseAgreement: number | null;
+  outcomes: Record<ConsistencySampleOutcome, number>;
+  averageLatencyMs: number | null;
+  p95LatencyMs: number | null;
+  totalTokens: number | null;
+  scenarios: ScenarioConsistencySummary[];
+  dimensions: Record<string, Record<string, {
+    scenarios: number;
+    meanDominantShare: number | null;
+    meanPairwiseAgreement: number | null;
+    validityRate: number | null;
+  }>>;
+}
+
+export interface ConsistencyRun {
+  id: string;
+  modelConfigId: string;
+  competitorRevisionId: string;
+  modelDisplayName: string;
+  modelId: string;
+  systemPromptVersionId: string;
+  promptName: string;
+  status: ConsistencyRunStatus;
+  tier: ConsistencyTier;
+  scenarioRegistryVersion: string;
+  scenarioIds: string[];
+  sampleCount: number;
+  totalSamples: number;
+  completedSamples: number;
+  protocolBundleId: string;
+  modelConfigurationHash: string;
+  systemPromptHash: string;
+  outputSchemaHash: string;
+  effectiveOutputMode: string;
+  timeoutMs: number;
+  executionMode: "serial";
+  summary: ConsistencySummary | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  scenarios?: ConsistencyScenario[];
+  samples?: ConsistencySample[];
+}
+
 export interface AdminSession {
   adminUserId: string;
   email: string;
