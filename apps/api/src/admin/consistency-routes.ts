@@ -9,6 +9,7 @@ import {
 } from "./consistency-service.js";
 
 const runIdSchema = z.string().uuid();
+const batchIdSchema = z.string().uuid();
 const createRunSchema = z.discriminatedUnion("tier", [
   z.object({
     tier: z.literal("single"),
@@ -25,17 +26,36 @@ const createRunSchema = z.discriminatedUnion("tier", [
   }).strict(),
 ]);
 
+const createBatchSchema = z.discriminatedUnion("tier", [
+  z.object({
+    tier: z.literal("single"),
+    modelConfigIds: z.array(z.string().uuid()).min(2).max(9),
+    scenarioId: z.string().min(1).max(120),
+    sampleCount: z.number().int().min(1).max(30).default(10),
+    systemPromptVersionId: z.string().uuid().optional(),
+    timeoutMs: z.number().int().min(30_000).max(600_000).optional(),
+  }).strict(),
+  z.object({
+    tier: z.enum(["quick", "standard", "full"]),
+    modelConfigIds: z.array(z.string().uuid()).min(2).max(9),
+    sampleCount: z.number().int().min(1).max(30).default(10),
+    systemPromptVersionId: z.string().uuid().optional(),
+    timeoutMs: z.number().int().min(30_000).max(600_000).optional(),
+  }).strict(),
+]);
+
 async function audit(
   pool: Pool,
   adminUserId: string,
   action: string,
   targetId: string,
   metadata: unknown = {},
+  targetType = "consistency_run",
 ): Promise<void> {
   await pool.query(
     `insert into audit_events (id, admin_user_id, action, target_type, target_id, metadata)
-     values ($1, $2, $3, 'consistency_run', $4, $5::jsonb)`,
-    [randomUUID(), adminUserId, action, targetId, JSON.stringify(metadata)],
+     values ($1, $2, $3, $4, $5, $6::jsonb)`,
+    [randomUUID(), adminUserId, action, targetType, targetId, JSON.stringify(metadata)],
   );
 }
 
@@ -56,6 +76,19 @@ export async function registerConsistencyRoutes(
       return reply.code(400).send({ error: "invalid_model_config_id" });
     }
     return { runs: await context.consistency.listRuns(modelConfigId?.data) };
+  });
+
+  app.get("/api/admin/consistency-batches", async (request, reply) => {
+    if (!(await requireAdmin(request, reply, context))) return;
+    return { batches: await context.consistency.listBatches() };
+  });
+
+  app.get<{ Params: { id: string } }>("/api/admin/consistency-batches/:id", async (request, reply) => {
+    if (!(await requireAdmin(request, reply, context))) return;
+    const id = batchIdSchema.safeParse(request.params.id);
+    if (!id.success) return reply.code(400).send({ error: "invalid_consistency_batch_id" });
+    const batch = await context.consistency.getBatch(id.data);
+    return batch ? { batch } : reply.code(404).send({ error: "consistency_batch_not_found" });
   });
 
   app.get<{ Params: { id: string } }>("/api/admin/consistency-runs/:id", async (request, reply) => {
@@ -97,6 +130,32 @@ export async function registerConsistencyRoutes(
     }
   });
 
+  app.post("/api/admin/consistency-batches", async (request, reply) => {
+    const admin = await requireAdmin(request, reply, context, true);
+    if (!admin) return;
+    const parsed = createBatchSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_consistency_batch", issues: parsed.error.issues });
+    }
+    try {
+      const batch = await context.consistency.createBatch({
+        ...parsed.data,
+        adminUserId: admin.adminUserId,
+      });
+      await audit(context.pool, admin.adminUserId, "consistency_batch.create", batch.id, {
+        modelConfigIds: batch.modelConfigIds,
+        tier: batch.tier,
+        sampleCount: batch.sampleCount,
+        totalSamples: batch.totalSamples,
+      }, "consistency_batch");
+      return reply.code(202).send({ batch });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to start consistency batch";
+      const conflict = /one_open_consistency_run_per_model|duplicate key/i.test(message);
+      return reply.code(conflict ? 409 : 400).send({ error: "consistency_batch_create_failed", message });
+    }
+  });
+
   app.post<{ Params: { id: string } }>("/api/admin/consistency-runs/:id/cancel", async (request, reply) => {
     const admin = await requireAdmin(request, reply, context, true);
     if (!admin) return;
@@ -106,5 +165,18 @@ export async function registerConsistencyRoutes(
     if (!run) return reply.code(404).send({ error: "consistency_run_not_found" });
     await audit(context.pool, admin.adminUserId, "consistency_run.cancel", run.id, { status: run.status });
     return { run };
+  });
+
+  app.post<{ Params: { id: string } }>("/api/admin/consistency-batches/:id/cancel", async (request, reply) => {
+    const admin = await requireAdmin(request, reply, context, true);
+    if (!admin) return;
+    const id = batchIdSchema.safeParse(request.params.id);
+    if (!id.success) return reply.code(400).send({ error: "invalid_consistency_batch_id" });
+    const batch = await context.consistency.cancelBatch(id.data);
+    if (!batch) return reply.code(404).send({ error: "consistency_batch_not_found" });
+    await audit(context.pool, admin.adminUserId, "consistency_batch.cancel", batch.id, {
+      status: batch.status,
+    }, "consistency_batch");
+    return { batch };
   });
 }

@@ -34,10 +34,12 @@ import { SystemPromptVersionService } from "./system-prompt-service.js";
 
 export type ConsistencyRunTier = ConsistencyTier | "single";
 export type ConsistencyRunStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "CANCELLED" | "FAILED";
+export type ConsistencyBatchStatus = ConsistencyRunStatus | "PARTIAL";
 export type ConsistencySampleOutcome = "VALID_ACTION" | "INVALID_DECISION" | "PROTOCOL_ERROR" | "INFRA_ERROR";
 
 interface ConsistencyRunRow {
   id: string;
+  batch_id: string | null;
   model_config_id: string;
   competitor_revision_id: string;
   system_prompt_version_id: string;
@@ -64,6 +66,24 @@ interface ConsistencyRunRow {
   updated_at: Date;
   model_display_name: string;
   model_id: string;
+  prompt_name: string;
+}
+
+interface ConsistencyBatchRow {
+  id: string;
+  system_prompt_version_id: string;
+  tier: ConsistencyRunTier;
+  scenario_registry_version: string;
+  scenario_ids: string[];
+  scenario_snapshots: ConsistencyScenario[];
+  model_config_ids: string[];
+  sample_count: number;
+  timeout_ms: number;
+  max_parallel_models: number;
+  protocol_bundle_id: string;
+  system_prompt_hash: string;
+  output_schema_hash: string;
+  created_at: Date;
   prompt_name: string;
 }
 
@@ -144,6 +164,7 @@ export interface ConsistencySummary {
 
 export interface PublicConsistencyRun {
   id: string;
+  batchId: string | null;
   modelConfigId: string;
   competitorRevisionId: string;
   modelDisplayName: string;
@@ -174,8 +195,41 @@ export interface PublicConsistencyRun {
   samples?: PublicConsistencySample[];
 }
 
+export interface PublicConsistencyBatch {
+  id: string;
+  systemPromptVersionId: string;
+  promptName: string;
+  status: ConsistencyBatchStatus;
+  tier: ConsistencyRunTier;
+  scenarioRegistryVersion: string;
+  scenarioIds: string[];
+  modelConfigIds: string[];
+  sampleCount: number;
+  timeoutMs: number;
+  maxParallelModels: number;
+  protocolBundleId: string;
+  systemPromptHash: string;
+  outputSchemaHash: string;
+  totalModels: number;
+  totalSamples: number;
+  completedSamples: number;
+  createdAt: string;
+  runs: PublicConsistencyRun[];
+  scenarios?: ConsistencyScenario[];
+}
+
 export interface CreateConsistencyRunInput {
   modelConfigId: string;
+  tier: ConsistencyRunTier;
+  scenarioId?: string | undefined;
+  sampleCount: number;
+  systemPromptVersionId?: string | undefined;
+  timeoutMs?: number | undefined;
+  adminUserId: string;
+}
+
+export interface CreateConsistencyBatchInput {
+  modelConfigIds: string[];
   tier: ConsistencyRunTier;
   scenarioId?: string | undefined;
   sampleCount: number;
@@ -205,6 +259,23 @@ const RUN_SELECT = `select r.*, m.display_name as model_display_name,
   join model_configs m on m.id = r.model_config_id
   join competitor_revisions cr on cr.id = r.competitor_revision_id
   join system_prompt_versions p on p.id = r.system_prompt_version_id`;
+
+const BATCH_SELECT = `select b.*, p.name as prompt_name
+  from consistency_batches b
+  join system_prompt_versions p on p.id = b.system_prompt_version_id`;
+
+export function deriveConsistencyBatchStatus(statuses: readonly ConsistencyRunStatus[]): ConsistencyBatchStatus {
+  if (statuses.length === 0) return "FAILED";
+  if (statuses.every((status) => status === "COMPLETED")) return "COMPLETED";
+  if (statuses.every((status) => status === "CANCELLED")) return "CANCELLED";
+  if (statuses.some((status) => status === "RUNNING")) return "RUNNING";
+  if (statuses.some((status) => status === "QUEUED")) {
+    return statuses.every((status) => status === "QUEUED") ? "QUEUED" : "RUNNING";
+  }
+  if (statuses.some((status) => status === "COMPLETED")) return "PARTIAL";
+  if (statuses.some((status) => status === "FAILED")) return "FAILED";
+  return "CANCELLED";
+}
 
 function average(values: readonly number[]): number | null {
   return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
@@ -346,12 +417,13 @@ function publicSample(row: ConsistencySampleRow): PublicConsistencySample {
 }
 
 function publicRun(row: ConsistencyRunRow, detail?: {
-  scenarios: ConsistencyScenario[];
-  samples: PublicConsistencySample[];
+  scenarios?: ConsistencyScenario[];
+  samples?: PublicConsistencySample[];
   summary: ConsistencySummary;
 }): PublicConsistencyRun {
   return {
     id: row.id,
+    batchId: row.batch_id,
     modelConfigId: row.model_config_id,
     competitorRevisionId: row.competitor_revision_id,
     modelDisplayName: row.model_display_name,
@@ -378,7 +450,37 @@ function publicRun(row: ConsistencyRunRow, detail?: {
     completedAt: row.completed_at?.toISOString() ?? null,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
-    ...(detail ? { scenarios: detail.scenarios, samples: detail.samples } : {}),
+    ...(detail?.scenarios ? { scenarios: detail.scenarios } : {}),
+    ...(detail?.samples ? { samples: detail.samples } : {}),
+  };
+}
+
+function publicBatch(
+  row: ConsistencyBatchRow,
+  runs: PublicConsistencyRun[],
+  includeScenarios: boolean,
+): PublicConsistencyBatch {
+  return {
+    id: row.id,
+    systemPromptVersionId: row.system_prompt_version_id,
+    promptName: row.prompt_name,
+    status: deriveConsistencyBatchStatus(runs.map((run) => run.status)),
+    tier: row.tier,
+    scenarioRegistryVersion: row.scenario_registry_version,
+    scenarioIds: row.scenario_ids,
+    modelConfigIds: row.model_config_ids,
+    sampleCount: row.sample_count,
+    timeoutMs: row.timeout_ms,
+    maxParallelModels: row.max_parallel_models,
+    protocolBundleId: row.protocol_bundle_id,
+    systemPromptHash: row.system_prompt_hash,
+    outputSchemaHash: row.output_schema_hash,
+    totalModels: runs.length,
+    totalSamples: runs.reduce((total, run) => total + run.totalSamples, 0),
+    completedSamples: runs.reduce((total, run) => total + run.completedSamples, 0),
+    createdAt: row.created_at.toISOString(),
+    runs,
+    ...(includeScenarios ? { scenarios: row.scenario_snapshots } : {}),
   };
 }
 
@@ -465,7 +567,8 @@ export class ConsistencyTestService {
   readonly #systemPrompts: SystemPromptVersionService;
   readonly #queue: string[] = [];
   readonly #queued = new Set<string>();
-  #worker: Promise<void> | null = null;
+  readonly #activeWorkers = new Set<Promise<void>>();
+  readonly #maxParallelRuns = 3;
   #stopping = false;
 
   constructor(
@@ -551,12 +654,164 @@ export class ConsistencyTestService {
     return (await this.getRun(id, false))!;
   }
 
+  async createBatch(input: CreateConsistencyBatchInput): Promise<PublicConsistencyBatch> {
+    const modelConfigIds = [...new Set(input.modelConfigIds)];
+    if (modelConfigIds.length !== input.modelConfigIds.length || modelConfigIds.length < 2 || modelConfigIds.length > 9) {
+      throw new Error("modelConfigIds must contain 2 to 9 unique models");
+    }
+    if (!Number.isSafeInteger(input.sampleCount) || input.sampleCount < 1 || input.sampleCount > 30) {
+      throw new Error("sampleCount must be between 1 and 30");
+    }
+    const timeoutMs = input.timeoutMs ?? ARENA_DECISION_TIMEOUT_MS;
+    if (!Number.isSafeInteger(timeoutMs)
+      || timeoutMs < ARENA_DECISION_TIMEOUT_MIN_MS
+      || timeoutMs > ARENA_DECISION_TIMEOUT_MAX_MS) {
+      throw new Error(`timeoutMs must be between ${ARENA_DECISION_TIMEOUT_MIN_MS} and ${ARENA_DECISION_TIMEOUT_MAX_MS}`);
+    }
+    const selectedPrompt = await this.#systemPrompts.resolve(input.systemPromptVersionId);
+    if (selectedPrompt.version.status !== "ACTIVE") throw new Error("Archived system prompt versions cannot start consistency tests");
+    if (selectedPrompt.version.protocolBundleId !== "arena-native-v11") {
+      throw new Error("Consistency scenario registry v1 requires an Arena v11 system prompt");
+    }
+    const scenarios = input.tier === "single"
+      ? [consistencyScenario(input.scenarioId ?? "")].filter((scenario): scenario is ConsistencyScenario => scenario !== null)
+      : CONSISTENCY_PRESETS[input.tier].map((id) => consistencyScenario(id)!);
+    if (input.tier === "single" && scenarios.length !== 1) throw new Error("A valid scenarioId is required for a single-scenario test");
+    const bundle = decisionProtocolBundle(selectedPrompt.version.protocolBundleId);
+    const schema = arenaOutputSchema("ACTION_OR_HISTORY", bundle.outputSchemaVersion);
+    const preparedModels = [];
+    for (const modelConfigId of modelConfigIds) {
+      const model = await this.models.currentRevision(modelConfigId);
+      if (!model) throw new Error(`Model configuration ${modelConfigId} not found or disabled`);
+      const runtimeConfig = {
+        ...await this.models.runtimeConfigForRevision(model.revisionId),
+        timeoutMs,
+      };
+      const outputPolicy = inspectOutputPolicy(runtimeConfig);
+      if (!outputPolicy.supported) {
+        throw new Error(`${model.displayName}: ${outputPolicy.message ?? "Unsupported model output mode"}`);
+      }
+      preparedModels.push({ modelConfigId, model, effectiveOutputMode: outputPolicy.effectiveMode });
+    }
+
+    const batchId = randomUUID();
+    const runIds: string[] = [];
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        `insert into consistency_batches
+          (id, system_prompt_version_id, created_by_admin_user_id, tier,
+           scenario_registry_version, scenario_ids, scenario_snapshots,
+           model_config_ids, sample_count, timeout_ms, max_parallel_models,
+           protocol_bundle_id, system_prompt_hash, output_schema_hash)
+         values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb,
+                 $9, $10, $11, $12, $13, $14)`,
+        [
+          batchId,
+          selectedPrompt.version.id,
+          input.adminUserId,
+          input.tier,
+          CONSISTENCY_SCENARIO_REGISTRY_VERSION,
+          JSON.stringify(scenarios.map((scenario) => scenario.id)),
+          JSON.stringify(scenarios),
+          JSON.stringify(modelConfigIds),
+          input.sampleCount,
+          timeoutMs,
+          this.#maxParallelRuns,
+          bundle.id,
+          selectedPrompt.prompt.sha256,
+          schema.sha256,
+        ],
+      );
+      for (const prepared of preparedModels) {
+        const runId = randomUUID();
+        runIds.push(runId);
+        await client.query(
+          `insert into consistency_runs
+            (id, batch_id, model_config_id, competitor_revision_id,
+             system_prompt_version_id, created_by_admin_user_id, status, tier,
+             scenario_registry_version, scenario_ids, scenario_snapshots,
+             sample_count, total_samples, protocol_bundle_id,
+             model_configuration_hash, system_prompt_hash, output_schema_hash,
+             effective_output_mode, timeout_ms)
+           values ($1, $2, $3, $4, $5, $6, 'QUEUED', $7, $8, $9::jsonb,
+                   $10::jsonb, $11, $12, $13, $14, $15, $16, $17, $18)`,
+          [
+            runId,
+            batchId,
+            prepared.modelConfigId,
+            prepared.model.revisionId,
+            selectedPrompt.version.id,
+            input.adminUserId,
+            input.tier,
+            CONSISTENCY_SCENARIO_REGISTRY_VERSION,
+            JSON.stringify(scenarios.map((scenario) => scenario.id)),
+            JSON.stringify(scenarios),
+            input.sampleCount,
+            scenarios.length * input.sampleCount,
+            bundle.id,
+            prepared.model.configurationHash,
+            selectedPrompt.prompt.sha256,
+            schema.sha256,
+            prepared.effectiveOutputMode,
+            timeoutMs,
+          ],
+        );
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+    runIds.forEach((id) => this.#enqueue(id));
+    return (await this.getBatch(batchId, true))!;
+  }
+
   async listRuns(modelConfigId?: string): Promise<PublicConsistencyRun[]> {
     const result = await this.pool.query<ConsistencyRunRow>(
       `${RUN_SELECT}${modelConfigId ? " where r.model_config_id = $1" : ""} order by r.created_at desc limit 50`,
       modelConfigId ? [modelConfigId] : [],
     );
     return result.rows.map((row) => publicRun(row));
+  }
+
+  async listBatches(): Promise<PublicConsistencyBatch[]> {
+    const batches = await this.pool.query<ConsistencyBatchRow>(`${BATCH_SELECT} order by b.created_at desc limit 50`);
+    if (batches.rows.length === 0) return [];
+    const batchIds = batches.rows.map((row) => row.id);
+    const runs = await this.pool.query<ConsistencyRunRow>(
+      `${RUN_SELECT} where r.batch_id = any($1::uuid[]) order by r.created_at, r.id`,
+      [batchIds],
+    );
+    return batches.rows.map((batch) => publicBatch(
+      batch,
+      runs.rows.filter((run) => run.batch_id === batch.id).map((run) => publicRun(run)),
+      false,
+    ));
+  }
+
+  async getBatch(id: string, includeDetail = true): Promise<PublicConsistencyBatch | null> {
+    const batchResult = await this.pool.query<ConsistencyBatchRow>(`${BATCH_SELECT} where b.id = $1`, [id]);
+    const batch = batchResult.rows[0];
+    if (!batch) return null;
+    const runResult = await this.pool.query<ConsistencyRunRow>(
+      `${RUN_SELECT} where r.batch_id = $1 order by array_position($2::uuid[], r.model_config_id)`,
+      [id, batch.model_config_ids],
+    );
+    if (!includeDetail) return publicBatch(batch, runResult.rows.map((run) => publicRun(run)), false);
+    const liveRunIds = runResult.rows
+      .filter((run) => run.status !== "COMPLETED" || run.summary === null)
+      .map((run) => run.id);
+    const samplesByRun = await this.#samplesForRuns(liveRunIds);
+    const runs = runResult.rows.map((run) => publicRun(run, {
+      summary: run.status === "COMPLETED" && run.summary
+        ? run.summary
+        : summarizeConsistencySamples(batch.scenario_snapshots, samplesByRun.get(run.id) ?? []),
+    }));
+    return publicBatch(batch, runs, true);
   }
 
   async getRun(id: string, includeDetail = true): Promise<PublicConsistencyRun | null> {
@@ -583,27 +838,41 @@ export class ConsistencyTestService {
     return this.getRun(id, false);
   }
 
+  async cancelBatch(id: string): Promise<PublicConsistencyBatch | null> {
+    const existing = await this.getBatch(id, false);
+    if (!existing) return null;
+    const result = await this.pool.query<{ id: string }>(
+      `update consistency_runs
+          set status = 'CANCELLED', completed_at = now(), updated_at = now()
+        where batch_id = $1 and status in ('QUEUED', 'RUNNING') returning id`,
+      [id],
+    );
+    for (const row of result.rows) {
+      this.#queued.delete(row.id);
+      const queuedIndex = this.#queue.indexOf(row.id);
+      if (queuedIndex >= 0) this.#queue.splice(queuedIndex, 1);
+    }
+    return this.getBatch(id, false);
+  }
+
   #enqueue(id: string): void {
     if (this.#stopping || this.#queued.has(id)) return;
     this.#queued.add(id);
     this.#queue.push(id);
-    this.#ensureWorker();
+    this.#pump();
   }
 
-  #ensureWorker(): void {
-    if (this.#worker || this.#stopping || this.#queue.length === 0) return;
-    this.#worker = this.#drain().finally(() => {
-      this.#worker = null;
-      this.#ensureWorker();
-    });
-  }
-
-  async #drain(): Promise<void> {
-    while (!this.#stopping) {
+  #pump(): void {
+    while (!this.#stopping && this.#activeWorkers.size < this.#maxParallelRuns) {
       const id = this.#queue.shift();
-      if (!id) return;
+      if (!id) break;
       this.#queued.delete(id);
-      await this.#processRun(id);
+      let worker: Promise<void>;
+      worker = this.#processRun(id).finally(() => {
+        this.#activeWorkers.delete(worker);
+        this.#pump();
+      });
+      this.#activeWorkers.add(worker);
     }
   }
 
@@ -780,6 +1049,21 @@ export class ConsistencyTestService {
       [runId],
     );
     return result.rows.map(publicSample);
+  }
+
+  async #samplesForRuns(runIds: readonly string[]): Promise<Map<string, PublicConsistencySample[]>> {
+    const byRun = new Map<string, PublicConsistencySample[]>();
+    if (runIds.length === 0) return byRun;
+    const result = await this.pool.query<ConsistencySampleRow>(
+      "select * from consistency_samples where run_id = any($1::uuid[]) order by run_id, scenario_id, sample_index",
+      [runIds],
+    );
+    for (const row of result.rows) {
+      const samples = byRun.get(row.run_id) ?? [];
+      samples.push(publicSample(row));
+      byRun.set(row.run_id, samples);
+    }
+    return byRun;
   }
 }
 

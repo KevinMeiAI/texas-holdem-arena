@@ -5716,6 +5716,387 @@ textarea[aria-invalid="true"] {
   font-size: var(--text-xs);
 }
 
+.consistency-workbench-page {
+  width: min(100%, 90rem);
+}
+
+.consistency-batch-setup {
+  margin-top: var(--space-lg);
+  display: grid;
+  gap: var(--space-xl);
+}
+
+.consistency-batch-config,
+.consistency-model-select,
+.consistency-batch-registry,
+.consistency-recent-batches,
+.consistency-batch-overview,
+.consistency-scenario-matrix {
+  min-width: 0;
+  background: var(--color-paper-2);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.consistency-batch-config {
+  display: grid;
+}
+
+.consistency-config-block {
+  min-width: 0;
+  padding: var(--space-lg);
+  border-bottom: var(--rule-hair) solid var(--color-rule-2);
+}
+
+.consistency-config-block:last-child {
+  border-bottom: 0;
+}
+
+.consistency-config-block h2,
+.consistency-model-select h2,
+.consistency-batch-registry h2,
+.consistency-recent-batches h2,
+.consistency-batch-overview h2,
+.consistency-scenario-matrix h2 {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: var(--text-md);
+}
+
+.consistency-batch-runtime {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.consistency-batch-runtime .consistency-field {
+  margin-top: 0;
+}
+
+.consistency-model-select > header,
+.consistency-batch-registry > header,
+.consistency-recent-batches > header,
+.consistency-batch-overview > header,
+.consistency-scenario-matrix > header {
+  min-height: 4.5rem;
+  padding: var(--space-sm) var(--space-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  border-bottom: var(--rule-hair) solid var(--color-rule);
+}
+
+.consistency-model-select > header > b {
+  color: var(--color-accent-strong);
+  font-family: var(--font-mono);
+}
+
+.consistency-model-select .model-picker {
+  margin: 0;
+  padding: var(--space-lg);
+}
+
+.consistency-batch-registry.consistency-registry {
+  padding: 0;
+}
+
+.consistency-batch-registry.consistency-registry > header {
+  padding: var(--space-sm) var(--space-lg);
+}
+
+.consistency-batch-registry .consistency-scenario-list {
+  margin: 0;
+  padding-inline: var(--space-lg);
+}
+
+.consistency-batch-launch {
+  padding: var(--space-sm) var(--space-lg);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  background: color-mix(in oklch, var(--color-paper-2) 94%, transparent);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(1rem);
+}
+
+.consistency-batch-launch > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-xs);
+}
+
+.consistency-batch-launch span,
+.consistency-batch-launch small {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.consistency-batch-launch strong {
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+}
+
+.consistency-batch-launch .form-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.consistency-recent-batches {
+  margin-top: var(--space-2xl);
+}
+
+.consistency-batch-history {
+  display: grid;
+}
+
+.consistency-batch-history button {
+  min-height: 4.5rem;
+  padding: var(--space-xs) var(--space-lg);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-lg);
+  color: var(--color-ink-2);
+  background: transparent;
+  border-bottom: var(--rule-hair) solid var(--color-rule-2);
+  cursor: pointer;
+  text-align: start;
+}
+
+.consistency-batch-history button:last-child {
+  border-bottom: 0;
+}
+
+.consistency-batch-history button > span:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.consistency-batch-history button > span:nth-child(2) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.consistency-batch-history small {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.consistency-batch-history > button > i {
+  min-width: 6rem;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-style: normal;
+  text-align: end;
+}
+
+.consistency-run-dot.is-partial {
+  background: var(--color-warning, var(--color-accent));
+}
+
+.consistency-run-dot.is-cancelled {
+  background: var(--color-neutral);
+}
+
+.consistency-batch-result {
+  padding-top: var(--space-md);
+}
+
+.consistency-batch-result .consistency-result-header h1 {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: var(--text-xl);
+}
+
+.consistency-result-header > strong.is-partial i {
+  background: var(--color-warning, var(--color-accent));
+}
+
+.consistency-batch-run-strip {
+  margin-top: var(--space-lg);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.consistency-batch-run-strip button {
+  min-height: 3.75rem;
+  padding: var(--space-xs) var(--space-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  color: var(--color-ink-2);
+  background: var(--color-paper-2);
+  border-inline-end: var(--rule-hair) solid var(--color-rule-2);
+  border-bottom: var(--rule-hair) solid var(--color-rule-2);
+  cursor: pointer;
+  font-size: var(--text-xs);
+}
+
+.consistency-batch-run-strip button > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.consistency-batch-run-strip button > strong {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+}
+
+.consistency-batch-overview,
+.consistency-scenario-matrix {
+  margin-top: var(--space-xl);
+}
+
+.consistency-scenario-matrix > header span {
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+}
+
+.consistency-comparison-scroll,
+.consistency-matrix-scroll {
+  max-width: 100%;
+  overflow: auto;
+}
+
+.consistency-comparison-scroll table,
+.consistency-matrix-scroll table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.consistency-comparison-scroll th,
+.consistency-comparison-scroll td,
+.consistency-matrix-scroll th,
+.consistency-matrix-scroll td {
+  min-height: 3.5rem;
+  padding: var(--space-xs) var(--space-sm);
+  border-inline-end: var(--rule-hair) solid var(--color-rule-2);
+  border-bottom: var(--rule-hair) solid var(--color-rule-2);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.consistency-comparison-scroll thead th,
+.consistency-matrix-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  color: var(--color-muted);
+  background: var(--color-paper-3);
+  font-weight: 600;
+}
+
+.consistency-comparison-scroll thead button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.consistency-comparison-scroll thead button i {
+  color: var(--color-accent-strong);
+  font-style: normal;
+}
+
+.consistency-comparison-scroll tbody tr {
+  cursor: pointer;
+}
+
+.consistency-comparison-scroll tbody tr:hover td,
+.consistency-comparison-scroll tbody tr:hover th {
+  background: var(--color-paper-3);
+}
+
+.consistency-comparison-scroll tbody th,
+.consistency-matrix-scroll tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 12rem;
+  background: var(--color-paper-2);
+}
+
+.consistency-matrix-scroll thead th:first-child {
+  left: 0;
+  z-index: 3;
+}
+
+.consistency-comparison-scroll tbody th strong,
+.consistency-comparison-scroll tbody th small,
+.consistency-matrix-scroll tbody th strong,
+.consistency-matrix-scroll tbody th small {
+  display: block;
+  max-width: 15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.consistency-comparison-scroll tbody th small,
+.consistency-matrix-scroll tbody th small {
+  color: var(--color-muted);
+  font-weight: 400;
+}
+
+.consistency-matrix-scroll td {
+  min-width: 10rem;
+  padding: 0;
+}
+
+.consistency-matrix-scroll td button {
+  width: 100%;
+  min-height: 4.5rem;
+  padding: var(--space-xs) var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: var(--color-ink-2);
+  background: transparent;
+  cursor: pointer;
+  text-align: start;
+}
+
+.consistency-matrix-scroll td button small {
+  color: var(--color-muted);
+}
+
+.consistency-matrix-scroll tr.has-conflict th,
+.consistency-matrix-scroll tr.has-conflict td {
+  background: color-mix(in oklch, var(--color-danger) 8%, var(--color-paper-2));
+}
+
+.consistency-matrix-scroll tr.has-conflict th {
+  box-shadow: inset var(--rule-fine) 0 0 var(--color-danger-text);
+}
+
 @media (min-width: 64rem) {
   .consistency-setup {
     display: grid;
@@ -5749,6 +6130,19 @@ textarea[aria-invalid="true"] {
   }
 
   .consistency-metrics article:last-child {
+    border-inline-end: 0;
+  }
+
+  .consistency-batch-config {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .consistency-config-block {
+    border-inline-end: var(--rule-hair) solid var(--color-rule-2);
+    border-bottom: 0;
+  }
+
+  .consistency-config-block:last-child {
     border-inline-end: 0;
   }
 }
@@ -5826,6 +6220,36 @@ textarea[aria-invalid="true"] {
 
   .consistency-samples > div {
     min-width: 42rem;
+  }
+
+  .consistency-batch-launch {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .consistency-batch-launch > div {
+    grid-template-columns: auto auto;
+  }
+
+  .consistency-batch-launch small {
+    grid-column: 1 / -1;
+  }
+
+  .consistency-batch-launch .button {
+    width: 100%;
+  }
+
+  .consistency-batch-history button {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-xs);
+  }
+
+  .consistency-batch-history > button > i {
+    grid-column: 1 / -1;
+    text-align: start;
+  }
+
+  .consistency-batch-result .consistency-result-header h1 {
+    font-size: var(--text-lg);
   }
 }
 

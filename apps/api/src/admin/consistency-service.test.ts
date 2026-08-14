@@ -1,9 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { CONSISTENCY_SCENARIOS } from "./consistency-scenarios.js";
 import {
+  deriveConsistencyBatchStatus,
   summarizeConsistencySamples,
   type PublicConsistencySample,
 } from "./consistency-service.js";
+
+describe("consistency batch status", () => {
+  it("derives active, successful, partial, and failed batch states from child runs", () => {
+    expect(deriveConsistencyBatchStatus(["QUEUED", "QUEUED"])).toBe("QUEUED");
+    expect(deriveConsistencyBatchStatus(["RUNNING", "QUEUED", "COMPLETED"])).toBe("RUNNING");
+    expect(deriveConsistencyBatchStatus(["COMPLETED", "COMPLETED"])).toBe("COMPLETED");
+    expect(deriveConsistencyBatchStatus(["COMPLETED", "FAILED"])).toBe("PARTIAL");
+    expect(deriveConsistencyBatchStatus(["FAILED", "CANCELLED"])).toBe("FAILED");
+    expect(deriveConsistencyBatchStatus(["CANCELLED", "CANCELLED"])).toBe("CANCELLED");
+  });
+});
 
 function sample(
   scenarioId: string,

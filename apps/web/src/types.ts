@@ -245,6 +245,7 @@ export interface ModelConfig {
 
 export type ConsistencyTier = "single" | "quick" | "standard" | "full";
 export type ConsistencyRunStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "CANCELLED" | "FAILED";
+export type ConsistencyBatchStatus = ConsistencyRunStatus | "PARTIAL";
 export type ConsistencySampleOutcome = "VALID_ACTION" | "INVALID_DECISION" | "PROTOCOL_ERROR" | "INFRA_ERROR";
 
 export interface ConsistencyScenario {
@@ -341,6 +342,7 @@ export interface ConsistencySummary {
 
 export interface ConsistencyRun {
   id: string;
+  batchId: string | null;
   modelConfigId: string;
   competitorRevisionId: string;
   modelDisplayName: string;
@@ -369,6 +371,29 @@ export interface ConsistencyRun {
   updatedAt: string;
   scenarios?: ConsistencyScenario[];
   samples?: ConsistencySample[];
+}
+
+export interface ConsistencyBatch {
+  id: string;
+  systemPromptVersionId: string;
+  promptName: string;
+  status: ConsistencyBatchStatus;
+  tier: ConsistencyTier;
+  scenarioRegistryVersion: string;
+  scenarioIds: string[];
+  modelConfigIds: string[];
+  sampleCount: number;
+  timeoutMs: number;
+  maxParallelModels: number;
+  protocolBundleId: string;
+  systemPromptHash: string;
+  outputSchemaHash: string;
+  totalModels: number;
+  totalSamples: number;
+  completedSamples: number;
+  createdAt: string;
+  runs: ConsistencyRun[];
+  scenarios?: ConsistencyScenario[];
 }
 
 export interface AdminSession {

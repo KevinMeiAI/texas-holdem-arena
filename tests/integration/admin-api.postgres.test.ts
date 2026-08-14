@@ -241,6 +241,80 @@ describePostgres("administrator auth and model configuration API", () => {
         },
       });
 
+      const rejectedDuplicateBatch = await app.inject({
+        method: "POST",
+        url: "/api/admin/consistency-batches",
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+        payload: {
+          modelConfigIds: [modelId, modelId],
+          tier: "quick",
+          sampleCount: 2,
+          systemPromptVersionId: defaultPrompt.id,
+        },
+      });
+      expect(rejectedDuplicateBatch.statusCode).toBe(400);
+
+      const batchResponse = await app.inject({
+        method: "POST",
+        url: "/api/admin/consistency-batches",
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+        payload: {
+          modelConfigIds: [modelId, secondModelId],
+          tier: "quick",
+          sampleCount: 2,
+          timeoutMs: 30_000,
+          systemPromptVersionId: defaultPrompt.id,
+        },
+      });
+      expect(batchResponse.statusCode).toBe(202);
+      const createdBatch = batchResponse.json<{
+        batch: { id: string; totalModels: number; totalSamples: number; maxParallelModels: number };
+      }>().batch;
+      expect(createdBatch).toMatchObject({ totalModels: 2, totalSamples: 16, maxParallelModels: 3 });
+
+      let completedBatch: {
+        status: string;
+        scenarios?: { id: string }[];
+        runs: {
+          summary: {
+            validityRate: number;
+            meanPairwiseAgreement: number;
+            scenarios: { uniqueInputHashes: string[] }[];
+          } | null;
+        }[];
+      } | null = null;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const batch = await app.inject({
+          method: "GET",
+          url: `/api/admin/consistency-batches/${createdBatch.id}`,
+          headers: { cookie },
+        });
+        expect(batch.statusCode).toBe(200);
+        completedBatch = batch.json<{ batch: typeof completedBatch }>().batch;
+        if (completedBatch?.status === "COMPLETED") break;
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      }
+      expect(completedBatch).toMatchObject({
+        status: "COMPLETED",
+        scenarios: expect.arrayContaining([expect.objectContaining({ id: expect.any(String) })]),
+        runs: [
+          { summary: { validityRate: 1, meanPairwiseAgreement: 1 } },
+          { summary: { validityRate: 1, meanPairwiseAgreement: 1 } },
+        ],
+      });
+      expect(completedBatch!.runs[0]!.summary!.scenarios[0]!.uniqueInputHashes).toEqual(
+        completedBatch!.runs[1]!.summary!.scenarios[0]!.uniqueInputHashes,
+      );
+      const batchList = await app.inject({
+        method: "GET",
+        url: "/api/admin/consistency-batches",
+        headers: { cookie },
+      });
+      expect(batchList.statusCode).toBe(200);
+      expect(batchList.json()).toMatchObject({
+        batches: [expect.objectContaining({ id: createdBatch.id, status: "COMPLETED" })],
+      });
+
       const rejectedSharedPrompt = await app.inject({
         method: "POST",
         url: "/api/admin/tournaments",
