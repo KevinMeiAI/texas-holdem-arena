@@ -9,6 +9,7 @@ import {
   type LeaderboardSortValue,
 } from "./leaderboard-sort";
 import { StackHistoryChart } from "./stack-history-chart";
+import { SelectControl } from "./select-control";
 import { spectatorTimeline } from "./spectator-event-timeline";
 import { TournamentStatisticsReport } from "./tournament-statistics";
 import {
@@ -258,7 +259,7 @@ export function LeaderboardPage() {
             {tabs.map((tab) => <button type="button" role="tab" aria-selected={view === tab.id} className={view === tab.id ? "active" : ""} onClick={() => updateParams(tab.id, null)} key={tab.id}><b>{tab.label}</b></button>)}
           </div>
           <div className="leaderboard-mobile-sort">
-            <label><span>{text("排序", "Sort")}</span><select value={activeSort.key} onChange={(event) => setSortKey(event.target.value)}>{sortOptions[view].map((option) => <option value={option.key} key={option.key}>{option.label}</option>)}</select></label>
+            <label><span>{text("排序", "Sort")}</span><SelectControl value={activeSort.key} onChange={setSortKey} options={sortOptions[view].map((option) => ({ value: option.key, label: option.label }))} /></label>
             <div className="sort-direction" role="group" aria-label={text("排序方向", "Sort direction")}>
               <button type="button" className={activeSort.direction === "desc" ? "active" : ""} aria-pressed={activeSort.direction === "desc"} onClick={() => setSortDirection("desc")}>{text("高 → 低", "High → low")}</button>
               <button type="button" className={activeSort.direction === "asc" ? "active" : ""} aria-pressed={activeSort.direction === "asc"} onClick={() => setSortDirection("asc")}>{text("低 → 高", "Low → high")}</button>

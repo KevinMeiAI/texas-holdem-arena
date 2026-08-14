@@ -1,6 +1,7 @@
 import { type FormEvent, useMemo, useState } from "react";
 import { apiRequest, useApiResource } from "./api";
 import { formatArenaPhase, formatChips, Modal, PlayingCard } from "./components";
+import { SelectControl } from "./select-control";
 import type {
   ConsistencyRun,
   ConsistencyRunStatus,
@@ -226,15 +227,15 @@ function ConsistencySetup({
           </button>)}
           <button className={tier === "single" ? "selected" : ""} type="button" onClick={() => setTier("single")}><strong>{tierLabel("single", locale)}</strong><span>{text("用于调试", "Diagnostic")}</span></button>
         </div>
-        {tier === "single" && <label className="consistency-field"><span>{text("选择场景", "Scenario")}</span><select value={scenarioId} onChange={(event) => setScenarioId(event.target.value)}>{registry.scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.id} · {locale === "zh-CN" ? scenario.title.zh : scenario.title.en}</option>)}</select></label>}
+        {tier === "single" && <label className="consistency-field"><span>{text("选择场景", "Scenario")}</span><SelectControl value={scenarioId} onChange={setScenarioId} options={registry.scenarios.map((scenario) => ({ value: scenario.id, label: `${scenario.id} · ${locale === "zh-CN" ? scenario.title.zh : scenario.title.en}` }))} /></label>}
       </section>
       <section>
         <h3>{text("重复次数", "Samples per scenario")}</h3>
         <div className="consistency-choice-row">{[10, 20, 30].map((value) => <button className={sampleCount === value ? "selected" : ""} type="button" key={value} onClick={() => setSampleCount(value)}>{value}</button>)}</div>
       </section>
       <section className="consistency-runtime-fields">
-        <label className="consistency-field"><span>System Prompt</span><select value={promptId} onChange={(event) => setPromptId(event.target.value)} required>{compatiblePrompts.map((prompt) => <option key={prompt.id} value={prompt.id}>{prompt.name}{prompt.isDefault ? text(" · 默认", " · Default") : ""}</option>)}</select></label>
-        <label className="consistency-field"><span>{text("单次超时", "Per-call timeout")}</span><div><input type="number" min={30} max={600} step={10} value={timeoutSeconds} onChange={(event) => setTimeoutSeconds(Number(event.target.value))} /><b>{text("秒", "sec")}</b></div></label>
+        <label className="consistency-field"><span>System Prompt</span><SelectControl value={promptId} onChange={setPromptId} required options={compatiblePrompts.map((prompt) => ({ value: prompt.id, label: `${prompt.name}${prompt.isDefault ? text(" · 默认", " · Default") : ""}` }))} /></label>
+        <label className="consistency-field"><span>{text("单次超时", "Per-call timeout")}</span><div className="consistency-duration-field"><input type="number" min={30} max={600} step={10} value={timeoutSeconds} onChange={(event) => setTimeoutSeconds(Number(event.target.value))} /><b>{text("秒", "sec")}</b></div></label>
       </section>
       <div className="consistency-call-total"><span>{text("本次真实调用", "Live API calls")}</span><strong>{totalCalls}</strong><small>{text("串行执行；供应商可能产生费用", "Runs serially; provider charges may apply")}</small></div>
       {error && <p className="form-error">{error}</p>}

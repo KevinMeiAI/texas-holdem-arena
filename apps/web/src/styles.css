@@ -35,8 +35,7 @@ body {
 
 button,
 input,
-textarea,
-select {
+textarea {
   color: inherit;
   font: inherit;
 }
@@ -1286,7 +1285,7 @@ button:disabled {
   font-weight: 700;
 }
 
-.leaderboard-mobile-sort select {
+.leaderboard-mobile-sort .select-control {
   min-width: 0;
 }
 
@@ -3506,8 +3505,7 @@ span.hand-nav {
 }
 
 input,
-textarea,
-select {
+textarea {
   width: 100%;
   min-height: var(--control-height);
   padding-inline: var(--space-xs);
@@ -3533,22 +3531,203 @@ textarea::placeholder {
 }
 
 input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
+textarea:focus-visible {
   outline-color: var(--color-focus);
 }
 
 input:disabled,
-textarea:disabled,
-select:disabled {
+textarea:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
 input[aria-invalid="true"],
-textarea[aria-invalid="true"],
-select[aria-invalid="true"] {
+textarea[aria-invalid="true"] {
   border-color: var(--color-danger-text);
+}
+
+.select-control {
+  width: 100%;
+  min-width: 0;
+  position: relative;
+}
+
+.select-control__trigger {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 0 2.875rem 0 var(--space-xs);
+  position: relative;
+  display: flex;
+  align-items: center;
+  color: var(--color-ink);
+  background: var(--color-paper);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-input);
+  outline: var(--rule-fine) solid var(--color-transparent);
+  outline-offset: var(--rule-hair);
+  cursor: pointer;
+  text-align: start;
+  transition: background var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out), outline-color var(--dur-short) var(--ease-out);
+}
+
+.select-control__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-control__chevron {
+  width: 1rem;
+  height: 1rem;
+  position: absolute;
+  inset-inline-end: 0.875rem;
+  flex: 0 0 auto;
+  color: var(--color-muted);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+  transition: color var(--dur-short) var(--ease-out), transform var(--dur-short) var(--ease-out);
+}
+
+.select-control.is-open .select-control__trigger,
+.select-control__trigger:focus-visible {
+  background: var(--color-paper-2);
+  border-color: var(--color-accent);
+  outline-color: var(--color-focus);
+}
+
+.select-control.is-open .select-control__chevron {
+  color: var(--color-accent-strong);
+  transform: rotate(180deg);
+}
+
+.select-control__trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.select-control__menu[popover] {
+  margin: 0;
+  padding: var(--space-3xs);
+  position: fixed;
+  inset: auto;
+  z-index: var(--z-tooltip);
+  color: var(--color-ink);
+  background: var(--color-surface-raised);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-input);
+  box-shadow: 0 1.25rem 3rem var(--color-shadow), 0 0 0 var(--rule-hair) color-mix(in oklch, var(--color-accent) 9%, transparent);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--color-neutral) transparent;
+  scrollbar-width: thin;
+  animation: select-menu-in var(--dur-short) var(--ease-out) both;
+}
+
+.select-control__menu::-webkit-scrollbar {
+  width: 0.5rem;
+}
+
+.select-control__menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.select-control__menu::-webkit-scrollbar-thumb {
+  background: var(--color-neutral);
+  border: 0.125rem solid var(--color-surface-raised);
+  border-radius: var(--radius-pill);
+}
+
+.select-control__menu[popover]::backdrop {
+  background: transparent;
+}
+
+.select-control__menu[data-side="top"] {
+  transform-origin: bottom center;
+}
+
+.select-control__menu[data-side="bottom"] {
+  transform-origin: top center;
+}
+
+@keyframes select-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.select-control__menu[data-side="top"] {
+  animation-name: select-menu-in-top;
+}
+
+@keyframes select-menu-in-top {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.select-control__option {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.625rem 2.25rem 0.625rem var(--space-xs);
+  position: relative;
+  display: flex;
+  align-items: center;
+  color: var(--color-ink-2);
+  background: transparent;
+  border-radius: calc(var(--radius-input) - var(--rule-fine));
+  cursor: pointer;
+  line-height: 1.35;
+  text-align: start;
+}
+
+.select-control__option > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.select-control__option > svg {
+  width: 1rem;
+  height: 1rem;
+  position: absolute;
+  inset-inline-end: var(--space-xs);
+  color: var(--color-accent-strong);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.select-control__option.is-active {
+  color: var(--color-ink);
+  background: var(--color-paper-3);
+}
+
+.select-control__option.is-selected {
+  color: var(--color-ink);
+  background: color-mix(in oklch, var(--color-accent) 14%, var(--color-paper-2));
+  box-shadow: inset var(--rule-fine) 0 0 var(--color-accent);
+}
+
+.select-control__option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .form-error {
@@ -4058,7 +4237,7 @@ select[aria-invalid="true"] {
 
   input:hover,
   textarea:hover,
-  select:hover {
+  .select-control__trigger:hover:not(:disabled) {
     background: var(--color-paper-3);
   }
 }
@@ -4791,7 +4970,7 @@ select[aria-invalid="true"] {
   font-weight: 700;
 }
 
-.consistency-field select,
+.consistency-field .select-control__trigger,
 .consistency-field input {
   width: 100%;
   min-height: var(--control-height);
@@ -4802,18 +4981,22 @@ select[aria-invalid="true"] {
   border-radius: var(--radius-input);
 }
 
-.consistency-field > div {
+.consistency-field .select-control__trigger {
+  padding-inline: var(--space-xs) 2.875rem;
+}
+
+.consistency-duration-field {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
 }
 
-.consistency-field > div input {
+.consistency-duration-field input {
   border-start-end-radius: 0;
   border-end-end-radius: 0;
 }
 
-.consistency-field > div b {
+.consistency-duration-field b {
   min-height: var(--control-height);
   padding-inline: var(--space-xs);
   display: grid;
