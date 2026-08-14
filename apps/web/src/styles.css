@@ -3944,7 +3944,7 @@ textarea[aria-invalid="true"] {
 }
 
 .blind-preview b,
-.blind-preview em {
+.blind-preview-toggle {
   padding: var(--space-3xs) var(--space-2xs);
   color: var(--color-muted);
   background: var(--color-paper-3);
@@ -3955,8 +3955,21 @@ textarea[aria-invalid="true"] {
   font-weight: 400;
 }
 
-.blind-preview em {
+.blind-preview-toggle {
+  border: 0;
   color: var(--color-accent-strong);
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.blind-preview-toggle:hover {
+  color: var(--color-ink);
+  background: color-mix(in oklch, var(--color-accent) 12%, var(--color-paper-3));
+}
+
+.blind-preview-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-paper-2), 0 0 0 4px var(--color-accent);
 }
 
 .form-error.standalone {
