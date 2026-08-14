@@ -97,6 +97,7 @@ export function SelectControl({
   const selectedIndex = options.findIndex((option) => option.value === value);
   const selected = options[selectedIndex];
   const blocked = disabled || options.length === 0;
+  const portalTarget = triggerRef.current?.closest("dialog") ?? document.body;
 
   const updatePosition = () => {
     const trigger = triggerRef.current;
@@ -284,7 +285,7 @@ export function SelectControl({
             );
           })}
         </div>,
-        document.body,
+        portalTarget,
       )}
     </div>
   );

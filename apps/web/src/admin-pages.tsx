@@ -172,6 +172,10 @@ function ModelsAdmin({ csrfToken }: { csrfToken: string }) {
 
   if (providers.loading || models.loading) return <LoadingBlock label={text("正在读取模型配置", "Loading model configuration")} />;
   if (providers.error || models.error) return <ErrorBlock message={providers.error ?? models.error ?? text("服务暂时不可用", "Service temporarily unavailable")} onRetry={() => void refresh()} />;
+  const providerDependents = confirmDelete?.kind === "provider"
+    ? (models.data?.models ?? []).filter((model) => model.providerConnectionId === confirmDelete.id)
+    : [];
+  const providerDeleteBlocked = providerDependents.length > 0;
   return (
     <>
       <div className="admin-heading">
@@ -246,7 +250,14 @@ function ModelsAdmin({ csrfToken }: { csrfToken: string }) {
       {providerDialog && <ProviderModal value={providerDialog} onClose={() => setProviderDialog(null)} onSave={async (draft, editing) => { const payload: Record<string, unknown> = { label: draft.label, providerType: draft.providerType, providerProfile: draft.providerProfile, defaultOutputMode: draft.defaultOutputMode, baseUrl: draft.baseUrl || null }; if (draft.apiKey || !editing) payload.apiKey = draft.apiKey || null; await apiRequest(editing ? `/api/admin/providers/${editing.id}` : "/api/admin/providers", { method: editing ? "PATCH" : "POST", csrfToken, body: JSON.stringify(payload) }); setProviderDialog(null); setNotice(editing ? text("Provider 已更新", "Provider updated") : text("Provider 已创建", "Provider created")); await refresh(); }} />}
       {modelDialog && <ModelModal value={modelDialog} providers={providers.data?.providers ?? []} onClose={() => setModelDialog(null)} onSave={async (draft, editing) => { const payload = { displayName: draft.displayName, providerConnectionId: draft.providerConnectionId, modelId: draft.modelId, outputMode: draft.outputMode, parameters: JSON.parse(draft.parameters) as unknown }; await apiRequest(editing ? `/api/admin/models/${editing.id}` : "/api/admin/models", { method: editing ? "PATCH" : "POST", csrfToken, body: JSON.stringify(payload) }); setModelDialog(null); setNotice(editing ? text("模型配置已更新", "Model updated") : text("模型配置已创建", "Model created")); await refresh(); }} />}
       {consistencyModel && <ConsistencyTestModal model={consistencyModel} csrfToken={csrfToken} onClose={() => setConsistencyModel(null)} />}
-      {confirmDelete && <Modal title={`${text("删除", "Delete")} ${confirmDelete.label}?`} onClose={() => setConfirmDelete(null)}><div className="confirm-body"><p>{confirmDelete.kind === "provider" ? text("正在使用的 Provider 无法删除。", "Providers in use cannot be deleted.") : text("历史赛事不会被删除。", "Historical tournaments will remain.")}</p><div className="modal-actions"><button className="button secondary" type="button" onClick={() => setConfirmDelete(null)}>{text("取消", "Cancel")}</button><button className="button danger" type="button" onClick={async () => { try { await apiRequest(`/api/admin/${confirmDelete.kind === "provider" ? "providers" : "models"}/${confirmDelete.id}`, { method: "DELETE", csrfToken }); setNotice(`${confirmDelete.label} ${text("已删除", "deleted")}`); setConfirmDelete(null); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : text("删除失败", "Delete failed")); setConfirmDelete(null); } }}>{text("确认删除", "Delete")}</button></div></div></Modal>}
+      {confirmDelete && <Modal title={`${providerDeleteBlocked ? text("无法删除", "Cannot delete") : text("删除", "Delete")} ${confirmDelete.label}${providerDeleteBlocked ? "" : "?"}`} onClose={() => setConfirmDelete(null)}><div className="confirm-body"><p>{providerDeleteBlocked
+        ? text(
+          `该 Provider 正被 ${providerDependents.map((model) => model.displayName).join("、")} 使用。请先删除这些模型，或将它们改绑到其他 Provider。`,
+          `This provider is used by ${providerDependents.map((model) => model.displayName).join(", ")}. Delete those models first or move them to another provider.`,
+        )
+        : confirmDelete.kind === "provider"
+          ? text("删除后将无法恢复。", "This provider cannot be recovered after deletion.")
+          : text("历史赛事不会被删除。", "Historical tournaments will remain.")}</p><div className="modal-actions"><button className="button secondary" type="button" onClick={() => setConfirmDelete(null)}>{text("取消", "Cancel")}</button><button className="button danger" type="button" disabled={providerDeleteBlocked} onClick={async () => { try { await apiRequest(`/api/admin/${confirmDelete.kind === "provider" ? "providers" : "models"}/${confirmDelete.id}`, { method: "DELETE", csrfToken }); setNotice(`${confirmDelete.label} ${text("已删除", "deleted")}`); setConfirmDelete(null); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : text("删除失败", "Delete failed")); setConfirmDelete(null); } }}>{providerDeleteBlocked ? text("正在使用", "In use") : text("确认删除", "Delete")}</button></div></div></Modal>}
     </>
   );
 }
