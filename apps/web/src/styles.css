@@ -5852,6 +5852,15 @@ textarea[aria-invalid="true"] {
   margin-top: var(--space-2xl);
 }
 
+.consistency-recent-batches > .consistency-history-empty {
+  min-height: 4.5rem;
+  margin: 0;
+  padding: var(--space-sm) var(--space-lg);
+  display: flex;
+  align-items: center;
+  line-height: 1.5;
+}
+
 .consistency-batch-history {
   display: grid;
 }
