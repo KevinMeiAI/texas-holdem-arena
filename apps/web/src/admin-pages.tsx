@@ -423,7 +423,7 @@ function NewTournament({ csrfToken }: { csrfToken: string }) {
     ?? activePrompts[0];
   const toggle = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : current.length < 9 ? [...current, id] : current);
   return (
-    <>
+    <div className="tournament-page">
       <div className="admin-heading"><div><h1>{text("创建锦标赛", "Create tournament")}</h1></div><Link className="text-button" to="/admin">{text("放弃并返回", "Cancel")}</Link></div>
       {enabledModels.length < 2 ? <EmptyState title={text("至少需要两个可用模型", "At least two models required")} body={text("先添加并启用模型。", "Add and enable models first.")} action={<Link className="button primary" to="/admin/models">{text("配置模型", "Configure models")}</Link>} /> : <form className="tournament-form" onSubmit={async (event) => { event.preventDefault(); if (selected.length < 2) { setError(text("请选择 2—9 个不同模型", "Select 2–9 different models")); return; } if (!selectedPrompt) { setError(text("没有可用的 System Prompt 版本", "No active system prompt version")); return; } setWorking(true); setError(null); try { const result = await apiRequest<{ tournamentId: string }>(benchmarkSeries ? "/api/admin/benchmark-series" : "/api/admin/tournaments", { method: "POST", csrfToken, body: JSON.stringify({ name, modelConfigIds: selected, initialStack, handsPerLevel, decisionTimeoutMs: decisionTimeoutSeconds * 1_000, blindLevels, interfaceTrack, historyMode, systemPromptVersionId: selectedPrompt.id }) }); navigate(`/?tournament=${result.tournamentId}`); } catch (reason) { setError(reason instanceof Error ? reason.message : text("锦标赛创建失败", "Unable to create tournament")); } finally { setWorking(false); } }}>
         <section className="form-section"><header><div><h2>{text("赛事身份", "Tournament")}</h2></div></header><label className="field-large"><span>{text("赛事名称", "Name")}</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={120} required /></label></section>
@@ -439,6 +439,6 @@ function NewTournament({ csrfToken }: { csrfToken: string }) {
         {error && <p className="form-error standalone">{error}</p>}
         <div className="launch-bar"><div><span>{text("席位准备", "Seats")}</span><strong>{selected.length >= 2 ? `${selected.length} ${text("个模型", "models")} · ${benchmarkSeries ? text(`${selected.length} 场轮换`, `${selected.length} rotations`) : text("单场", "single")} · ${selectedPrompt?.name ?? "—"} · ${interfaceTrack === "native" ? "Native" : "Normalized"} · ${historyMode === "query_only" ? text("可查历史", "history on") : text("无历史", "history off")} · ${formatChips(initialStack)} · ${decisionTimeoutSeconds} ${text("秒超时", "s timeout")}` : text("请选择至少两个模型", "Select at least two models")}</strong></div><button className="button primary launch" disabled={working || selected.length < 2 || !selectedPrompt}>{working ? text("正在锁定配置…", "Locking…") : `${benchmarkSeries ? text("开始公平系列", "Start paired series") : text("开始赛事", "Start tournament")} →`}</button></div>
       </form>}
-    </>
+    </div>
   );
 }
