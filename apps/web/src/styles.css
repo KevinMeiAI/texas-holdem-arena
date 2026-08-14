@@ -4966,11 +4966,15 @@ select[aria-invalid="true"] {
 }
 
 .consistency-scenario-list {
+  min-width: 0;
   margin-top: var(--space-xs);
   display: grid;
 }
 
 .consistency-scenario {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   border-bottom: var(--rule-hair) solid var(--color-rule-2);
 }
 
@@ -5034,6 +5038,7 @@ select[aria-invalid="true"] {
 }
 
 .consistency-scenario-body {
+  min-width: 0;
   padding: var(--space-sm) 0 var(--space-lg);
 }
 
@@ -5081,6 +5086,8 @@ select[aria-invalid="true"] {
 }
 
 .consistency-action-chain {
+  width: 100%;
+  max-width: 100%;
   padding: var(--space-xs);
   display: flex;
   align-items: center;
