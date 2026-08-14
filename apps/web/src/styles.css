@@ -1143,6 +1143,9 @@ button:disabled {
 .tournament-list,
 .leaderboard {
   margin-top: var(--space-lg);
+}
+
+.leaderboard {
   border-top: var(--rule-hair) solid var(--color-rule);
 }
 
@@ -4721,8 +4724,34 @@ textarea[aria-invalid="true"] {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .model-picker {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .structure-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(18rem, 1.3fr);
+  }
+
+  .switch-field {
+    grid-column: auto;
+  }
+
+  .login-screen {
+    grid-template-columns: minmax(0, 1.1fr) minmax(28rem, 0.9fr);
+  }
+
+  .login-editorial {
+    min-height: 100dvh;
+    border-inline-end: var(--rule-hair) solid var(--color-rule);
+    border-bottom: 0;
+  }
+}
+
+@media (min-width: 75rem) {
   .model-table {
-    display: block;
+    display: grid;
+    grid-template-columns: minmax(15rem, 1.25fr) minmax(9rem, 0.7fr) 6rem 4rem minmax(13rem, auto);
+    gap: 0 var(--space-sm);
     border: var(--rule-hair) solid var(--color-rule);
     border-radius: var(--radius-card);
     overflow: clip;
@@ -4730,10 +4759,11 @@ textarea[aria-invalid="true"] {
 
   .model-table-head,
   .model-table article {
+    grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: minmax(15rem, 1.25fr) minmax(9rem, 0.7fr) 6rem 4rem minmax(13rem, auto);
+    grid-template-columns: subgrid;
     align-items: center;
-    gap: var(--space-sm);
+    gap: 0 var(--space-sm);
   }
 
   .model-table-head {
@@ -4776,30 +4806,6 @@ textarea[aria-invalid="true"] {
     border-top: 0;
   }
 
-  .model-picker {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .structure-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(18rem, 1.3fr);
-  }
-
-  .switch-field {
-    grid-column: auto;
-  }
-
-  .login-screen {
-    grid-template-columns: minmax(0, 1.1fr) minmax(28rem, 0.9fr);
-  }
-
-  .login-editorial {
-    min-height: 100dvh;
-    border-inline-end: var(--rule-hair) solid var(--color-rule);
-    border-bottom: 0;
-  }
-}
-
-@media (min-width: 75rem) {
   .live-layout {
     grid-template-columns: minmax(0, 1fr) 23rem;
   }
