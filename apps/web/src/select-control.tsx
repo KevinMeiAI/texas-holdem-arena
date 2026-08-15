@@ -22,6 +22,7 @@ interface SelectControlProps {
   onChange: (value: string) => void;
   ariaLabel?: string;
   className?: string;
+  menuClassName?: string;
   disabled?: boolean;
   name?: string;
   required?: boolean;
@@ -79,6 +80,7 @@ export function SelectControl({
   onChange,
   ariaLabel,
   className = "",
+  menuClassName = "",
   disabled = false,
   name,
   required = false,
@@ -247,7 +249,7 @@ export function SelectControl({
         <div
           ref={menuRef}
           id={`${id}-listbox`}
-          className="select-control__menu"
+          className={`select-control__menu${menuClassName ? ` ${menuClassName}` : ""}`}
           role="listbox"
           aria-label={ariaLabel}
           data-side={position.side}

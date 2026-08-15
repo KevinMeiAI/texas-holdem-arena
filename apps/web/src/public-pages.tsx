@@ -69,10 +69,11 @@ export function LivePage() {
   const lastBroadcastSequence = useRef(0);
   const [events, setEvents] = useState<ArenaEvent[]>([]);
   const [streamStatus, setStreamStatus] = useState<"idle" | "connected" | "reconnecting">("idle");
-  const [replayRequested, setReplayRequested] = useState(false);
+  const [replayTournamentId, setReplayTournamentId] = useState<string | null>(null);
   const [replayStatus, setReplayStatus] = useState<"idle" | "loading" | "playing" | "paused" | "ended">("idle");
   const [replayStepIndex, setReplayStepIndex] = useState(0);
   const [replayRate, setReplayRate] = useState<number>(1);
+  const replayRequested = selectedTournamentId !== null && replayTournamentId === selectedTournamentId;
   const replayResource = useApiResource<{ state: ArenaState; timeline: ArenaBroadcast[]; events: ArenaEvent[] }>(
     replayRequested && selectedTournamentId && selectedIsTerminal
       ? `/api/public/tournaments/${selectedTournamentId}/broadcast-replay`
@@ -122,7 +123,7 @@ export function LivePage() {
     setBroadcastQueue([]);
     setEvents([]);
     setStreamStatus("idle");
-    setReplayRequested(false);
+    setReplayTournamentId(null);
     setReplayStatus("idle");
     setReplayStepIndex(0);
   }, [selectedTournamentId]);
@@ -227,12 +228,15 @@ export function LivePage() {
     return { value: tournament.id, label: `${status} · ${tournament.name}` };
   });
   const selectTournament = (tournamentId: string) => {
+    setReplayTournamentId(null);
+    setReplayStatus("idle");
+    setReplayStepIndex(0);
     const next = new URLSearchParams(searchParams);
     next.set("tournament", tournamentId);
     setSearchParams(next);
   };
   const startReplay = () => {
-    setReplayRequested(true);
+    setReplayTournamentId(selectedTournamentId);
     setReplayStatus("loading");
     setReplayStepIndex(0);
     if (replayRequested) void replayResource.refresh();
@@ -253,7 +257,7 @@ export function LivePage() {
             <div><h2>{text("牌局时间线", "Game timeline")}</h2></div>
             {isTerminal ? (
               <div className="watch-room-replay-controls">
-                <SelectControl className="watch-room-speed-select" value={String(replayRate)} options={REPLAY_RATE_OPTIONS} onChange={(value) => setReplayRate(Number(value))} ariaLabel={text("回放速度", "Playback speed")} />
+                <SelectControl className="watch-room-speed-select" menuClassName="watch-room-speed-menu" value={String(replayRate)} options={REPLAY_RATE_OPTIONS} onChange={(value) => setReplayRate(Number(value))} ariaLabel={text("回放速度", "Playback speed")} />
                 {replayStatus === "playing" ? <button className="watch-room-replay-toggle" type="button" onClick={() => setReplayStatus("paused")}>{text("暂停", "Pause")}</button>
                   : replayStatus === "paused" ? <button type="button" onClick={() => setReplayStatus("playing")}>{text("继续", "Resume")}</button>
                     : replayStatus === "loading" ? <button type="button" disabled>{text("加载…", "Loading…")}</button>

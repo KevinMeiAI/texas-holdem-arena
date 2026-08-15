@@ -1207,9 +1207,37 @@ button:disabled {
   font-size: var(--text-xs);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .watch-room-speed-select .select-control__chevron {
+  width: 0.85rem;
+  height: 0.85rem;
+  inset-inline-end: 0.55rem;
+}
+
+.watch-room-speed-menu.select-control__menu {
+  padding: 0.25rem;
+}
+
+.watch-room-speed-menu .select-control__option {
+  min-height: 2.25rem;
+  padding: 0.5rem 1.75rem 0.5rem var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.watch-room-speed-menu .select-control__option > span {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.watch-room-speed-menu .select-control__option > svg {
   width: 0.85rem;
   height: 0.85rem;
   inset-inline-end: 0.55rem;
