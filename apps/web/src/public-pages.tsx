@@ -572,7 +572,7 @@ function HandSelector({ hands, activeHand, tournamentId }: {
       {scrollPos.atStart
         ? <span className="hand-nav" aria-disabled="true">‹</span>
         : <button type="button" className="hand-nav" aria-label={text("向前翻一屏手数", "Scroll back one page of hands")} onClick={() => scrollByPage(-1)}>‹</button>}
-      <div className="hand-selector" aria-label={text("选择要回放的牌局", "Select a hand")} ref={containerRef} onScroll={updateScrollPos}>
+      <div className="hand-selector" aria-label={text("选择要查看的手牌", "Select a hand to analyze")} ref={containerRef} onScroll={updateScrollPos}>
         {hands.map((hand) => <Link ref={hand.handNo === activeHand ? activeRef : undefined} className={hand.handNo === activeHand ? "active" : ""} to={`/tournaments/${tournamentId}/replay/${hand.handNo}`} key={hand.handNo}>{text("第", "Hand")} {String(hand.handNo).padStart(3, "0")} {text("手", "")}</Link>)}
       </div>
       {scrollPos.atEnd
@@ -596,8 +596,8 @@ export function ReplayPage() {
     decisions: DecisionAuditTurn[];
     decisionAuditAvailable: boolean;
   }>(handNo > 0 ? `/api/public/tournaments/${id}/hands/${handNo}/replay` : null);
-  if (tournament.loading || hands.loading) return <main className="page-shell"><LoadingBlock label={text("正在装载赛程回放", "Loading replay")} /></main>;
-  if (tournament.error || hands.error) return <main className="page-shell"><ErrorBlock message={tournament.error ?? hands.error ?? text("赛程回放暂时不可用", "Replay is temporarily unavailable")} /></main>;
+  if (tournament.loading || hands.loading) return <main className="page-shell"><LoadingBlock label={text("正在加载赛事解析", "Loading match analysis")} /></main>;
+  if (tournament.error || hands.error) return <main className="page-shell"><ErrorBlock message={tournament.error ?? hands.error ?? text("赛事解析暂时不可用", "Match analysis is temporarily unavailable")} /></main>;
   const state = tournament.data?.state;
   if (!state) return <main className="page-shell"><EmptyState title={text("赛事不存在", "Tournament not found")} body={text("无法找到对应的赛事记录。", "The requested tournament could not be found.")} /></main>;
   const events = replay.data?.events ?? [];

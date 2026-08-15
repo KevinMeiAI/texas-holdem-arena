@@ -4127,8 +4127,12 @@ textarea[aria-invalid="true"] {
 
 .select-control__option.is-selected {
   color: var(--color-ink);
-  background: color-mix(in oklch, var(--color-accent) 14%, var(--color-paper-2));
+  background: var(--color-selected-surface);
   box-shadow: inset var(--rule-fine) 0 0 var(--color-accent);
+}
+
+.select-control__option.is-selected.is-active {
+  background: var(--color-selected-surface-active);
 }
 
 .select-control__option:disabled {
