@@ -247,11 +247,16 @@ export async function registerAdminModelRoutes(
     }
     try {
       const deleted = await context.models.deleteProvider(request.params.id);
-      if (!deleted) return reply.code(404).send({ error: "provider_not_found" });
+      if (!deleted) {
+        const provider = await context.models.getProvider(request.params.id);
+        return provider
+          ? reply.code(409).send({ error: "provider_in_use" })
+          : reply.code(404).send({ error: "provider_not_found" });
+      }
       await audit(context.pool, admin.adminUserId, "provider.delete", "provider", request.params.id);
       return { ok: true };
     } catch {
-      return reply.code(409).send({ error: "provider_in_use" });
+      return reply.code(500).send({ error: "provider_delete_failed" });
     }
   });
 

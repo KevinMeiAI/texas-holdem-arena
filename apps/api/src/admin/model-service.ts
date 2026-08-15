@@ -153,7 +153,7 @@ async function createRevision(
   }>(
     `select p.*, m.model_id, m.parameters, m.output_mode, m.provider_connection_id
        from model_configs m join provider_connections p on p.id = m.provider_connection_id
-      where m.id = $1`,
+      where m.id = $1 and m.deleted_at is null and p.deleted_at is null`,
     [modelConfigId],
   );
   const row = result.rows[0];
@@ -218,13 +218,15 @@ export class ModelConfigService {
   constructor(private readonly pool: Pool, private readonly masterKey: Uint8Array) {}
 
   async listProviders() {
-    const result = await this.pool.query<ProviderRow>("select * from provider_connections order by created_at");
+    const result = await this.pool.query<ProviderRow>(
+      "select * from provider_connections where deleted_at is null order by created_at",
+    );
     return result.rows.map(publicProvider);
   }
 
   async getProvider(id: string) {
     const result = await this.pool.query<ProviderRow>(
-      "select * from provider_connections where id = $1",
+      "select * from provider_connections where id = $1 and deleted_at is null",
       [id],
     );
     return result.rows[0] ? publicProvider(result.rows[0]) : null;
@@ -268,7 +270,7 @@ export class ModelConfigService {
               encrypted_api_key = case when $8::boolean then $9::jsonb else encrypted_api_key end,
               key_last_four = case when $8::boolean then $10 else key_last_four end,
               updated_at = now()
-        where id = $1
+        where id = $1 and deleted_at is null
         returning *`,
       [
         id,
@@ -294,7 +296,9 @@ export class ModelConfigService {
         || input.baseUrl !== undefined;
       if (identityChanged) {
         const models = await client.query<{ id: string }>(
-          "select id from model_configs where provider_connection_id = $1 order by id for update",
+          `select id from model_configs
+            where provider_connection_id = $1 and deleted_at is null
+            order by id for update`,
           [id],
         );
         for (const model of models.rows) await createRevision(client, model.id, randomUUID());
@@ -310,7 +314,16 @@ export class ModelConfigService {
   }
 
   async deleteProvider(id: string): Promise<boolean> {
-    const result = await this.pool.query("delete from provider_connections where id = $1", [id]);
+    const result = await this.pool.query(
+      `update provider_connections p
+          set deleted_at = now(), updated_at = now()
+        where p.id = $1 and p.deleted_at is null
+          and not exists (
+            select 1 from model_configs m
+             where m.provider_connection_id = p.id and m.deleted_at is null
+          )`,
+      [id],
+    );
     return result.rowCount === 1;
   }
 
@@ -359,7 +372,7 @@ export class ModelConfigService {
               enabled = coalesce($7, enabled),
               output_mode = coalesce($8, output_mode),
               updated_at = now()
-        where id = $1
+        where id = $1 and deleted_at is null
         returning *`,
       [
         id,
@@ -389,14 +402,17 @@ export class ModelConfigService {
 
   async listModels() {
     const result = await this.pool.query<ModelRow>(
-      `${MODEL_SELECT} order by m.created_at`,
+      `${MODEL_SELECT}
+        where m.deleted_at is null and p.deleted_at is null
+        order by m.created_at`,
     );
     return result.rows.map(publicModel);
   }
 
   async getModel(id: string) {
     const result = await this.pool.query<ModelRow>(
-      `${MODEL_SELECT} where m.id = $1`,
+      `${MODEL_SELECT}
+        where m.id = $1 and m.deleted_at is null and p.deleted_at is null`,
       [id],
     );
     return result.rows[0] ? publicModel(result.rows[0]) : null;
@@ -404,7 +420,9 @@ export class ModelConfigService {
 
   async deleteModel(id: string): Promise<boolean> {
     const result = await this.pool.query(
-      "update model_configs set enabled = false, updated_at = now() where id = $1",
+      `update model_configs
+          set enabled = false, deleted_at = now(), updated_at = now()
+        where id = $1 and deleted_at is null`,
       [id],
     );
     return result.rowCount === 1;
@@ -418,7 +436,8 @@ export class ModelConfigService {
     }>(
       `select p.*, m.model_id, m.parameters, m.output_mode
          from model_configs m join provider_connections p on p.id = m.provider_connection_id
-        where m.id = $1 and m.enabled = true`,
+        where m.id = $1 and m.enabled = true
+          and m.deleted_at is null and p.deleted_at is null`,
       [modelConfigId],
     );
     const row = result.rows[0];
@@ -477,7 +496,8 @@ export class ModelConfigService {
 
   async currentRevision(modelConfigId: string) {
     const result = await this.pool.query<ModelRow>(
-      `${MODEL_SELECT} where m.id = $1 and m.enabled = true`,
+      `${MODEL_SELECT} where m.id = $1 and m.enabled = true
+        and m.deleted_at is null and p.deleted_at is null`,
       [modelConfigId],
     );
     return result.rows[0] ? publicModel(result.rows[0]) : null;
@@ -507,7 +527,7 @@ export class ModelConfigService {
     parameters: Record<string, unknown> = {},
   ): Promise<FrozenModelConfig> {
     const result = await this.pool.query<ProviderRow>(
-      "select * from provider_connections where id = $1",
+      "select * from provider_connections where id = $1 and deleted_at is null",
       [providerConnectionId],
     );
     const row = result.rows[0];

@@ -421,6 +421,61 @@ describePostgres("administrator auth and model configuration API", () => {
         expect.objectContaining({ modelId: betaRevisionId, tournaments: expect.any(Number) }),
       ]));
 
+      const deleteAlpha = await app.inject({
+        method: "DELETE",
+        url: `/api/admin/models/${modelId}`,
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+      });
+      expect(deleteAlpha.statusCode).toBe(200);
+      expect((await app.inject({
+        method: "GET",
+        url: `/api/admin/models/${modelId}`,
+        headers: { cookie },
+      })).statusCode).toBe(404);
+
+      const providerStillInUse = await app.inject({
+        method: "DELETE",
+        url: `/api/admin/providers/${provider.id}`,
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+      });
+      expect(providerStillInUse.statusCode).toBe(409);
+      expect(providerStillInUse.json()).toMatchObject({ error: "provider_in_use" });
+
+      const deleteBeta = await app.inject({
+        method: "DELETE",
+        url: `/api/admin/models/${secondModelId}`,
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+      });
+      expect(deleteBeta.statusCode).toBe(200);
+      const remainingModels = (await app.inject({
+        method: "GET",
+        url: "/api/admin/models",
+        headers: { cookie },
+      })).json<{ models: { id: string }[] }>().models;
+      expect(remainingModels.map((model) => model.id)).not.toContain(modelId);
+      expect(remainingModels.map((model) => model.id)).not.toContain(secondModelId);
+
+      const deleteProvider = await app.inject({
+        method: "DELETE",
+        url: `/api/admin/providers/${provider.id}`,
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+      });
+      expect(deleteProvider.statusCode).toBe(200);
+      expect((await app.inject({
+        method: "GET",
+        url: `/api/admin/providers/${provider.id}`,
+        headers: { cookie },
+      })).statusCode).toBe(404);
+
+      const leaderboardAfterDelete = (await app.inject({
+        method: "GET",
+        url: "/api/public/leaderboard",
+      })).json<{ leaderboard: { modelId: string }[] }>().leaderboard;
+      expect(leaderboardAfterDelete).toEqual(expect.arrayContaining([
+        expect.objectContaining({ modelId: alphaRevisionId }),
+        expect.objectContaining({ modelId: betaRevisionId }),
+      ]));
+
       const stored = await maintenancePool!.query<{ encrypted_api_key: string }>(
         "select encrypted_api_key::text from provider_connections where id = $1",
         [provider.id],
