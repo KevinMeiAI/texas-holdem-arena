@@ -43,6 +43,7 @@ const LIVE_FRAME_INTERVAL_MS = 1_000;
 const REPLAY_FRAME_INTERVAL_MS = 1_400;
 const SETTLEMENT_HOLD_MS = 2_000;
 const REPLAY_RATES = [0.5, 1, 1.5, 2] as const;
+const REPLAY_RATE_OPTIONS = REPLAY_RATES.map((rate) => ({ value: String(rate), label: `${rate}×` }));
 
 export function LivePage() {
   const { locale, text } = useUiPreferences();
@@ -249,22 +250,20 @@ export function LivePage() {
         <PokerTable state={state} broadcast={displayBroadcast} historical={replayActive && displayBroadcast !== null} eliminatedPlayerIds={replayEliminatedPlayerIds} settlement={displaySettlement} />
         <aside className="broadcast-sidebar">
           <div className="panel-heading watch-room-panel-heading">
-            <div><h2>{text("牌局时间线", "Game timeline")}</h2>{replayActive && <p>{text("按公开事件匀速播放", "Playing public events at a steady pace")}</p>}</div>
+            <div><h2>{text("牌局时间线", "Game timeline")}</h2></div>
             {isTerminal ? (
               <div className="watch-room-replay-controls">
-                <div className="watch-room-replay-speed" role="group" aria-label={text("回放速度", "Playback speed")}>
-                  {REPLAY_RATES.map((rate) => <button className={replayRate === rate ? "active" : ""} type="button" onClick={() => setReplayRate(rate)} aria-pressed={replayRate === rate} key={rate}>{rate}×</button>)}
-                </div>
+                <SelectControl className="watch-room-speed-select" value={String(replayRate)} options={REPLAY_RATE_OPTIONS} onChange={(value) => setReplayRate(Number(value))} ariaLabel={text("回放速度", "Playback speed")} />
                 {replayStatus === "playing" ? <button className="watch-room-replay-toggle" type="button" onClick={() => setReplayStatus("paused")}>{text("暂停", "Pause")}</button>
                   : replayStatus === "paused" ? <button type="button" onClick={() => setReplayStatus("playing")}>{text("继续", "Resume")}</button>
-                    : replayStatus === "loading" ? <button type="button" disabled>{text("准备回放…", "Preparing…")}</button>
-                      : <button type="button" onClick={startReplay}>{replayStatus === "ended" ? text("重新播放", "Replay again") : text("观看回放", "Watch replay")}</button>}
+                    : replayStatus === "loading" ? <button type="button" disabled>{text("加载…", "Loading…")}</button>
+                      : <button type="button" onClick={startReplay}>{text("回放", "Replay")}</button>}
               </div>
             ) : <span className={`stream-state ${streamStatus}`}><i />{streamStatus === "connected" ? text("同步中", "Synced") : streamStatus === "reconnecting" ? text("正在重连", "Reconnecting") : text("正在连接", "Connecting")}</span>}
           </div>
           {replayActive && <div className="watch-room-replay-progress"><progress max={Math.max(1, replaySteps.length)} value={replayProgress} /><span><b>H{String(displayBroadcast?.handNo ?? state.completedHands).padStart(3, "0")}</b>{replayProgress} / {replaySteps.length}</span></div>}
           {replayResource.error && replayRequested ? <div className="watch-room-replay-error"><span>{text("回放暂时无法载入", "Replay could not be loaded")}</span><button type="button" onClick={startReplay}>{text("重试", "Retry")}</button></div>
-            : <EventTape events={displayedEvents} players={state.players} limit={28} emptyLabel={isTerminal ? text("赛事已结束，点击“观看回放”重现完整牌局。", "Tournament ended — select Watch replay to relive the match.") : undefined} />}
+            : <EventTape events={displayedEvents} players={state.players} limit={28} emptyLabel={isTerminal ? text("赛事已结束，点击“回放”重现完整牌局。", "Tournament ended — select Replay to relive the match.") : undefined} />}
           <div className="broadcast-facts">
             <div><span>{text("阶段", "Stage")}</span><b>{formatArenaPhase(displayBroadcast?.street ?? hand?.phase ?? state.status, locale)}</b></div>
             <div><span>{text("在席", "Active")}</span><b>{activePlayers} / {state.players.length}</b></div>

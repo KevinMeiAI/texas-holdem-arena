@@ -242,6 +242,7 @@ function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, 
           : historical && broadcast ? text("在席", "Active")
             : playerStatus[player.status] ?? player.status;
   const isPotWinner = winnerAmount !== null;
+  const visibleLastAction = broadcast?.lastAction?.classification === "fold" && folded ? null : broadcast?.lastAction;
   return (
     <article className={`table-seat${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${isPotWinner ? " is-pot-winner" : ""}${historical ? eliminated ? " is-out" : "" : player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} style={style}>
       {isPotWinner && <span className="seat-winner-amount" key={`${settlementSequence}-${player.id}`}>+{formatChips(winnerAmount)}</span>}
@@ -256,7 +257,7 @@ function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, 
       </div>}
       {broadcast && <span className="seat-equity-track" aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(100, equityPercent ?? 0))}%` }} /></span>}
       <div className="seat-stack"><span className={isActing ? "seat-turn" : ""}>{statusLabel}</span><b>{formatChips(stack)}</b></div>
-      {broadcast?.lastAction && <div className={`seat-last-action is-${broadcast.lastAction.classification}`}>{compactActionLabel(broadcast.lastAction, locale)}</div>}
+      {visibleLastAction && <div className={`seat-last-action is-${visibleLastAction.classification}`}>{compactActionLabel(visibleLastAction, locale)}</div>}
       {streetCommitted > 0 && <span className="seat-bet"><i aria-hidden="true" />{formatChips(streetCommitted)}</span>}
     </article>
   );
