@@ -11,7 +11,7 @@ import {
 } from "./leaderboard-sort";
 import { StackHistoryChart } from "./stack-history-chart";
 import { SelectControl } from "./select-control";
-import { spectatorTimeline } from "./spectator-event-timeline";
+import { settlementPresentationAtSequence, spectatorTimeline } from "./spectator-event-timeline";
 import { TournamentStatisticsReport } from "./tournament-statistics";
 import {
   EmptyState,
@@ -38,6 +38,11 @@ import type {
   TournamentSummary,
 } from "./types";
 import { useUiPreferences } from "./ui-preferences";
+
+const LIVE_FRAME_INTERVAL_MS = 1_000;
+const REPLAY_FRAME_INTERVAL_MS = 1_400;
+const SETTLEMENT_HOLD_MS = 2_000;
+const REPLAY_RATES = [0.5, 1, 1.5, 2] as const;
 
 export function LivePage() {
   const { locale, text } = useUiPreferences();
@@ -66,6 +71,7 @@ export function LivePage() {
   const [replayRequested, setReplayRequested] = useState(false);
   const [replayStatus, setReplayStatus] = useState<"idle" | "loading" | "playing" | "paused" | "ended">("idle");
   const [replayStepIndex, setReplayStepIndex] = useState(0);
+  const [replayRate, setReplayRate] = useState<number>(1);
   const replayResource = useApiResource<{ state: ArenaState; timeline: ArenaBroadcast[]; events: ArenaEvent[] }>(
     replayRequested && selectedTournamentId && selectedIsTerminal
       ? `/api/public/tournaments/${selectedTournamentId}/broadcast-replay`
@@ -74,10 +80,15 @@ export function LivePage() {
   const replayData = replayResource.data?.state.tournamentId === selectedTournamentId ? replayResource.data : null;
   const replayTimeline = replayData?.timeline ?? [];
   const replayEvents = replayData?.events ?? [];
+  const replaySpectatorTimeline = useMemo(() => spectatorTimeline(replayEvents), [replayEvents]);
+  const suppressedReplayFrames = useMemo(() => new Set(replaySpectatorTimeline.flatMap(({ event, sourceSequences }) => (
+    event.type === "POT_AWARDED" ? sourceSequences.filter((sequence) => sequence !== event.sequence) : []
+  ))), [replaySpectatorTimeline]);
   const replaySteps = useMemo(() => replaySequenceSteps(
     replayTimeline,
-    spectatorTimeline(replayEvents).map(({ event }) => event.sequence),
-  ), [replayEvents, replayTimeline]);
+    replaySpectatorTimeline.map(({ event }) => event.sequence),
+    suppressedReplayFrames,
+  ), [replaySpectatorTimeline, replayTimeline, suppressedReplayFrames]);
   const replayActive = replayRequested && replayData !== null && replayStatus !== "loading";
   const replaySequence = replayStepIndex >= replaySteps.length
     ? Number.POSITIVE_INFINITY
@@ -87,6 +98,7 @@ export function LivePage() {
   const replayFrame = replayActive && replaySequence < terminalReplaySequence
     ? broadcastFrameAtSequence(replayTimeline, replaySequence)
     : null;
+  const replaySettlement = useMemo(() => settlementPresentationAtSequence(replaySpectatorTimeline, replaySequence), [replaySequence, replaySpectatorTimeline]);
   const replayVisibleEvents = replayActive
     ? replayEvents.filter((event) => event.sequence <= replaySequence)
     : [];
@@ -95,6 +107,11 @@ export function LivePage() {
     const playerId = event.actorId ?? event.publicPayload.playerId;
     return typeof playerId === "string" ? [playerId] : [];
   })), [replayVisibleEvents]);
+  const liveSpectatorTimeline = useMemo(() => spectatorTimeline(events), [events]);
+  const liveSettlement = useMemo(() => settlementPresentationAtSequence(
+    liveSpectatorTimeline,
+    presentedBroadcast?.sequence ?? Number.NaN,
+  ), [liveSpectatorTimeline, presentedBroadcast?.sequence]);
 
   const isTerminal = state?.status === "COMPLETED" || state?.status === "CANCELLED";
   useEffect(() => {
@@ -139,9 +156,9 @@ export function LivePage() {
     const timer = window.setTimeout(() => {
       setPresentedBroadcast(next);
       setBroadcastQueue((current) => current.slice(1));
-    }, 850);
+    }, LIVE_FRAME_INTERVAL_MS + (liveSettlement?.isFinalAward ? SETTLEMENT_HOLD_MS : 0));
     return () => window.clearTimeout(timer);
-  }, [broadcastQueue]);
+  }, [broadcastQueue, liveSettlement?.isFinalAward]);
   useEffect(() => {
     if (!state?.tournamentId || isTerminal || replayRequested) return;
     setEvents([]);
@@ -173,9 +190,9 @@ export function LivePage() {
       } else {
         setReplayStepIndex((current) => current + 1);
       }
-    }, 900);
+    }, (REPLAY_FRAME_INTERVAL_MS + (replaySettlement?.isFinalAward ? SETTLEMENT_HOLD_MS : 0)) / replayRate);
     return () => window.clearTimeout(timer);
-  }, [replayStatus, replayStepIndex, replaySteps.length]);
+  }, [replayRate, replaySettlement?.isFinalAward, replayStatus, replayStepIndex, replaySteps.length]);
 
   if (tournamentsResource.loading || (selectedTournamentId && (resource.loading || !state))) return <main className="page-shell"><LoadingBlock /></main>;
   if (tournamentsResource.error) return <main className="page-shell"><ErrorBlock message={tournamentsResource.error} onRetry={() => void tournamentsResource.refresh()} /></main>;
@@ -195,6 +212,7 @@ export function LivePage() {
   const displayBroadcast = replayActive ? replayFrame : presentedBroadcast ?? broadcast;
   const displayBlinds = displayBroadcast?.blinds ?? hand?.blinds ?? null;
   const displayedEvents = replayActive ? replayVisibleEvents : events;
+  const displaySettlement = replayActive ? replaySettlement : liveSettlement;
   const activePlayers = replayActive
     ? state.players.length - replayEliminatedPlayerIds.size
     : state.players.filter((player) => player.status !== "ELIMINATED").length;
@@ -228,13 +246,16 @@ export function LivePage() {
         <div className="live-meta"><StatusBadge status={state.status} /><span>{text("第", "Hand")} <b>{String(displayBroadcast?.handNo ?? hand?.handNo ?? state.completedHands).padStart(3, "0")}</b> {text("手", "")}</span>{displayBlinds ? <span>{text("盲注", "Blinds")} <b>{formatChips(displayBlinds.smallBlind)} / {formatChips(displayBlinds.bigBlind)}</b></span> : <span>{text("最终筹码", "Final stack")} <b>{formatChips(state.players.find((player) => player.id === state.championPlayerId)?.stack)}</b></span>}</div>
       </div>
       <div className="live-layout">
-        <PokerTable state={state} broadcast={displayBroadcast} historical={replayActive && displayBroadcast !== null} eliminatedPlayerIds={replayEliminatedPlayerIds} />
+        <PokerTable state={state} broadcast={displayBroadcast} historical={replayActive && displayBroadcast !== null} eliminatedPlayerIds={replayEliminatedPlayerIds} settlement={displaySettlement} />
         <aside className="broadcast-sidebar">
           <div className="panel-heading watch-room-panel-heading">
             <div><h2>{text("牌局时间线", "Game timeline")}</h2>{replayActive && <p>{text("按公开事件匀速播放", "Playing public events at a steady pace")}</p>}</div>
             {isTerminal ? (
               <div className="watch-room-replay-controls">
-                {replayStatus === "playing" ? <button type="button" onClick={() => setReplayStatus("paused")}>{text("暂停", "Pause")}</button>
+                <div className="watch-room-replay-speed" role="group" aria-label={text("回放速度", "Playback speed")}>
+                  {REPLAY_RATES.map((rate) => <button className={replayRate === rate ? "active" : ""} type="button" onClick={() => setReplayRate(rate)} aria-pressed={replayRate === rate} key={rate}>{rate}×</button>)}
+                </div>
+                {replayStatus === "playing" ? <button className="watch-room-replay-toggle" type="button" onClick={() => setReplayStatus("paused")}>{text("暂停", "Pause")}</button>
                   : replayStatus === "paused" ? <button type="button" onClick={() => setReplayStatus("playing")}>{text("继续", "Resume")}</button>
                     : replayStatus === "loading" ? <button type="button" disabled>{text("准备回放…", "Preparing…")}</button>
                       : <button type="button" onClick={startReplay}>{replayStatus === "ended" ? text("重新播放", "Replay again") : text("观看回放", "Watch replay")}</button>}

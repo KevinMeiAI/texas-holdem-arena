@@ -1,6 +1,6 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { spectatorTimeline, type SpectatorEventTone } from "./spectator-event-timeline";
+import { spectatorTimeline, type SettlementPresentation, type SpectatorEventTone } from "./spectator-event-timeline";
 import { tableSeatLayout } from "./table-layout";
 import type {
   ArenaBroadcast,
@@ -118,11 +118,13 @@ export function PokerTable({
   broadcast = null,
   historical = false,
   eliminatedPlayerIds = new Set<string>(),
+  settlement = null,
 }: {
   state: ArenaState;
   broadcast?: ArenaBroadcast | null;
   historical?: boolean;
   eliminatedPlayerIds?: ReadonlySet<string>;
+  settlement?: SettlementPresentation | null;
 }) {
   const { text } = useUiPreferences();
   const players = [...state.players].sort((a, b) => a.seat - b.seat);
@@ -134,13 +136,28 @@ export function PokerTable({
   const champion = players.find((player) => player.id === state.championPlayerId);
   const broadcastByPlayer = new Map(broadcast?.players.map((player) => [player.playerId, player]) ?? []);
   const sidePots = broadcast?.pots ?? hand?.pots ?? [];
+  const winnerPlayerIds = new Set(settlement?.winnerPlayerIds ?? []);
+  const tablePlayers = players.map((player, index) => {
+    const placement = tableSeatLayout(players.length, index);
+    const style = {
+      "--seat-x": `${placement.compact.x}%`,
+      "--seat-y": `${placement.compact.y}%`,
+      "--seat-x-wide": `${placement.wide.x}%`,
+      "--seat-y-wide": `${placement.wide.y}%`,
+      "--bet-shift-x": `${placement.compactBetShift.x}rem`,
+      "--bet-shift-y": `${placement.compactBetShift.y}rem`,
+      "--bet-shift-x-wide": `${placement.wideBetShift.x}rem`,
+      "--bet-shift-y-wide": `${placement.wideBetShift.y}rem`,
+      "--tint": `var(--chart-series-${(index % 9) + 1})`,
+    } as CSSProperties;
+    return { player, style };
+  });
 
   return (
     <section className="table-broadcast" aria-label={`${state.name} ${text("牌桌", "table")}`}>
       <div className="table-room-light" />
       <div className="poker-table-shell" data-player-count={players.length}>
         <div className="poker-table-felt">
-          {broadcast && <span className="broadcast-mode-badge">{text("上帝视角", "Broadcast")}</span>}
           {hand || broadcast ? <>
             <div className="table-center" role="group" aria-label={text("公共牌与底池", "Board and pot")}>
               <div className="community-cards">
@@ -149,21 +166,10 @@ export function PokerTable({
               <div className="pot-display"><span>{text("总底池", "Pot")}</span><strong>{formatChips(pot)}</strong></div>
             </div>
           </> : <div className="table-result"><span>♛ {text("冠军", "Champion")}</span><strong>{champion?.displayName ?? "—"}</strong></div>}
-          {players.map((player, index) => {
-            const placement = tableSeatLayout(players.length, index);
-            const style = {
-              "--seat-x": `${placement.compact.x}%`,
-              "--seat-y": `${placement.compact.y}%`,
-              "--seat-x-wide": `${placement.wide.x}%`,
-              "--seat-y-wide": `${placement.wide.y}%`,
-              "--bet-shift-x": `${placement.compactBetShift.x}rem`,
-              "--bet-shift-y": `${placement.compactBetShift.y}rem`,
-              "--bet-shift-x-wide": `${placement.wideBetShift.x}rem`,
-              "--bet-shift-y-wide": `${placement.wideBetShift.y}rem`,
-              "--tint": `var(--chart-series-${(index % 9) + 1})`,
-            } as CSSProperties;
-            return <TableSeat key={player.id} player={player} state={state} broadcast={broadcastByPlayer.get(player.id)} broadcastHandNo={broadcast?.handNo ?? null} currentActorId={broadcast ? broadcast.currentActorId : hand?.currentActorId ?? null} positions={broadcast?.positions ?? hand?.positions ?? null} estimated={broadcast?.estimated === true} samples={broadcast?.samples ?? 0} historical={historical} eliminated={eliminatedPlayerIds.has(player.id)} style={style} />;
-          })}
+          {settlement && tablePlayers.filter(({ player }) => winnerPlayerIds.has(player.id)).map(({ player, style }) => (
+            <span className="pot-transfer" style={style} key={`${settlement.sequence}-${player.id}`} aria-hidden="true"><i /><i /><i /></span>
+          ))}
+          {tablePlayers.map(({ player, style }) => <TableSeat key={player.id} player={player} state={state} broadcast={broadcastByPlayer.get(player.id)} broadcastHandNo={broadcast?.handNo ?? null} currentActorId={broadcast ? broadcast.currentActorId : hand?.currentActorId ?? null} positions={broadcast?.positions ?? hand?.positions ?? null} estimated={broadcast?.estimated === true} samples={broadcast?.samples ?? 0} historical={historical} eliminated={eliminatedPlayerIds.has(player.id)} winnerAmount={settlement?.amountsByPlayer[player.id] ?? null} settlementSequence={settlement?.sequence ?? null} style={style} />)}
         </div>
       </div>
       {sidePots.length > 1 && (!hand || !broadcast || broadcast.handNo === hand.handNo) && (
@@ -192,7 +198,7 @@ function compactActionLabel(action: ArenaBroadcastLastAction, locale: "zh-CN" | 
   return `${action.term ? `${action.term} · ` : ""}${actionLabel}${amount > 0 ? ` ${format(amount)}` : ""}`;
 }
 
-function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, positions, estimated, samples, historical, eliminated, style }: {
+function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, positions, estimated, samples, historical, eliminated, winnerAmount, settlementSequence, style }: {
   player: ArenaPlayer;
   state: ArenaState;
   broadcast?: ArenaBroadcastPlayer | undefined;
@@ -203,6 +209,8 @@ function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, 
   samples: number;
   historical: boolean;
   eliminated: boolean;
+  winnerAmount: number | null;
+  settlementSequence: number | null;
   style: CSSProperties;
 }) {
   const { locale, text } = useUiPreferences();
@@ -233,8 +241,10 @@ function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, 
         : historical && eliminated ? text("已淘汰", "Out")
           : historical && broadcast ? text("在席", "Active")
             : playerStatus[player.status] ?? player.status;
+  const isPotWinner = winnerAmount !== null;
   return (
-    <article className={`table-seat${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${historical ? eliminated ? " is-out" : "" : player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} style={style}>
+    <article className={`table-seat${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${isPotWinner ? " is-pot-winner" : ""}${historical ? eliminated ? " is-out" : "" : player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} style={style}>
+      {isPotWinner && <span className="seat-winner-amount" key={`${settlementSequence}-${player.id}`}>+{formatChips(winnerAmount)}</span>}
       <div className="seat-meta"><span><span className="seat-word">{text("座位", "Seat")} </span>{String(player.seat + 1).padStart(2, "0")}</span>{position && <b>{position}</b>}</div>
       <div className="seat-name"><strong title={player.displayName}>{player.displayName}</strong>{isChampion && <span title={text("冠军", "Champion")}>♛</span>}</div>
       {broadcast && <div className="seat-broadcast">

@@ -43,6 +43,7 @@ describe("broadcast timeline queue", () => {
   it("builds uniform replay steps from visible events and broadcast frames", () => {
     const timeline = [frame(12), frame(20), frame(28)];
     expect(replaySequenceSteps(timeline, [1, 10, 12, 14, 20, 24, 30])).toEqual([12, 14, 20, 24, 28, 30]);
+    expect(replaySequenceSteps(timeline, [12, 30], new Set([20]))).toEqual([12, 28, 30]);
     expect(broadcastFrameAtSequence(timeline, 24)?.sequence).toBe(20);
     expect(broadcastFrameAtSequence(timeline, 11)).toBeNull();
   });

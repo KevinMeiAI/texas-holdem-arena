@@ -23,11 +23,12 @@ export function unseenBroadcastFrames(
 export function replaySequenceSteps(
   timeline: readonly ArenaBroadcast[],
   visibleEventSequences: readonly number[],
+  suppressedFrameSequences: ReadonlySet<number> = new Set(),
 ): number[] {
   const firstFrameSequence = Math.min(...timeline.map((frame) => frame.sequence));
   if (!Number.isFinite(firstFrameSequence)) return [];
   return [...new Set([
-    ...timeline.map((frame) => frame.sequence),
+    ...timeline.map((frame) => frame.sequence).filter((sequence) => !suppressedFrameSequences.has(sequence)),
     ...visibleEventSequences.filter((sequence) => sequence >= firstFrameSequence),
   ])].sort((left, right) => left - right);
 }
