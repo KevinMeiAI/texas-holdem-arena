@@ -120,6 +120,7 @@ export class ArenaService {
   readonly #statisticsCache = new Map<string, TournamentStatisticsComputation>();
   readonly #statisticsPending = new Map<string, Promise<TournamentStatisticsComputation>>();
   readonly #broadcastViews = new BroadcastViewBuilder();
+  readonly #broadcastReplayCache = new Map<string, { state: unknown; timeline: unknown[]; events: unknown[] }>();
   readonly #store: PgEventStore;
   readonly #systemPrompts: SystemPromptVersionService;
   #stopping = false;
@@ -483,6 +484,29 @@ export class ArenaService {
       broadcast: this.#broadcastViews.build(state, events),
       timeline: this.#broadcastViews.buildTimeline(state, events),
     };
+  }
+
+  async broadcastReplayState(tournamentId: string): Promise<{ state: unknown; timeline: unknown[]; events: unknown[] } | null> {
+    const cached = this.#broadcastReplayCache.get(tournamentId);
+    if (cached) return cached;
+    const state = await this.publicState(tournamentId);
+    const id = (state as { tournamentId?: unknown } | null)?.tournamentId;
+    if (!state || typeof id !== "string") return null;
+    const events = await this.projectedEvents(id, "SPECTATOR_BROADCAST");
+    const replay = {
+      state,
+      timeline: this.#broadcastViews.buildTimeline(state, events, {
+        allHands: true,
+        includeReplayFrames: true,
+        equitySampleCount: 500,
+      }),
+      events,
+    };
+    this.#broadcastReplayCache.set(tournamentId, replay);
+    if (this.#broadcastReplayCache.size > 8) {
+      this.#broadcastReplayCache.delete(this.#broadcastReplayCache.keys().next().value!);
+    }
+    return replay;
   }
 
   async listTournaments(): Promise<unknown[]> {

@@ -24,6 +24,7 @@ interface BroadcastStateHand {
   positions?: { button: number; smallBlind: number; bigBlind: number; headsUp: boolean };
   blinds?: { smallBlind: number; bigBlind: number; bigBlindAnte: number };
   boards: string[][];
+  pots?: { index: number; amount: number; eligible: string[] }[];
   currentActorId?: string | null;
 }
 
@@ -66,12 +67,23 @@ export interface BroadcastView {
   street: string;
   board: string[];
   pot: number;
+  pots: { index: number; amount: number; eligible: string[] }[];
   positions: { button: number; smallBlind: number; bigBlind: number; headsUp: boolean } | null;
   blinds: { smallBlind: number; bigBlind: number; bigBlindAnte: number } | null;
   currentActorId: string | null;
   estimated: boolean;
   samples: number;
   players: BroadcastViewPlayer[];
+}
+
+export interface BroadcastTimelineOptions {
+  allHands?: boolean;
+  includeReplayFrames?: boolean;
+  equitySampleCount?: number;
+}
+
+interface BroadcastBuildOptions {
+  equitySampleCount?: number;
 }
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -110,12 +122,20 @@ function actionFromEvent(event: ProjectedArenaEvent): BroadcastLastAction | null
 export class BroadcastViewBuilder {
   readonly #equityCache = new Map<string, BroadcastEquityResult>();
 
-  buildTimeline(rawState: unknown, projectedEvents: readonly ProjectedArenaEvent[]): BroadcastView[] {
+  buildTimeline(
+    rawState: unknown,
+    projectedEvents: readonly ProjectedArenaEvent[],
+    options: BroadcastTimelineOptions = {},
+  ): BroadcastView[] {
     const state = rawState as BroadcastState;
     if (!state?.tournamentId || !Array.isArray(state.players)) return [];
-    const handNos = new Set<number>();
-    if (typeof state.completedHands === "number" && state.completedHands > 0) handNos.add(state.completedHands);
-    if (state.hand?.handNo) handNos.add(state.hand.handNo);
+    const handNos = options.allHands
+      ? new Set(projectedEvents.flatMap((event) => event.handNo === null ? [] : [event.handNo]))
+      : new Set<number>();
+    if (!options.allHands) {
+      if (typeof state.completedHands === "number" && state.completedHands > 0) handNos.add(state.completedHands);
+      if (state.hand?.handNo) handNos.add(state.hand.handNo);
+    }
     return [...handNos].sort((left, right) => left - right).flatMap((handNo) => {
       const handEvents = projectedEvents
         .filter((event) => event.handNo === handNo)
@@ -188,10 +208,21 @@ export class BroadcastViewBuilder {
         bigBlindAnte: numericValue(blindLevel.bigBlindAnte),
       } : null;
       const board: string[] = [];
+      const pots: { index: number; amount: number; eligible: string[] }[] = [];
       const frames: BroadcastView[] = [];
       let phase = "PREFLOP";
+      const participantIds = new Set(handEvents.flatMap((event) => {
+        if (event.type !== "HOLE_CARDS_DEALT") return [];
+        const playerId = recordValue(event.publicPayload)?.playerId;
+        return typeof playerId === "string" ? [playerId] : [];
+      }));
+      const dealtCardEvents = handEvents.filter((event) => event.type === "HOLE_CARDS_DEALT").length;
+      const hasPreflopStart = handEvents.some((event) => event.type === "BETTING_ROUND_STARTED"
+        && recordValue(event.publicPayload)?.street === "PREFLOP");
+      let dealtCardEventsSeen = 0;
       for (const [index, event] of handEvents.entries()) {
         const payload = recordValue(event.publicPayload);
+        if (event.type === "HOLE_CARDS_DEALT") dealtCardEventsSeen += 1;
         if (event.type === "FORCED_BET_POSTED") {
           const playerId = payload?.playerId;
           const ledger = typeof playerId === "string" ? ledgers.get(playerId) : null;
@@ -239,11 +270,75 @@ export class BroadcastViewBuilder {
           const ledger = typeof playerId === "string" ? ledgers.get(playerId) : null;
           if (ledger) ledger.stack += numericValue(award?.amount);
         }
+        if (event.type === "POT_CREATED") {
+          const pot = recordValue(payload?.pot);
+          if (pot) {
+            pots.push({
+              index: numericValue(pot.index),
+              amount: numericValue(pot.amount),
+              eligible: Array.isArray(pot.eligible)
+                ? pot.eligible.filter((playerId): playerId is string => typeof playerId === "string")
+                : [],
+            });
+          }
+        }
+        if (event.type === "HAND_COMPLETED") {
+          phase = "HAND_COMPLETE";
+          pots.length = 0;
+          for (const ledger of ledgers.values()) {
+            ledger.streetCommitted = 0;
+            ledger.totalCommitted = 0;
+            ledger.allIn = ledger.stack === 0;
+          }
+        }
 
+        if (options.includeReplayFrames && (event.type === "HAND_STARTED" || event.type === "FORCED_BET_POSTED")) {
+          frames.push({
+            version: BROADCAST_VIEW_VERSION,
+            equityVersion: BROADCAST_EQUITY_VERSION,
+            handNo,
+            sequence: event.sequence,
+            street: "PREFLOP",
+            board: [],
+            pot: [...ledgers.values()].reduce((sum, ledger) => sum + ledger.totalCommitted, 0),
+            pots: [],
+            positions: positions ?? null,
+            blinds,
+            currentActorId: null,
+            estimated: false,
+            samples: 0,
+            players: state.players.flatMap((player) => {
+              if (!participantIds.has(player.id)) return [];
+              const ledger = ledgers.get(player.id)!;
+              return [{
+                playerId: player.id,
+                seat: player.seat,
+                holeCards: [],
+                stack: ledger.stack,
+                folded: false,
+                allIn: ledger.allIn,
+                streetCommitted: ledger.streetCommitted,
+                equity: null,
+                outrightWinProbability: null,
+                tieProbability: null,
+                lastAction: null,
+              }];
+            }),
+          });
+        }
+
+        const isReplaySetupFrame = options.includeReplayFrames
+          && !hasPreflopStart
+          && event.type === "HOLE_CARDS_DEALT"
+          && dealtCardEventsSeen === dealtCardEvents;
+        const isReplaySettlementFrame = options.includeReplayFrames
+          && ["UNCALLED_BET_RETURNED", "POT_CREATED", "POT_AWARDED", "HAND_COMPLETED"].includes(event.type);
         const isFrame = (event.type === "BETTING_ROUND_STARTED" && payload?.street === "PREFLOP")
           || event.type === "ACTION_APPLIED"
           || event.type === "STREET_DEALT"
-          || event.type === "SHOWDOWN_REVEALED";
+          || event.type === "SHOWDOWN_REVEALED"
+          || isReplaySetupFrame
+          || isReplaySettlementFrame;
         if (!isFrame) continue;
         const syntheticState: BroadcastState = {
           tournamentId: state.tournamentId,
@@ -265,18 +360,25 @@ export class BroadcastViewBuilder {
             ...(positions ? { positions } : {}),
             ...(blinds ? { blinds } : {}),
             boards: [[...board]],
+            pots: pots.map((pot) => ({ ...pot, eligible: [...pot.eligible] })),
             currentActorId: event.type === "BETTING_ROUND_STARTED"
               && typeof payload?.actorId === "string" ? payload.actorId : null,
           },
         };
-        const frame = this.build(syntheticState, handEvents.slice(0, index + 1));
+        const frame = this.build(syntheticState, handEvents.slice(0, index + 1), {
+          ...(options.equitySampleCount === undefined ? {} : { equitySampleCount: options.equitySampleCount }),
+        });
         if (frame) frames.push({ ...frame, sequence: event.sequence });
       }
       return frames;
     });
   }
 
-  build(rawState: unknown, projectedEvents: readonly ProjectedArenaEvent[]): BroadcastView | null {
+  build(
+    rawState: unknown,
+    projectedEvents: readonly ProjectedArenaEvent[],
+    options: BroadcastBuildOptions = {},
+  ): BroadcastView | null {
     const state = rawState as BroadcastState;
     const hand = state?.hand;
     if (!state?.tournamentId || !hand || !Array.isArray(state.players) || !Array.isArray(hand.boards)) return null;
@@ -330,7 +432,10 @@ export class BroadcastViewBuilder {
     ].join("|");
     let equity = this.#equityCache.get(equityKey);
     if (!equity) {
-      equity = calculateBroadcastEquity(dealtPlayers, board, { seed: equityKey });
+      equity = calculateBroadcastEquity(dealtPlayers, board, {
+        seed: equityKey,
+        ...(options.equitySampleCount === undefined ? {} : { sampleCount: options.equitySampleCount }),
+      });
       this.#equityCache.set(equityKey, equity);
       if (this.#equityCache.size > 256) this.#equityCache.delete(this.#equityCache.keys().next().value!);
     }
@@ -344,6 +449,7 @@ export class BroadcastViewBuilder {
       street: hand.phase,
       board: [...boardCodes],
       pot: state.players.reduce((sum, player) => sum + Math.max(0, player.totalCommitted), 0),
+      pots: hand.pots?.map((pot) => ({ ...pot, eligible: [...pot.eligible] })) ?? [],
       positions: hand.positions ?? null,
       blinds: hand.blinds ?? null,
       currentActorId: hand.currentActorId ?? null,

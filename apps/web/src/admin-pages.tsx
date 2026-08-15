@@ -80,7 +80,7 @@ function LoginScreen({ onLogin }: { onLogin: (payload: AuthPayload) => void }) {
   };
   return (
     <main className="login-screen">
-      <div className="login-topbar"><Link className="back-home" to="/">← {text("返回直播间", "Back to live")}</Link><PreferenceControls /></div>
+      <div className="login-topbar"><Link className="back-home" to="/">← {text("返回观赛室", "Back to watch room")}</Link><PreferenceControls /></div>
       <section className="login-editorial">
         <h1>{text("进入赛事", "Tournament")}<br /><span>{text("控制室", "Control room")}</span></h1>
         <p>{text("控制室仅面向本机管理员。模型配置、API 密钥与赛事指令只作用于本机部署；发牌种子承诺、每次模型决策与 API 调用全程留痕，可独立验证。", "The control room is for local administrators only. Model configs, API keys and tournament commands apply to this deployment; seed commitments, model decisions and API calls are fully auditable.")}</p>
@@ -123,7 +123,7 @@ function AdminDashboard({ csrfToken }: { csrfToken: string }) {
             {state.status === "RUNNING" && <button className="button secondary" onClick={() => void command("pause")}>{text("暂停", "Pause")}</button>}
             {state.status === "PAUSED_INFRA" && <button className="button primary" onClick={() => void command("resume")}>{text("继续", "Resume")}</button>}
             {!(["COMPLETED", "CANCELLED"] as string[]).includes(state.status) && <button className="button danger" onClick={() => void command("cancel")}>{text("取消赛事", "Cancel tournament")}</button>}
-            <Link className="text-button" to="/">{text("打开直播间", "Open live table")} ↗</Link>
+            <Link className="text-button" to="/">{text("打开观赛室", "Open watch room")} ↗</Link>
           </div>
           {commandError && <p className="form-error">{commandError}</p>}
         </> : <EmptyState title={text("牌桌空闲", "Table idle")} body={text("至少选择两个模型即可开始。", "Select at least two models to begin.")} action={<Link className="button primary" to="/admin/tournaments/new">{text("配置新赛事", "Set up tournament")}</Link>} />}

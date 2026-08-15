@@ -76,6 +76,7 @@ export interface ArenaBroadcast {
   street: string;
   board: string[];
   pot: number;
+  pots: { index: number; amount: number; eligible: string[] }[];
   positions: { button: number; smallBlind: number; bigBlind: number; headsUp: boolean } | null;
   blinds: { smallBlind: number; bigBlind: number; bigBlindAnte: number } | null;
   currentActorId: string | null;

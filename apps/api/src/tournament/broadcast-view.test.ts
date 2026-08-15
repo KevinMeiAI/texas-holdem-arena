@@ -96,4 +96,40 @@ describe("broadcast view", () => {
       ],
     });
   });
+
+  it("builds a complete multi-hand replay timeline with settlement frames", () => {
+    const builder = new BroadcastViewBuilder();
+    const state = {
+      tournamentId: "tournament",
+      completedHands: 2,
+      players: [
+        { id: "hero", seat: 0, stack: 100, folded: false, allIn: false, streetCommitted: 0, totalCommitted: 0 },
+        { id: "villain", seat: 1, stack: 100, folded: false, allIn: false, streetCommitted: 0, totalCommitted: 0 },
+      ],
+      hand: null,
+    };
+    const hand = (handNo: number, offset: number, cards: [string, string, string, string], stacks: Record<string, number>) => [
+      { ...event(offset + 1, "BLIND_LEVEL_SELECTED", { handNo, level: { smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 } }), handNo: null },
+      { ...event(offset + 2, "HAND_STARTED", { positions: { button: 0, smallBlind: 0, bigBlind: 1, headsUp: true } }), handNo },
+      { ...event(offset + 3, "FORCED_BET_POSTED", { playerId: "hero", amount: 5, live: true }), handNo },
+      { ...event(offset + 4, "FORCED_BET_POSTED", { playerId: "villain", amount: 10, live: true }), handNo },
+      { ...event(offset + 5, "HOLE_CARDS_DEALT", { playerId: "hero" }, { cards: [parseCard(cards[0]), parseCard(cards[1])] }), handNo },
+      { ...event(offset + 6, "HOLE_CARDS_DEALT", { playerId: "villain" }, { cards: [parseCard(cards[2]), parseCard(cards[3])] }), handNo },
+      { ...event(offset + 7, "BETTING_ROUND_STARTED", { street: "PREFLOP", actorId: "hero", currentBet: 10 }), handNo },
+      { ...event(offset + 8, "ACTION_APPLIED", { street: "PREFLOP", command: { action: "fold" }, classification: "fold", paid: 0, amountTo: 5 }, undefined, "hero"), handNo },
+      { ...event(offset + 9, "POT_CREATED", { pot: { index: 0, amount: 15, eligible: ["villain"] } }), handNo },
+      { ...event(offset + 10, "POT_AWARDED", { award: { playerId: "villain", amount: 15 } }), handNo },
+      { ...event(offset + 11, "HAND_COMPLETED", { result: { stacks } }), handNo },
+    ];
+    const events = [
+      ...hand(1, 0, ["As", "Kh", "Qc", "Jd"], { hero: 95, villain: 105 }),
+      ...hand(2, 20, ["Ah", "Kd", "Qs", "Jc"], { hero: 100, villain: 100 }),
+    ];
+
+    expect(builder.buildTimeline(state, events).every((frame) => frame.handNo === 2)).toBe(true);
+    const replay = builder.buildTimeline(state, events, { allHands: true, includeReplayFrames: true });
+    expect([...new Set(replay.map((frame) => frame.handNo))]).toEqual([1, 2]);
+    expect(replay.filter((frame) => frame.street === "HAND_COMPLETE")).toHaveLength(2);
+    expect(replay.at(-1)).toMatchObject({ handNo: 2, street: "HAND_COMPLETE", pot: 0, pots: [] });
+  });
 });

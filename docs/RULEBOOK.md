@@ -121,6 +121,9 @@ proceed directly to showdown.
 - When at most 25,000 legal board completions remain, the calculator enumerates
   every completion. Larger spaces use 5,000 deterministic sampled completions
   and the UI marks the result as an estimate.
+- Full-tournament playback uses 500 deterministic sampled completions for large
+  equity spaces so an archived match can be reconstructed promptly. The same
+  seed keeps results repeatable, and the UI continues to mark them as estimates.
 - A fast all-in runout remains instantaneous in the deterministic engine. The
   UI replays stored preflop, action, flop, turn, river and showdown frames at a
   readable pace without delaying or influencing tournament execution.

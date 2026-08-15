@@ -15,7 +15,7 @@ import { PreferenceControls, type UiLocale, uiText, useUiPreferences } from "./u
 export function Brand() {
   const { text } = useUiPreferences();
   return (
-    <Link className="brand" to="/" aria-label={text("返回德扑竞技场直播页", "Return to the live table")}>
+    <Link className="brand" to="/" aria-label={text("返回德扑竞技场观赛室", "Return to the watch room")}>
       <span className="brand-mark" aria-hidden="true">A♠</span>
       <span className="brand-copy"><strong>{text("德扑竞技场", "Hold'em Arena")}</strong></span>
     </Link>
@@ -28,7 +28,7 @@ export function AppHeader({ admin = false }: { admin?: boolean }) {
     <header className="site-header">
       <Brand />
       <nav className="site-nav" aria-label={text("公开页面导航", "Public navigation")}>
-        <NavLink to="/" end>{text("现场", "Live")}</NavLink>
+        <NavLink to="/" end>{text("观赛室", "Watch Room")}</NavLink>
         <NavLink to="/tournaments">{text("赛事", "Events")}</NavLink>
         <NavLink to="/leaderboard">{text("榜单", "Ranks")}</NavLink>
         <NavLink className={admin ? "admin-link active" : "admin-link"} to="/admin">{text("控制室", "Admin")}</NavLink>
@@ -113,7 +113,17 @@ export function PlayingCard({ card, hidden = false, compact = false }: {
   );
 }
 
-export function PokerTable({ state, broadcast = null }: { state: ArenaState; broadcast?: ArenaBroadcast | null }) {
+export function PokerTable({
+  state,
+  broadcast = null,
+  historical = false,
+  eliminatedPlayerIds = new Set<string>(),
+}: {
+  state: ArenaState;
+  broadcast?: ArenaBroadcast | null;
+  historical?: boolean;
+  eliminatedPlayerIds?: ReadonlySet<string>;
+}) {
   const { text } = useUiPreferences();
   const players = [...state.players].sort((a, b) => a.seat - b.seat);
   const hand = state.hand;
@@ -123,6 +133,7 @@ export function PokerTable({ state, broadcast = null }: { state: ArenaState; bro
   const labels = new Map(players.map((player) => [player.id, player.displayName]));
   const champion = players.find((player) => player.id === state.championPlayerId);
   const broadcastByPlayer = new Map(broadcast?.players.map((player) => [player.playerId, player]) ?? []);
+  const sidePots = broadcast?.pots ?? hand?.pots ?? [];
 
   return (
     <section className="table-broadcast" aria-label={`${state.name} ${text("牌桌", "table")}`}>
@@ -151,13 +162,13 @@ export function PokerTable({ state, broadcast = null }: { state: ArenaState; bro
               "--bet-shift-y-wide": `${placement.wideBetShift.y}rem`,
               "--tint": `var(--chart-series-${(index % 9) + 1})`,
             } as CSSProperties;
-            return <TableSeat key={player.id} player={player} state={state} broadcast={broadcastByPlayer.get(player.id)} broadcastHandNo={broadcast?.handNo ?? null} currentActorId={broadcast ? broadcast.currentActorId : hand?.currentActorId ?? null} positions={broadcast?.positions ?? hand?.positions ?? null} estimated={broadcast?.estimated === true} samples={broadcast?.samples ?? 0} style={style} />;
+            return <TableSeat key={player.id} player={player} state={state} broadcast={broadcastByPlayer.get(player.id)} broadcastHandNo={broadcast?.handNo ?? null} currentActorId={broadcast ? broadcast.currentActorId : hand?.currentActorId ?? null} positions={broadcast?.positions ?? hand?.positions ?? null} estimated={broadcast?.estimated === true} samples={broadcast?.samples ?? 0} historical={historical} eliminated={eliminatedPlayerIds.has(player.id)} style={style} />;
           })}
         </div>
       </div>
-      {hand?.pots && hand.pots.length > 1 && (!broadcast || broadcast.handNo === hand.handNo) && (
+      {sidePots.length > 1 && (!hand || !broadcast || broadcast.handNo === hand.handNo) && (
         <div className="side-pot-strip" aria-label={text("边池", "Side pots")}>
-          {hand.pots.map((item) => <span key={item.index}>{text("边池", "Side pot")} {item.index + 1} <b>{formatChips(item.amount)}</b> · {item.eligible.map((id) => labels.get(id) ?? id).join(", ")}</span>)}
+          {sidePots.map((item) => <span key={item.index}>{text("边池", "Side pot")} {item.index + 1} <b>{formatChips(item.amount)}</b> · {item.eligible.map((id) => labels.get(id) ?? id).join(", ")}</span>)}
         </div>
       )}
     </section>
@@ -181,7 +192,7 @@ function compactActionLabel(action: ArenaBroadcastLastAction, locale: "zh-CN" | 
   return `${action.term ? `${action.term} · ` : ""}${actionLabel}${amount > 0 ? ` ${format(amount)}` : ""}`;
 }
 
-function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, positions, estimated, samples, style }: {
+function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, positions, estimated, samples, historical, eliminated, style }: {
   player: ArenaPlayer;
   state: ArenaState;
   broadcast?: ArenaBroadcastPlayer | undefined;
@@ -190,13 +201,15 @@ function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, 
   positions: { button: number; smallBlind: number; bigBlind: number; headsUp: boolean } | null;
   estimated: boolean;
   samples: number;
+  historical: boolean;
+  eliminated: boolean;
   style: CSSProperties;
 }) {
   const { locale, text } = useUiPreferences();
   const hand = state.hand;
   const isCurrentHand = broadcastHandNo === null || hand?.handNo === broadcastHandNo;
   const isActing = isCurrentHand && currentActorId === player.id;
-  const isChampion = state.championPlayerId === player.id;
+  const isChampion = !historical && state.championPlayerId === player.id;
   const position = positions?.headsUp && positions.button === player.seat ? "D · SB"
     : positions?.button === player.seat ? "D"
     : positions?.smallBlind === player.seat ? "SB"
@@ -206,24 +219,33 @@ function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, 
   const allIn = broadcast?.allIn ?? player.allIn;
   const stack = broadcast?.stack ?? player.stack;
   const streetCommitted = broadcast?.streetCommitted ?? player.streetCommitted;
+  const cardsReady = (broadcast?.holeCards.length ?? 0) >= 2;
   const equityPercent = broadcast?.equity === null || broadcast?.equity === undefined ? null : broadcast.equity * 100;
   const equityLabel = equityPercent === null ? "—" : `${estimated ? "≈" : ""}${Math.round(equityPercent)}%`;
-  const equityTitle = equityPercent === null
+  const equityTitle = !cardsReady
+    ? text("等待发牌", "Waiting for the deal")
+    : equityPercent === null
     ? text("已弃牌，不参与当前胜率计算", "Folded — excluded from live equity")
     : `${text("摊牌权益", "Showdown equity")} ${equityPercent.toFixed(1)}% · ${samples.toLocaleString()} ${text("次牌面", "runouts")}`;
+  const statusLabel = isActing ? text("思考中", "Thinking")
+    : allIn ? text("全下", "All-in")
+      : folded ? text("弃牌", "Folded")
+        : historical && eliminated ? text("已淘汰", "Out")
+          : historical && broadcast ? text("在席", "Active")
+            : playerStatus[player.status] ?? player.status;
   return (
-    <article className={`table-seat${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} style={style}>
+    <article className={`table-seat${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${historical ? eliminated ? " is-out" : "" : player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} style={style}>
       <div className="seat-meta"><span><span className="seat-word">{text("座位", "Seat")} </span>{String(player.seat + 1).padStart(2, "0")}</span>{position && <b>{position}</b>}</div>
       <div className="seat-name"><strong title={player.displayName}>{player.displayName}</strong>{isChampion && <span title={text("冠军", "Champion")}>♛</span>}</div>
       {broadcast && <div className="seat-broadcast">
         <div className="seat-hole-cards" aria-label={`${player.displayName} ${text("手牌", "hole cards")}`}>
-          <PlayingCard card={broadcast.holeCards[0]} compact />
-          <PlayingCard card={broadcast.holeCards[1]} compact />
+          <PlayingCard card={broadcast.holeCards[0]} hidden={!cardsReady} compact />
+          <PlayingCard card={broadcast.holeCards[1]} hidden={!cardsReady} compact />
         </div>
         <strong className="seat-equity" title={equityTitle}>{equityLabel}</strong>
       </div>}
       {broadcast && <span className="seat-equity-track" aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(100, equityPercent ?? 0))}%` }} /></span>}
-      <div className="seat-stack"><span className={isActing ? "seat-turn" : ""}>{isActing ? text("思考中", "Thinking") : allIn ? text("全下", "All-in") : folded ? text("弃牌", "Folded") : playerStatus[player.status] ?? player.status}</span><b>{formatChips(stack)}</b></div>
+      <div className="seat-stack"><span className={isActing ? "seat-turn" : ""}>{statusLabel}</span><b>{formatChips(stack)}</b></div>
       {broadcast?.lastAction && <div className={`seat-last-action is-${broadcast.lastAction.classification}`}>{compactActionLabel(broadcast.lastAction, locale)}</div>}
       {streetCommitted > 0 && <span className="seat-bet"><i aria-hidden="true" />{formatChips(streetCommitted)}</span>}
     </article>

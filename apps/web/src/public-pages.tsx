@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiRequest, useApiResource } from "./api";
-import { unseenBroadcastFrames } from "./broadcast-timeline";
+import { broadcastFrameAtSequence, defaultWatchRoomTournament, replaySequenceSteps, unseenBroadcastFrames } from "./broadcast-timeline";
 import { HandActionLedger } from "./hand-action-ledger";
 import { styleProfileLabel } from "./leaderboard-format";
 import {
@@ -41,8 +41,20 @@ import { useUiPreferences } from "./ui-preferences";
 
 export function LivePage() {
   const { locale, text } = useUiPreferences();
-  const resource = useApiResource<{ state: ArenaState | null; broadcast: ArenaBroadcast | null; timeline: ArenaBroadcast[] }>("/api/public/broadcast/live", 1_500);
-  const state = resource.data?.state ?? null;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tournamentsResource = useApiResource<{ tournaments: TournamentSummary[] }>("/api/public/tournaments", 1_500);
+  const tournaments = tournamentsResource.data?.tournaments ?? [];
+  const requestedTournamentId = searchParams.get("tournament");
+  const defaultTournament = defaultWatchRoomTournament(tournaments);
+  const selectedTournament = tournaments.find((tournament) => tournament.id === requestedTournamentId)
+    ?? defaultTournament;
+  const selectedTournamentId = selectedTournament?.id ?? null;
+  const selectedIsTerminal = selectedTournament?.status === "COMPLETED" || selectedTournament?.status === "CANCELLED";
+  const resource = useApiResource<{ state: ArenaState | null; broadcast: ArenaBroadcast | null; timeline: ArenaBroadcast[] }>(
+    selectedTournamentId ? `/api/public/tournaments/${selectedTournamentId}/broadcast` : null,
+    selectedTournamentId && !selectedIsTerminal ? 1_500 : 0,
+  );
+  const state = resource.data?.state?.tournamentId === selectedTournamentId ? resource.data.state : null;
   const broadcast = resource.data?.broadcast ?? null;
   const timeline = resource.data?.timeline ?? [];
   const [presentedBroadcast, setPresentedBroadcast] = useState<ArenaBroadcast | null>(null);
@@ -51,9 +63,53 @@ export function LivePage() {
   const lastBroadcastSequence = useRef(0);
   const [events, setEvents] = useState<ArenaEvent[]>([]);
   const [streamStatus, setStreamStatus] = useState<"idle" | "connected" | "reconnecting">("idle");
+  const [replayRequested, setReplayRequested] = useState(false);
+  const [replayStatus, setReplayStatus] = useState<"idle" | "loading" | "playing" | "paused" | "ended">("idle");
+  const [replayStepIndex, setReplayStepIndex] = useState(0);
+  const replayResource = useApiResource<{ state: ArenaState; timeline: ArenaBroadcast[]; events: ArenaEvent[] }>(
+    replayRequested && selectedTournamentId && selectedIsTerminal
+      ? `/api/public/tournaments/${selectedTournamentId}/broadcast-replay`
+      : null,
+  );
+  const replayData = replayResource.data?.state.tournamentId === selectedTournamentId ? replayResource.data : null;
+  const replayTimeline = replayData?.timeline ?? [];
+  const replayEvents = replayData?.events ?? [];
+  const replaySteps = useMemo(() => replaySequenceSteps(
+    replayTimeline,
+    spectatorTimeline(replayEvents).map(({ event }) => event.sequence),
+  ), [replayEvents, replayTimeline]);
+  const replayActive = replayRequested && replayData !== null && replayStatus !== "loading";
+  const replaySequence = replayStepIndex >= replaySteps.length
+    ? Number.POSITIVE_INFINITY
+    : replaySteps[replayStepIndex] ?? 0;
+  const terminalReplaySequence = replayEvents.find((event) => event.type === "TOURNAMENT_COMPLETED"
+    || event.type === "TOURNAMENT_CANCELLED")?.sequence ?? Number.POSITIVE_INFINITY;
+  const replayFrame = replayActive && replaySequence < terminalReplaySequence
+    ? broadcastFrameAtSequence(replayTimeline, replaySequence)
+    : null;
+  const replayVisibleEvents = replayActive
+    ? replayEvents.filter((event) => event.sequence <= replaySequence)
+    : [];
+  const replayEliminatedPlayerIds = useMemo(() => new Set(replayVisibleEvents.flatMap((event) => {
+    if (event.type !== "PLAYER_ELIMINATED") return [];
+    const playerId = event.actorId ?? event.publicPayload.playerId;
+    return typeof playerId === "string" ? [playerId] : [];
+  })), [replayVisibleEvents]);
 
   const isTerminal = state?.status === "COMPLETED" || state?.status === "CANCELLED";
   useEffect(() => {
+    broadcastTournament.current = null;
+    lastBroadcastSequence.current = 0;
+    setPresentedBroadcast(null);
+    setBroadcastQueue([]);
+    setEvents([]);
+    setStreamStatus("idle");
+    setReplayRequested(false);
+    setReplayStatus("idle");
+    setReplayStepIndex(0);
+  }, [selectedTournamentId]);
+  useEffect(() => {
+    if (replayRequested || isTerminal) return;
     const tournamentId = state?.tournamentId ?? null;
     if (broadcastTournament.current !== tournamentId) {
       broadcastTournament.current = tournamentId;
@@ -76,7 +132,7 @@ export function LivePage() {
       const known = new Set(current.map((frame) => frame.sequence));
       return [...current, ...incoming.filter((frame) => !known.has(frame.sequence))];
     });
-  }, [broadcast, broadcastQueue.length, state?.tournamentId, timeline]);
+  }, [broadcast, broadcastQueue.length, isTerminal, replayRequested, state?.tournamentId, timeline]);
   useEffect(() => {
     const next = broadcastQueue[0];
     if (!next) return;
@@ -87,7 +143,7 @@ export function LivePage() {
     return () => window.clearTimeout(timer);
   }, [broadcastQueue]);
   useEffect(() => {
-    if (!state?.tournamentId || isTerminal) return;
+    if (!state?.tournamentId || isTerminal || replayRequested) return;
     setEvents([]);
     const source = new EventSource(`/api/public/tournaments/${state.tournamentId}/events?tail=120`);
     const handleArena = (message: MessageEvent<string>) => {
@@ -102,9 +158,27 @@ export function LivePage() {
     source.onopen = () => setStreamStatus("connected");
     source.onerror = () => setStreamStatus("reconnecting");
     return () => source.close();
-  }, [state?.tournamentId, isTerminal]);
+  }, [state?.tournamentId, isTerminal, replayRequested]);
+  useEffect(() => {
+    if (!replayRequested || !replayData || replayStatus !== "loading") return;
+    setReplayStepIndex(0);
+    setReplayStatus(replaySteps.length > 0 ? "playing" : "ended");
+  }, [replayData, replayRequested, replayStatus, replaySteps.length]);
+  useEffect(() => {
+    if (replayStatus !== "playing" || replaySteps.length === 0) return;
+    const timer = window.setTimeout(() => {
+      if (replayStepIndex >= replaySteps.length - 1) {
+        setReplayStepIndex(replaySteps.length);
+        setReplayStatus("ended");
+      } else {
+        setReplayStepIndex((current) => current + 1);
+      }
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [replayStatus, replayStepIndex, replaySteps.length]);
 
-  if (resource.loading) return <main className="page-shell"><LoadingBlock /></main>;
+  if (tournamentsResource.loading || (selectedTournamentId && (resource.loading || !state))) return <main className="page-shell"><LoadingBlock /></main>;
+  if (tournamentsResource.error) return <main className="page-shell"><ErrorBlock message={tournamentsResource.error} onRetry={() => void tournamentsResource.refresh()} /></main>;
   if (resource.error && !state) return <main className="page-shell"><ErrorBlock message={resource.error} onRetry={() => void resource.refresh()} /></main>;
   if (!state) {
     return (
@@ -118,29 +192,68 @@ export function LivePage() {
   }
 
   const hand = state.hand;
-  const displayBroadcast = presentedBroadcast ?? broadcast;
+  const displayBroadcast = replayActive ? replayFrame : presentedBroadcast ?? broadcast;
   const displayBlinds = displayBroadcast?.blinds ?? hand?.blinds ?? null;
+  const displayedEvents = replayActive ? replayVisibleEvents : events;
+  const activePlayers = replayActive
+    ? state.players.length - replayEliminatedPlayerIds.size
+    : state.players.filter((player) => player.status !== "ELIMINATED").length;
+  const replayProgress = replaySteps.length === 0 ? 0 : Math.min(replayStepIndex + 1, replaySteps.length);
+  const tournamentOptions = tournaments.map((tournament) => {
+    const status = tournament.status === "RUNNING" ? text("直播中", "Live")
+      : tournament.status === "PAUSED_INFRA" ? text("已暂停", "Paused")
+        : tournament.status === "READY" ? text("准备中", "Ready")
+          : tournament.status === "COMPLETED" ? text("已结束", "Completed")
+            : text("已取消", "Cancelled");
+    return { value: tournament.id, label: `${status} · ${tournament.name}` };
+  });
+  const selectTournament = (tournamentId: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("tournament", tournamentId);
+    setSearchParams(next);
+  };
+  const startReplay = () => {
+    setReplayRequested(true);
+    setReplayStatus("loading");
+    setReplayStepIndex(0);
+    if (replayRequested) void replayResource.refresh();
+  };
   return (
     <main className="page-shell live-page">
       <div className="live-titlebar">
-        <div><h1>{state.name}</h1></div>
+        <div className="watch-room-heading">
+          <div className="watch-room-picker"><span>{text("观赛赛事", "Tournament")}</span><SelectControl value={selectedTournamentId ?? ""} options={tournamentOptions} onChange={selectTournament} ariaLabel={text("切换观赛赛事", "Switch tournament")} /></div>
+          <h1>{state.name}</h1>
+        </div>
         <div className="live-meta"><StatusBadge status={state.status} /><span>{text("第", "Hand")} <b>{String(displayBroadcast?.handNo ?? hand?.handNo ?? state.completedHands).padStart(3, "0")}</b> {text("手", "")}</span>{displayBlinds ? <span>{text("盲注", "Blinds")} <b>{formatChips(displayBlinds.smallBlind)} / {formatChips(displayBlinds.bigBlind)}</b></span> : <span>{text("最终筹码", "Final stack")} <b>{formatChips(state.players.find((player) => player.id === state.championPlayerId)?.stack)}</b></span>}</div>
       </div>
       <div className="live-layout">
-        <PokerTable state={state} broadcast={displayBroadcast} />
+        <PokerTable state={state} broadcast={displayBroadcast} historical={replayActive && displayBroadcast !== null} eliminatedPlayerIds={replayEliminatedPlayerIds} />
         <aside className="broadcast-sidebar">
-          <div className="panel-heading"><div><h2>{text("牌局时间线", "Game timeline")}</h2></div>{isTerminal ? <span className="stream-state">{text("赛事已结束", "Tournament ended")}</span> : <span className={`stream-state ${streamStatus}`}><i />{streamStatus === "connected" ? text("同步中", "Synced") : streamStatus === "reconnecting" ? text("正在重连", "Reconnecting") : text("正在连接", "Connecting")}</span>}</div>
-          <EventTape events={events} players={state.players} limit={28} emptyLabel={isTerminal ? text("赛事已结束，可打开回放查看完整记录。", "Tournament ended — open the replay for the full record.") : undefined} />
+          <div className="panel-heading watch-room-panel-heading">
+            <div><h2>{text("牌局时间线", "Game timeline")}</h2>{replayActive && <p>{text("按公开事件匀速播放", "Playing public events at a steady pace")}</p>}</div>
+            {isTerminal ? (
+              <div className="watch-room-replay-controls">
+                {replayStatus === "playing" ? <button type="button" onClick={() => setReplayStatus("paused")}>{text("暂停", "Pause")}</button>
+                  : replayStatus === "paused" ? <button type="button" onClick={() => setReplayStatus("playing")}>{text("继续", "Resume")}</button>
+                    : replayStatus === "loading" ? <button type="button" disabled>{text("准备回放…", "Preparing…")}</button>
+                      : <button type="button" onClick={startReplay}>{replayStatus === "ended" ? text("重新播放", "Replay again") : text("观看回放", "Watch replay")}</button>}
+              </div>
+            ) : <span className={`stream-state ${streamStatus}`}><i />{streamStatus === "connected" ? text("同步中", "Synced") : streamStatus === "reconnecting" ? text("正在重连", "Reconnecting") : text("正在连接", "Connecting")}</span>}
+          </div>
+          {replayActive && <div className="watch-room-replay-progress"><progress max={Math.max(1, replaySteps.length)} value={replayProgress} /><span><b>H{String(displayBroadcast?.handNo ?? state.completedHands).padStart(3, "0")}</b>{replayProgress} / {replaySteps.length}</span></div>}
+          {replayResource.error && replayRequested ? <div className="watch-room-replay-error"><span>{text("回放暂时无法载入", "Replay could not be loaded")}</span><button type="button" onClick={startReplay}>{text("重试", "Retry")}</button></div>
+            : <EventTape events={displayedEvents} players={state.players} limit={28} emptyLabel={isTerminal ? text("赛事已结束，点击“观看回放”重现完整牌局。", "Tournament ended — select Watch replay to relive the match.") : undefined} />}
           <div className="broadcast-facts">
             <div><span>{text("阶段", "Stage")}</span><b>{formatArenaPhase(displayBroadcast?.street ?? hand?.phase ?? state.status, locale)}</b></div>
-            <div><span>{text("在席", "Active")}</span><b>{state.players.filter((player) => player.status !== "ELIMINATED").length} / {state.players.length}</b></div>
+            <div><span>{text("在席", "Active")}</span><b>{activePlayers} / {state.players.length}</b></div>
             <div><span>{text("种子承诺", "Seed commit")}</span><b title={state.seedCommitment}>{state.seedCommitment.slice(0, 12)}…</b></div>
           </div>
         </aside>
       </div>
       <div className="under-table-bar">
         <span>{text("规则版本", "Ruleset")} <b>{state.rulesetVersion}</b></span><span>{text("提示词哈希", "Prompt hash")} <b>{state.promptHash.slice(0, 12)}…</b></span>
-        <Link to={`/tournaments/${state.tournamentId}/replay`}>{text("打开赛程回放", "Open replay")} →</Link>
+        <Link to={`/tournaments/${state.tournamentId}/replay`}>{text("查看赛事解析", "View match analysis")} →</Link>
       </div>
     </main>
   );
