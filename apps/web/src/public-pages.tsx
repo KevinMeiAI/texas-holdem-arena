@@ -60,9 +60,10 @@ export function LivePage() {
     selectedTournamentId ? `/api/public/tournaments/${selectedTournamentId}/broadcast` : null,
     selectedTournamentId && !selectedIsTerminal ? 1_500 : 0,
   );
-  const state = resource.data?.state?.tournamentId === selectedTournamentId ? resource.data.state : null;
-  const broadcast = resource.data?.broadcast ?? null;
-  const timeline = resource.data?.timeline ?? [];
+  const selectedResourceData = resource.data?.state?.tournamentId === selectedTournamentId ? resource.data : null;
+  const state = selectedResourceData?.state ?? null;
+  const broadcast = selectedResourceData?.broadcast ?? null;
+  const timeline = selectedResourceData?.timeline ?? [];
   const [presentedBroadcast, setPresentedBroadcast] = useState<ArenaBroadcast | null>(null);
   const [broadcastQueue, setBroadcastQueue] = useState<ArenaBroadcast[]>([]);
   const broadcastTournament = useRef<string | null>(null);
@@ -116,7 +117,7 @@ export function LivePage() {
   ), [liveSpectatorTimeline, presentedBroadcast?.sequence]);
 
   const isTerminal = state?.status === "COMPLETED" || state?.status === "CANCELLED";
-  useEffect(() => {
+  useLayoutEffect(() => {
     broadcastTournament.current = null;
     lastBroadcastSequence.current = 0;
     setPresentedBroadcast(null);
@@ -128,8 +129,8 @@ export function LivePage() {
     setReplayStepIndex(0);
   }, [selectedTournamentId]);
   useEffect(() => {
-    if (replayRequested || isTerminal) return;
-    const tournamentId = state?.tournamentId ?? null;
+    if (!state?.tournamentId || replayRequested || isTerminal) return;
+    const tournamentId = state.tournamentId;
     if (broadcastTournament.current !== tournamentId) {
       broadcastTournament.current = tournamentId;
       lastBroadcastSequence.current = Math.max(0, ...timeline.map((frame) => frame.sequence));
@@ -154,13 +155,13 @@ export function LivePage() {
   }, [broadcast, broadcastQueue.length, isTerminal, replayRequested, state?.tournamentId, timeline]);
   useEffect(() => {
     const next = broadcastQueue[0];
-    if (!next) return;
+    if (!next || !state?.tournamentId || isTerminal || replayRequested || broadcastTournament.current !== state.tournamentId) return;
     const timer = window.setTimeout(() => {
       setPresentedBroadcast(next);
       setBroadcastQueue((current) => current.slice(1));
     }, LIVE_FRAME_INTERVAL_MS + (liveSettlement?.isFinalAward ? SETTLEMENT_HOLD_MS : 0));
     return () => window.clearTimeout(timer);
-  }, [broadcastQueue, liveSettlement?.isFinalAward]);
+  }, [broadcastQueue, isTerminal, liveSettlement?.isFinalAward, replayRequested, state?.tournamentId]);
   useEffect(() => {
     if (!state?.tournamentId || isTerminal || replayRequested) return;
     setEvents([]);
