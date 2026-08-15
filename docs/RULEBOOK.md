@@ -99,10 +99,31 @@ proceed directly to showdown.
 - All non-folded players at showdown are evaluated and revealed.
 - Folded hole cards remain stored as authoritative private hand data.
 - Live model projections never expose an opponent's unrevealed cards.
-- Live spectator projections keep folded cards hidden until the hand completes.
+- The ordinary live spectator event stream keeps every opponent's hole cards
+  hidden until the hand completes.
+- The separate broadcast view is an explicit omniscient spectator projection:
+  it may show every dealt hand in real time, including hands that later fold,
+  but it never exposes burn cards or administrator-only audit payloads.
 - Replay analysis may expose every stored hole card only after `HAND_COMPLETED`.
 - The event/persistence layer is responsible for encrypting private payloads and
-  producing separate model, live spectator, replay and administrator views.
+  producing separate model, ordinary live spectator, omniscient broadcast,
+  replay and administrator views.
+
+## Broadcast equity
+
+- Broadcast equity is presentation data and never enters a model request,
+  history-query result or poker-rule decision.
+- Every dealt hole card is removed from the remaining deck, including cards
+  belonging to players who have folded. Only non-folded players compete for
+  equity.
+- Ties split one unit of equity equally among all tied winners. The broadcast
+  also records outright-win and tie probabilities separately.
+- When at most 25,000 legal board completions remain, the calculator enumerates
+  every completion. Larger spaces use 5,000 deterministic sampled completions
+  and the UI marks the result as an estimate.
+- A fast all-in runout remains instantaneous in the deterministic engine. The
+  UI replays stored preflop, action, flop, turn, river and showdown frames at a
+  readable pace without delaying or influencing tournament execution.
 
 ## Elimination and finishing positions
 

@@ -47,6 +47,28 @@ describe("role-separated event projections", () => {
     expect(JSON.stringify(projection("SPECTATOR_REPLAY", true))).toContain(secretMarker);
   });
 
+  it("exposes live hole cards only through the explicit broadcast projection", () => {
+    expect(JSON.stringify(projection("SPECTATOR_LIVE"))).not.toContain(secretMarker);
+    expect(JSON.stringify(projection("SPECTATOR_BROADCAST"))).toContain(secretMarker);
+  });
+
+  it("keeps administrator-only burn cards out of the broadcast projection", () => {
+    const burnMarker = "BURN-CARD-7s";
+    const street: LoadedArenaEvent = {
+      event: {
+        ...loaded.event,
+        type: "STREET_DEALT",
+        publicPayload: { street: "FLOP", cards: ["2c", "3d", "4h"] },
+        privateVisibility: "ADMIN_AUDIT",
+        privateOwnerId: null,
+      },
+      privatePayload: { burn: burnMarker },
+    };
+    const request = { completedHandNos: new Set<number>() };
+    expect(JSON.stringify(projectArenaEvent(street, { role: "SPECTATOR_BROADCAST", ...request }))).not.toContain(burnMarker);
+    expect(JSON.stringify(projectArenaEvent(street, { role: "ADMIN_AUDIT", ...request }))).toContain(burnMarker);
+  });
+
   it("permits explicit administrator audit projection", () => {
     expect(JSON.stringify(projection("ADMIN_AUDIT"))).toContain(secretMarker);
   });

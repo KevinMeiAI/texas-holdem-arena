@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiRequest, useApiResource } from "./api";
+import { unseenBroadcastFrames } from "./broadcast-timeline";
 import { HandActionLedger } from "./hand-action-ledger";
 import { styleProfileLabel } from "./leaderboard-format";
 import {
@@ -27,6 +28,7 @@ import {
 } from "./components";
 import type {
   ArenaEvent,
+  ArenaBroadcast,
   ArenaState,
   DecisionAuditTurn,
   HandSummary,
@@ -39,12 +41,51 @@ import { useUiPreferences } from "./ui-preferences";
 
 export function LivePage() {
   const { locale, text } = useUiPreferences();
-  const resource = useApiResource<{ state: ArenaState | null }>("/api/public/live", 1_500);
+  const resource = useApiResource<{ state: ArenaState | null; broadcast: ArenaBroadcast | null; timeline: ArenaBroadcast[] }>("/api/public/broadcast/live", 1_500);
   const state = resource.data?.state ?? null;
+  const broadcast = resource.data?.broadcast ?? null;
+  const timeline = resource.data?.timeline ?? [];
+  const [presentedBroadcast, setPresentedBroadcast] = useState<ArenaBroadcast | null>(null);
+  const [broadcastQueue, setBroadcastQueue] = useState<ArenaBroadcast[]>([]);
+  const broadcastTournament = useRef<string | null>(null);
+  const lastBroadcastSequence = useRef(0);
   const [events, setEvents] = useState<ArenaEvent[]>([]);
   const [streamStatus, setStreamStatus] = useState<"idle" | "connected" | "reconnecting">("idle");
 
   const isTerminal = state?.status === "COMPLETED" || state?.status === "CANCELLED";
+  useEffect(() => {
+    const tournamentId = state?.tournamentId ?? null;
+    if (broadcastTournament.current !== tournamentId) {
+      broadcastTournament.current = tournamentId;
+      lastBroadcastSequence.current = Math.max(0, ...timeline.map((frame) => frame.sequence));
+      setBroadcastQueue([]);
+      setPresentedBroadcast(broadcast);
+      return;
+    }
+    const incoming = unseenBroadcastFrames(
+      timeline,
+      lastBroadcastSequence.current,
+      new Set(broadcastQueue.map((frame) => frame.sequence)),
+    );
+    if (incoming.length === 0) {
+      if (broadcastQueue.length === 0) setPresentedBroadcast(broadcast);
+      return;
+    }
+    lastBroadcastSequence.current = incoming.at(-1)!.sequence;
+    setBroadcastQueue((current) => {
+      const known = new Set(current.map((frame) => frame.sequence));
+      return [...current, ...incoming.filter((frame) => !known.has(frame.sequence))];
+    });
+  }, [broadcast, broadcastQueue.length, state?.tournamentId, timeline]);
+  useEffect(() => {
+    const next = broadcastQueue[0];
+    if (!next) return;
+    const timer = window.setTimeout(() => {
+      setPresentedBroadcast(next);
+      setBroadcastQueue((current) => current.slice(1));
+    }, 850);
+    return () => window.clearTimeout(timer);
+  }, [broadcastQueue]);
   useEffect(() => {
     if (!state?.tournamentId || isTerminal) return;
     setEvents([]);
@@ -77,19 +118,21 @@ export function LivePage() {
   }
 
   const hand = state.hand;
+  const displayBroadcast = presentedBroadcast ?? broadcast;
+  const displayBlinds = displayBroadcast?.blinds ?? hand?.blinds ?? null;
   return (
     <main className="page-shell live-page">
       <div className="live-titlebar">
         <div><h1>{state.name}</h1></div>
-        <div className="live-meta"><StatusBadge status={state.status} /><span>{text("第", "Hand")} <b>{String(hand?.handNo ?? state.completedHands).padStart(3, "0")}</b> {text("手", "")}</span>{hand ? <span>{text("盲注", "Blinds")} <b>{formatChips(hand.blinds.smallBlind)} / {formatChips(hand.blinds.bigBlind)}</b></span> : <span>{text("最终筹码", "Final stack")} <b>{formatChips(state.players.find((player) => player.id === state.championPlayerId)?.stack)}</b></span>}</div>
+        <div className="live-meta"><StatusBadge status={state.status} /><span>{text("第", "Hand")} <b>{String(displayBroadcast?.handNo ?? hand?.handNo ?? state.completedHands).padStart(3, "0")}</b> {text("手", "")}</span>{displayBlinds ? <span>{text("盲注", "Blinds")} <b>{formatChips(displayBlinds.smallBlind)} / {formatChips(displayBlinds.bigBlind)}</b></span> : <span>{text("最终筹码", "Final stack")} <b>{formatChips(state.players.find((player) => player.id === state.championPlayerId)?.stack)}</b></span>}</div>
       </div>
       <div className="live-layout">
-        <PokerTable state={state} />
+        <PokerTable state={state} broadcast={displayBroadcast} />
         <aside className="broadcast-sidebar">
           <div className="panel-heading"><div><h2>{text("牌局时间线", "Game timeline")}</h2></div>{isTerminal ? <span className="stream-state">{text("赛事已结束", "Tournament ended")}</span> : <span className={`stream-state ${streamStatus}`}><i />{streamStatus === "connected" ? text("同步中", "Synced") : streamStatus === "reconnecting" ? text("正在重连", "Reconnecting") : text("正在连接", "Connecting")}</span>}</div>
           <EventTape events={events} players={state.players} limit={28} emptyLabel={isTerminal ? text("赛事已结束，可打开回放查看完整记录。", "Tournament ended — open the replay for the full record.") : undefined} />
           <div className="broadcast-facts">
-            <div><span>{text("阶段", "Stage")}</span><b>{formatArenaPhase(hand?.phase ?? state.status, locale)}</b></div>
+            <div><span>{text("阶段", "Stage")}</span><b>{formatArenaPhase(displayBroadcast?.street ?? hand?.phase ?? state.status, locale)}</b></div>
             <div><span>{text("在席", "Active")}</span><b>{state.players.filter((player) => player.status !== "ELIMINATED").length} / {state.players.length}</b></div>
             <div><span>{text("种子承诺", "Seed commit")}</span><b title={state.seedCommitment}>{state.seedCommitment.slice(0, 12)}…</b></div>
           </div>

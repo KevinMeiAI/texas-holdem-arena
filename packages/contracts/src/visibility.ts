@@ -1,6 +1,6 @@
 import type { LoadedArenaEvent, StoredArenaEvent } from "./events.js";
 
-export type ProjectionRole = "MODEL_SELF" | "SPECTATOR_LIVE" | "SPECTATOR_REPLAY" | "ADMIN_AUDIT";
+export type ProjectionRole = "MODEL_SELF" | "SPECTATOR_LIVE" | "SPECTATOR_BROADCAST" | "SPECTATOR_REPLAY" | "ADMIN_AUDIT";
 
 export interface ProjectionRequest {
   role: ProjectionRole;
@@ -26,6 +26,7 @@ function mayReadPrivate(event: StoredArenaEvent, request: ProjectionRequest): bo
   if (event.privateVisibility === "ADMIN_AUDIT") return request.role === "ADMIN_AUDIT";
   if (request.role === "ADMIN_AUDIT") return true;
   if (request.role === "MODEL_SELF") return request.playerId === event.privateOwnerId;
+  if (request.role === "SPECTATOR_BROADCAST") return event.privateVisibility === "PLAYER_HOLE_CARDS";
   return event.handNo !== null && request.completedHandNos.has(event.handNo);
 }
 

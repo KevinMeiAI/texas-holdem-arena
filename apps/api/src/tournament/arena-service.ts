@@ -32,6 +32,7 @@ import {
   type DealSchedule,
 } from "../../../../packages/fairness/src/deal-schedule.js";
 import { decryptJson, encryptJson } from "../security/encryption.js";
+import { BroadcastViewBuilder } from "./broadcast-view.js";
 
 export interface CreateArenaTournamentInput {
   name: string;
@@ -118,6 +119,7 @@ export class ArenaService {
   readonly #records = new Map<string, ActiveArena>();
   readonly #statisticsCache = new Map<string, TournamentStatisticsComputation>();
   readonly #statisticsPending = new Map<string, Promise<TournamentStatisticsComputation>>();
+  readonly #broadcastViews = new BroadcastViewBuilder();
   readonly #store: PgEventStore;
   readonly #systemPrompts: SystemPromptVersionService;
   #stopping = false;
@@ -471,6 +473,18 @@ export class ArenaService {
     return result.rows[0]?.public_state ?? null;
   }
 
+  async broadcastState(tournamentId?: string): Promise<{ state: unknown; broadcast: unknown; timeline: unknown[] } | null> {
+    const state = await this.publicState(tournamentId);
+    const id = (state as { tournamentId?: unknown } | null)?.tournamentId;
+    if (!state || typeof id !== "string") return null;
+    const events = await this.projectedEvents(id, "SPECTATOR_BROADCAST");
+    return {
+      state,
+      broadcast: this.#broadcastViews.build(state, events),
+      timeline: this.#broadcastViews.buildTimeline(state, events),
+    };
+  }
+
   async listTournaments(): Promise<unknown[]> {
     const result = await this.pool.query<{
       id: string;
@@ -517,7 +531,7 @@ export class ArenaService {
 
   async projectedEvents(
     tournamentId: string,
-    role: Extract<ProjectionRole, "SPECTATOR_LIVE" | "SPECTATOR_REPLAY">,
+    role: Extract<ProjectionRole, "SPECTATOR_LIVE" | "SPECTATOR_BROADCAST" | "SPECTATOR_REPLAY">,
     afterSequence = 0,
   ) {
     const loaded = await this.#store.loadEvents(tournamentId, { includePrivate: true });

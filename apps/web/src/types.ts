@@ -44,6 +44,46 @@ export interface ArenaState {
   hand: ArenaHand | null;
 }
 
+export interface ArenaBroadcastLastAction {
+  sequence: number;
+  street: string;
+  action: string;
+  classification: string;
+  paid: number;
+  amountTo: number;
+  term: string | null;
+}
+
+export interface ArenaBroadcastPlayer {
+  playerId: string;
+  seat: number;
+  holeCards: string[];
+  stack: number;
+  folded: boolean;
+  allIn: boolean;
+  streetCommitted: number;
+  equity: number | null;
+  outrightWinProbability: number | null;
+  tieProbability: number | null;
+  lastAction: ArenaBroadcastLastAction | null;
+}
+
+export interface ArenaBroadcast {
+  version: string;
+  equityVersion: string;
+  handNo: number;
+  sequence: number;
+  street: string;
+  board: string[];
+  pot: number;
+  positions: { button: number; smallBlind: number; bigBlind: number; headsUp: boolean } | null;
+  blinds: { smallBlind: number; bigBlind: number; bigBlindAnte: number } | null;
+  currentActorId: string | null;
+  estimated: boolean;
+  samples: number;
+  players: ArenaBroadcastPlayer[];
+}
+
 export interface ArenaEvent {
   tournamentId: string;
   sequence: number;

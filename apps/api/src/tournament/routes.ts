@@ -151,6 +151,9 @@ export async function registerTournamentRoutes(
   }
 
   app.get("/api/public/live", async () => ({ state: await context.arena.publicState() }));
+  app.get("/api/public/broadcast/live", async () => (
+    await context.arena.broadcastState() ?? { state: null, broadcast: null, timeline: [] }
+  ));
   app.get("/api/public/tournaments", async () => ({ tournaments: await context.arena.listTournaments() }));
   app.get("/api/public/benchmark-series", async () => ({ series: await context.arena.listBenchmarkSeries() }));
   app.get<{ Params: { id: string } }>("/api/public/tournaments/:id", async (request, reply) => {

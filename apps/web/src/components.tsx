@@ -2,7 +2,14 @@ import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { spectatorTimeline, type SpectatorEventTone } from "./spectator-event-timeline";
 import { tableSeatLayout } from "./table-layout";
-import type { ArenaEvent, ArenaPlayer, ArenaState } from "./types";
+import type {
+  ArenaBroadcast,
+  ArenaBroadcastLastAction,
+  ArenaBroadcastPlayer,
+  ArenaEvent,
+  ArenaPlayer,
+  ArenaState,
+} from "./types";
 import { PreferenceControls, type UiLocale, uiText, useUiPreferences } from "./ui-preferences";
 
 export function Brand() {
@@ -106,22 +113,24 @@ export function PlayingCard({ card, hidden = false, compact = false }: {
   );
 }
 
-export function PokerTable({ state }: { state: ArenaState }) {
+export function PokerTable({ state, broadcast = null }: { state: ArenaState; broadcast?: ArenaBroadcast | null }) {
   const { text } = useUiPreferences();
   const players = [...state.players].sort((a, b) => a.seat - b.seat);
   const hand = state.hand;
-  const board = hand?.boards[0] ?? [];
+  const board = broadcast?.board ?? hand?.boards[0] ?? [];
   const settledPot = hand?.pots.reduce((sum, item) => sum + item.amount, 0) ?? 0;
-  const pot = settledPot > 0 ? settledPot : players.reduce((sum, player) => sum + player.totalCommitted, 0);
+  const pot = broadcast?.pot ?? (settledPot > 0 ? settledPot : players.reduce((sum, player) => sum + player.totalCommitted, 0));
   const labels = new Map(players.map((player) => [player.id, player.displayName]));
   const champion = players.find((player) => player.id === state.championPlayerId);
+  const broadcastByPlayer = new Map(broadcast?.players.map((player) => [player.playerId, player]) ?? []);
 
   return (
     <section className="table-broadcast" aria-label={`${state.name} ${text("牌桌", "table")}`}>
       <div className="table-room-light" />
       <div className="poker-table-shell" data-player-count={players.length}>
         <div className="poker-table-felt">
-          {hand ? <>
+          {broadcast && <span className="broadcast-mode-badge">{text("上帝视角", "Broadcast")}</span>}
+          {hand || broadcast ? <>
             <div className="table-center" role="group" aria-label={text("公共牌与底池", "Board and pot")}>
               <div className="community-cards">
                 {Array.from({ length: 5 }, (_, index) => <PlayingCard card={board[index]} key={index} />)}
@@ -142,11 +151,11 @@ export function PokerTable({ state }: { state: ArenaState }) {
               "--bet-shift-y-wide": `${placement.wideBetShift.y}rem`,
               "--tint": `var(--chart-series-${(index % 9) + 1})`,
             } as CSSProperties;
-            return <TableSeat key={player.id} player={player} state={state} style={style} />;
+            return <TableSeat key={player.id} player={player} state={state} broadcast={broadcastByPlayer.get(player.id)} broadcastHandNo={broadcast?.handNo ?? null} currentActorId={broadcast ? broadcast.currentActorId : hand?.currentActorId ?? null} positions={broadcast?.positions ?? hand?.positions ?? null} estimated={broadcast?.estimated === true} samples={broadcast?.samples ?? 0} style={style} />;
           })}
         </div>
       </div>
-      {hand?.pots && hand.pots.length > 1 && (
+      {hand?.pots && hand.pots.length > 1 && (!broadcast || broadcast.handNo === hand.handNo) && (
         <div className="side-pot-strip" aria-label={text("边池", "Side pots")}>
           {hand.pots.map((item) => <span key={item.index}>{text("边池", "Side pot")} {item.index + 1} <b>{formatChips(item.amount)}</b> · {item.eligible.map((id) => labels.get(id) ?? id).join(", ")}</span>)}
         </div>
@@ -155,22 +164,68 @@ export function PokerTable({ state }: { state: ArenaState }) {
   );
 }
 
-function TableSeat({ player, state, style }: { player: ArenaPlayer; state: ArenaState; style: CSSProperties }) {
-  const { text } = useUiPreferences();
+function compactActionLabel(action: ArenaBroadcastLastAction, locale: "zh-CN" | "en"): string {
+  const format = (value: number) => new Intl.NumberFormat("en-US", { notation: value >= 10_000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(value);
+  const amount = action.classification === "call" ? action.paid : action.amountTo;
+  const labels: Record<string, [string, string]> = {
+    fold: ["弃牌", "Fold"],
+    check: ["过牌", "Check"],
+    call: ["跟注", "Call"],
+    bet: ["下注至", "Bet to"],
+    raise: ["加注至", "Raise to"],
+    short_raise: ["加注至", "Raise to"],
+  };
+  const actionLabel = action.action === "all_in"
+    ? locale === "en" ? "All-in" : "全下"
+    : labels[action.classification]?.[locale === "en" ? 1 : 0] ?? action.action.toUpperCase();
+  return `${action.term ? `${action.term} · ` : ""}${actionLabel}${amount > 0 ? ` ${format(amount)}` : ""}`;
+}
+
+function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, positions, estimated, samples, style }: {
+  player: ArenaPlayer;
+  state: ArenaState;
+  broadcast?: ArenaBroadcastPlayer | undefined;
+  broadcastHandNo: number | null;
+  currentActorId: string | null;
+  positions: { button: number; smallBlind: number; bigBlind: number; headsUp: boolean } | null;
+  estimated: boolean;
+  samples: number;
+  style: CSSProperties;
+}) {
+  const { locale, text } = useUiPreferences();
   const hand = state.hand;
-  const isActing = hand?.currentActorId === player.id;
+  const isCurrentHand = broadcastHandNo === null || hand?.handNo === broadcastHandNo;
+  const isActing = isCurrentHand && currentActorId === player.id;
   const isChampion = state.championPlayerId === player.id;
-  const position = hand?.positions.headsUp && hand.positions.button === player.seat ? "D · SB"
-    : hand?.positions.button === player.seat ? "D"
-    : hand?.positions.smallBlind === player.seat ? "SB"
-      : hand?.positions.bigBlind === player.seat ? "BB" : null;
+  const position = positions?.headsUp && positions.button === player.seat ? "D · SB"
+    : positions?.button === player.seat ? "D"
+    : positions?.smallBlind === player.seat ? "SB"
+      : positions?.bigBlind === player.seat ? "BB" : null;
   const playerStatus: Record<string, string> = { ACTIVE: text("在席", "Active"), ELIMINATED: text("已淘汰", "Out"), CHAMPION: text("冠军", "Champion") };
+  const folded = broadcast?.folded ?? player.folded;
+  const allIn = broadcast?.allIn ?? player.allIn;
+  const stack = broadcast?.stack ?? player.stack;
+  const streetCommitted = broadcast?.streetCommitted ?? player.streetCommitted;
+  const equityPercent = broadcast?.equity === null || broadcast?.equity === undefined ? null : broadcast.equity * 100;
+  const equityLabel = equityPercent === null ? "—" : `${estimated ? "≈" : ""}${Math.round(equityPercent)}%`;
+  const equityTitle = equityPercent === null
+    ? text("已弃牌，不参与当前胜率计算", "Folded — excluded from live equity")
+    : `${text("摊牌权益", "Showdown equity")} ${equityPercent.toFixed(1)}% · ${samples.toLocaleString()} ${text("次牌面", "runouts")}`;
   return (
-    <article className={`table-seat${isActing ? " is-acting" : ""}${player.folded ? " is-folded" : ""}${player.status === "ELIMINATED" ? " is-out" : ""}`} style={style}>
+    <article className={`table-seat${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} style={style}>
       <div className="seat-meta"><span><span className="seat-word">{text("座位", "Seat")} </span>{String(player.seat + 1).padStart(2, "0")}</span>{position && <b>{position}</b>}</div>
       <div className="seat-name"><strong title={player.displayName}>{player.displayName}</strong>{isChampion && <span title={text("冠军", "Champion")}>♛</span>}</div>
-      <div className="seat-stack"><span className={isActing ? "seat-turn" : ""}>{isActing ? text("思考中", "Thinking") : player.allIn ? text("全下", "All-in") : player.folded ? text("弃牌", "Folded") : playerStatus[player.status] ?? player.status}</span><b>{formatChips(player.stack)}</b></div>
-      {player.streetCommitted > 0 && <span className="seat-bet"><i aria-hidden="true" />{formatChips(player.streetCommitted)}</span>}
+      {broadcast && <div className="seat-broadcast">
+        <div className="seat-hole-cards" aria-label={`${player.displayName} ${text("手牌", "hole cards")}`}>
+          <PlayingCard card={broadcast.holeCards[0]} compact />
+          <PlayingCard card={broadcast.holeCards[1]} compact />
+        </div>
+        <strong className="seat-equity" title={equityTitle}>{equityLabel}</strong>
+      </div>}
+      {broadcast && <span className="seat-equity-track" aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(100, equityPercent ?? 0))}%` }} /></span>}
+      <div className="seat-stack"><span className={isActing ? "seat-turn" : ""}>{isActing ? text("思考中", "Thinking") : allIn ? text("全下", "All-in") : folded ? text("弃牌", "Folded") : playerStatus[player.status] ?? player.status}</span><b>{formatChips(stack)}</b></div>
+      {broadcast?.lastAction && <div className={`seat-last-action is-${broadcast.lastAction.classification}`}>{compactActionLabel(broadcast.lastAction, locale)}</div>}
+      {streetCommitted > 0 && <span className="seat-bet"><i aria-hidden="true" />{formatChips(streetCommitted)}</span>}
     </article>
   );
 }
