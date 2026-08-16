@@ -152,7 +152,7 @@ export async function registerTournamentRoutes(
 
   app.get("/api/public/live", async () => ({ state: await context.arena.publicState() }));
   app.get("/api/public/broadcast/live", async () => (
-    await context.arena.broadcastState() ?? { state: null, broadcast: null, timeline: [] }
+    await context.arena.broadcastState() ?? { state: null, broadcast: null, timeline: [], playerBrands: {} }
   ));
   app.get<{ Params: { id: string } }>("/api/public/tournaments/:id/broadcast", async (request, reply) => (
     await context.arena.broadcastState(request.params.id)

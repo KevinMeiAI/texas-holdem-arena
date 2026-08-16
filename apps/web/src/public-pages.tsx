@@ -58,7 +58,7 @@ export function LivePage() {
     ?? defaultTournament;
   const selectedTournamentId = selectedTournament?.id ?? null;
   const selectedIsTerminal = selectedTournament?.status === "COMPLETED" || selectedTournament?.status === "CANCELLED";
-  const resource = useApiResource<{ state: ArenaState | null; broadcast: ArenaBroadcast | null; timeline: ArenaBroadcast[] }>(
+  const resource = useApiResource<{ state: ArenaState | null; broadcast: ArenaBroadcast | null; timeline: ArenaBroadcast[]; playerBrands: Record<string, ProviderBrand | null> }>(
     selectedTournamentId ? `/api/public/tournaments/${selectedTournamentId}/broadcast` : null,
     selectedTournamentId && !selectedIsTerminal ? 1_500 : 0,
   );
@@ -77,7 +77,7 @@ export function LivePage() {
   const [replayStepIndex, setReplayStepIndex] = useState(0);
   const [replayRate, setReplayRate] = useState<number>(1);
   const replayRequested = selectedTournamentId !== null && replayTournamentId === selectedTournamentId;
-  const replayResource = useApiResource<{ state: ArenaState; timeline: ArenaBroadcast[]; events: ArenaEvent[] }>(
+  const replayResource = useApiResource<{ state: ArenaState; timeline: ArenaBroadcast[]; events: ArenaEvent[]; playerBrands: Record<string, ProviderBrand | null> }>(
     replayRequested && selectedTournamentId && selectedIsTerminal
       ? `/api/public/tournaments/${selectedTournamentId}/broadcast-replay`
       : null,
@@ -218,6 +218,9 @@ export function LivePage() {
   const displayBlinds = displayBroadcast?.blinds ?? hand?.blinds ?? null;
   const displayedEvents = replayActive ? replayVisibleEvents : events;
   const displaySettlement = replayActive ? replaySettlement : liveSettlement;
+  const playerBrands = replayActive
+    ? replayData?.playerBrands ?? selectedResourceData?.playerBrands ?? {}
+    : selectedResourceData?.playerBrands ?? {};
   const activePlayers = replayActive
     ? state.players.length - replayEliminatedPlayerIds.size
     : state.players.filter((player) => player.status !== "ELIMINATED").length;
@@ -254,7 +257,7 @@ export function LivePage() {
         <div className="live-meta"><StatusBadge status={state.status} /><span>{text("第", "Hand")} <b>{String(displayBroadcast?.handNo ?? hand?.handNo ?? state.completedHands).padStart(3, "0")}</b> {text("手", "")}</span>{displayBlinds ? <span>{text("盲注", "Blinds")} <b>{formatChips(displayBlinds.smallBlind)} / {formatChips(displayBlinds.bigBlind)}</b></span> : <span>{text("最终筹码", "Final stack")} <b>{formatChips(state.players.find((player) => player.id === state.championPlayerId)?.stack)}</b></span>}</div>
       </div>
       <div className="live-layout">
-        <PokerTable state={state} broadcast={displayBroadcast} historical={replayActive && displayBroadcast !== null} eliminatedPlayerIds={replayEliminatedPlayerIds} settlement={displaySettlement} />
+        <PokerTable state={state} broadcast={displayBroadcast} playerBrands={playerBrands} historical={replayActive && displayBroadcast !== null} eliminatedPlayerIds={replayEliminatedPlayerIds} settlement={displaySettlement} />
         <aside className="broadcast-sidebar">
           <div className="panel-heading watch-room-panel-heading">
             <div><h2>{text("牌局时间线", "Game timeline")}</h2></div>

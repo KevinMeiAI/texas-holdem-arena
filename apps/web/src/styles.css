@@ -843,14 +843,24 @@ button:disabled {
 }
 
 .seat-name {
+  min-width: 0;
   margin-block: var(--space-3xs);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-3xs);
 }
 
+.seat-name .provider-logo.seat-provider-logo {
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0.14rem;
+  border-radius: 0.24rem;
+  font-size: 0.58rem;
+}
+
 .seat-name strong {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   font-size: var(--text-xs);
@@ -859,7 +869,8 @@ button:disabled {
   white-space: nowrap;
 }
 
-.seat-name span {
+.seat-name .seat-champion {
+  flex: 0 0 auto;
   color: var(--color-accent);
 }
 
@@ -1067,6 +1078,16 @@ button:disabled {
 .poker-table-shell[data-player-count="8"] .seat-broadcast,
 .poker-table-shell[data-player-count="9"] .seat-broadcast {
   margin-block: 0.12rem;
+}
+
+.poker-table-shell[data-player-count="7"] .provider-logo.seat-provider-logo,
+.poker-table-shell[data-player-count="8"] .provider-logo.seat-provider-logo,
+.poker-table-shell[data-player-count="9"] .provider-logo.seat-provider-logo {
+  width: 1.05rem;
+  height: 1.05rem;
+  padding: 0.1rem;
+  border-radius: 0.2rem;
+  font-size: 0.5rem;
 }
 
 .poker-table-shell[data-player-count="7"] .seat-equity-track,

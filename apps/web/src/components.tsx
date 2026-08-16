@@ -1,5 +1,7 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
 import { Link, NavLink } from "react-router-dom";
+import { ProviderLogo } from "./provider-logo";
+import type { ProviderBrand } from "./provider-brand";
 import { spectatorTimeline, type SettlementPresentation, type SpectatorEventTone } from "./spectator-event-timeline";
 import { tableSeatLayout } from "./table-layout";
 import type {
@@ -116,12 +118,14 @@ export function PlayingCard({ card, hidden = false, compact = false }: {
 export function PokerTable({
   state,
   broadcast = null,
+  playerBrands = {},
   historical = false,
   eliminatedPlayerIds = new Set<string>(),
   settlement = null,
 }: {
   state: ArenaState;
   broadcast?: ArenaBroadcast | null;
+  playerBrands?: Readonly<Record<string, ProviderBrand | null>>;
   historical?: boolean;
   eliminatedPlayerIds?: ReadonlySet<string>;
   settlement?: SettlementPresentation | null;
@@ -169,7 +173,7 @@ export function PokerTable({
           {settlement && tablePlayers.filter(({ player }) => winnerPlayerIds.has(player.id)).map(({ player, style }) => (
             <span className="pot-transfer" style={style} key={`${settlement.sequence}-${player.id}`} aria-hidden="true"><i /><i /><i /></span>
           ))}
-          {tablePlayers.map(({ player, style }) => <TableSeat key={player.id} player={player} state={state} broadcast={broadcastByPlayer.get(player.id)} broadcastHandNo={broadcast?.handNo ?? null} currentActorId={broadcast ? broadcast.currentActorId : hand?.currentActorId ?? null} positions={broadcast?.positions ?? hand?.positions ?? null} estimated={broadcast?.estimated === true} samples={broadcast?.samples ?? 0} historical={historical} eliminated={eliminatedPlayerIds.has(player.id)} winnerAmount={settlement?.amountsByPlayer[player.id] ?? null} settlementSequence={settlement?.sequence ?? null} style={style} />)}
+          {tablePlayers.map(({ player, style }) => <TableSeat key={player.id} player={player} providerBrand={playerBrands[player.id] ?? null} state={state} broadcast={broadcastByPlayer.get(player.id)} broadcastHandNo={broadcast?.handNo ?? null} currentActorId={broadcast ? broadcast.currentActorId : hand?.currentActorId ?? null} positions={broadcast?.positions ?? hand?.positions ?? null} estimated={broadcast?.estimated === true} samples={broadcast?.samples ?? 0} historical={historical} eliminated={eliminatedPlayerIds.has(player.id)} winnerAmount={settlement?.amountsByPlayer[player.id] ?? null} settlementSequence={settlement?.sequence ?? null} style={style} />)}
         </div>
       </div>
       {sidePots.length > 1 && (!hand || !broadcast || broadcast.handNo === hand.handNo) && (
@@ -198,8 +202,9 @@ function compactActionLabel(action: ArenaBroadcastLastAction, locale: "zh-CN" | 
   return `${action.term ? `${action.term} · ` : ""}${actionLabel}${amount > 0 ? ` ${format(amount)}` : ""}`;
 }
 
-function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, positions, estimated, samples, historical, eliminated, winnerAmount, settlementSequence, style }: {
+function TableSeat({ player, providerBrand, state, broadcast, broadcastHandNo, currentActorId, positions, estimated, samples, historical, eliminated, winnerAmount, settlementSequence, style }: {
   player: ArenaPlayer;
+  providerBrand: ProviderBrand | null;
   state: ArenaState;
   broadcast?: ArenaBroadcastPlayer | undefined;
   broadcastHandNo: number | null;
@@ -247,7 +252,17 @@ function TableSeat({ player, state, broadcast, broadcastHandNo, currentActorId, 
     <article className={`table-seat${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${isPotWinner ? " is-pot-winner" : ""}${historical ? eliminated ? " is-out" : "" : player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} style={style}>
       {isPotWinner && <span className="seat-winner-amount" key={`${settlementSequence}-${player.id}`}>+{formatChips(winnerAmount)}</span>}
       <div className="seat-meta"><span><span className="seat-word">{text("座位", "Seat")} </span>{String(player.seat + 1).padStart(2, "0")}</span>{position && <b>{position}</b>}</div>
-      <div className="seat-name"><strong title={player.displayName}>{player.displayName}</strong>{isChampion && <span title={text("冠军", "Champion")}>♛</span>}</div>
+      <div className="seat-name">
+        <ProviderLogo
+          brand={providerBrand}
+          label={player.displayName}
+          fallback={player.displayName.trim().slice(0, 1).toLocaleUpperCase() || "?"}
+          fallbackStyle={modelTint(player.id)}
+          className="seat-provider-logo"
+        />
+        <strong title={player.displayName}>{player.displayName}</strong>
+        {isChampion && <span className="seat-champion" title={text("冠军", "Champion")}>♛</span>}
+      </div>
       {broadcast && <div className="seat-broadcast">
         <div className="seat-hole-cards" aria-label={`${player.displayName} ${text("手牌", "hole cards")}`}>
           <PlayingCard card={broadcast.holeCards[0]} hidden={!cardsReady} compact />
