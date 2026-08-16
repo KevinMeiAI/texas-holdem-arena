@@ -1,3 +1,5 @@
+import type { ProviderBrand } from "./provider-brand";
+
 export interface ArenaPlayer {
   id: string;
   displayName: string;
@@ -185,6 +187,7 @@ export interface SystemPromptVersion {
 export interface LeaderboardEntry {
   modelId: string;
   displayName: string;
+  providerBrand: ProviderBrand | null;
   rating: number;
   points: number;
   tournaments: number;
@@ -199,6 +202,7 @@ export interface LeaderboardEntry {
 export interface ReliabilityLeaderboardEntry {
   modelId: string;
   displayName: string;
+  providerBrand: ProviderBrand | null;
   decisions: number;
   validDecisionRate: number | null;
   firstPassRate: number | null;
@@ -212,6 +216,7 @@ export interface ReliabilityLeaderboardEntry {
 export interface EfficiencyLeaderboardEntry {
   modelId: string;
   displayName: string;
+  providerBrand: ProviderBrand | null;
   decisions: number;
   providerCalls: number;
   averageLatencyMs: number | null;
@@ -225,6 +230,7 @@ export interface EfficiencyLeaderboardEntry {
 export interface StyleProfileEntry {
   modelId: string;
   displayName: string;
+  providerBrand: ProviderBrand | null;
   handsPlayed: number;
   vpipRate: number;
   pfrRate: number;

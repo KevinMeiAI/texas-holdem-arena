@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import { projectArenaEvent, type ProjectionRole } from "../../../../packages/contracts/src/visibility.js";
 import { deriveSeed, DeterministicRng } from "../../../../packages/fairness/src/rng.js";
 import { createProvider } from "../../../../packages/providers/src/provider-factory.js";
+import { resolveProviderBrand, type ProviderBrand } from "../../../../packages/providers/src/provider-brand.js";
 import type { FrozenModelConfig, ModelProvider } from "../../../../packages/providers/src/provider.js";
 import { inspectOutputPolicy } from "../../../../packages/providers/src/output-policy.js";
 import { ModelConfigService } from "../admin/model-service.js";
@@ -595,7 +596,22 @@ export class ArenaService {
         internals: calculation.internals,
       };
     }));
-    return buildArenaLeaderboards(completed.filter((record): record is NonNullable<typeof record> => record !== null));
+    const completedRecords = completed.filter((record): record is NonNullable<typeof record> => record !== null);
+    const revisionIds = [...new Set(completedRecords.flatMap((record) => (
+      record.statistics.players.map((player) => player.playerId)
+    )))];
+    const revisions = await this.models.revisionDetails(revisionIds);
+    const providerBrands: Record<string, ProviderBrand | null> = Object.fromEntries(revisions.map((model) => [
+      model.revisionId,
+      resolveProviderBrand({
+        providerProfile: model.providerProfile,
+        providerType: model.providerType,
+        label: model.providerLabel,
+        baseUrl: model.providerBaseUrl,
+        modelId: model.modelId,
+      }),
+    ]));
+    return buildArenaLeaderboards(completedRecords, providerBrands);
   }
 
   async fairness(tournamentId: string): Promise<unknown> {

@@ -32,15 +32,16 @@ const LIGHT_SURFACE_BRANDS = new Set<ProviderBrand>(["chatgpt", "xai"]);
 const DARK_SURFACE_BRANDS = new Set<ProviderBrand>(["kimi"]);
 
 interface ProviderLogoProps extends ProviderBrandHints {
+  brand?: ProviderBrand | null;
   fallback: string;
   fallbackStyle?: CSSProperties;
   className?: string;
 }
 
-export function ProviderLogo({ fallback, fallbackStyle, className = "", ...hints }: ProviderLogoProps) {
-  const brand = resolveProviderBrand(hints);
+export function ProviderLogo({ brand, fallback, fallbackStyle, className = "", ...hints }: ProviderLogoProps) {
+  const resolvedBrand = brand ?? resolveProviderBrand(hints);
   const [failedBrand, setFailedBrand] = useState<ProviderBrand | null>(null);
-  const visibleBrand = brand === failedBrand ? null : brand;
+  const visibleBrand = resolvedBrand === failedBrand ? null : resolvedBrand;
   const surface = visibleBrand && LIGHT_SURFACE_BRANDS.has(visibleBrand)
     ? " on-light"
     : visibleBrand && DARK_SURFACE_BRANDS.has(visibleBrand)
