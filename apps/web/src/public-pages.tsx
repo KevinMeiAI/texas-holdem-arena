@@ -633,6 +633,9 @@ export function ReplayPage() {
   }
   return (
     <main className="page-shell replay-page">
+      <nav className="analysis-back-nav" aria-label={text("赛事解析导航", "Match analysis navigation")}>
+        <Link className="analysis-back-link" to="/tournaments"><span aria-hidden="true">←</span>{text("返回赛事列表", "Back to events")}</Link>
+      </nav>
       <SectionHeading title={state.name} aside={<div><StatusBadge status={state.status} /><p>{text("第", "Hand")} {String(handNo).padStart(3, "0")} {text("手", "")}</p></div>} />
       {state.status === "COMPLETED" && (
         <>

@@ -243,6 +243,53 @@ h3 {
   margin: 0;
 }
 
+.analysis-back-nav {
+  margin-top: var(--space-sm);
+}
+
+.analysis-back-link {
+  min-height: var(--control-height);
+  padding-inline: var(--space-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  color: var(--color-ink-2);
+  background: var(--color-paper-2);
+  border: var(--rule-hair) solid var(--color-rule);
+  border-radius: var(--radius-input);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    color var(--dur-short) var(--ease-out),
+    background var(--dur-short) var(--ease-out),
+    border-color var(--dur-short) var(--ease-out),
+    transform var(--dur-short) var(--ease-out);
+}
+
+.analysis-back-link span {
+  color: var(--color-accent-strong);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  line-height: 1;
+}
+
+.analysis-back-link:hover {
+  color: var(--color-ink);
+  background: var(--color-paper-3);
+  border-color: var(--color-accent);
+  transform: translateX(-0.125rem);
+}
+
+.analysis-back-link:focus-visible {
+  outline: var(--rule-fine) solid var(--color-focus);
+  outline-offset: var(--space-3xs);
+}
+
+.analysis-back-nav + .section-heading {
+  padding-top: var(--space-sm);
+}
+
 .button,
 .text-button,
 .site-nav a,
