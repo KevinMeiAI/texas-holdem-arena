@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiRequest, useApiResource } from "./api";
+import { broadcastFrameAtSequence, defaultWatchRoomTournament, replaySequenceSteps, unseenBroadcastFrames } from "./broadcast-timeline";
 import { HandActionLedger } from "./hand-action-ledger";
 import { styleProfileLabel } from "./leaderboard-format";
 import {
@@ -9,8 +10,10 @@ import {
   type LeaderboardSortValue,
 } from "./leaderboard-sort";
 import { StackHistoryChart } from "./stack-history-chart";
+import { ProviderLogo } from "./provider-logo";
+import type { ProviderBrand } from "./provider-brand";
 import { SelectControl } from "./select-control";
-import { spectatorTimeline } from "./spectator-event-timeline";
+import { settlementPresentationAtSequence, spectatorTimeline } from "./spectator-event-timeline";
 import { TournamentStatisticsReport } from "./tournament-statistics";
 import {
   EmptyState,
@@ -27,6 +30,7 @@ import {
 } from "./components";
 import type {
   ArenaEvent,
+  ArenaBroadcast,
   ArenaState,
   DecisionAuditTurn,
   HandSummary,
@@ -37,16 +41,131 @@ import type {
 } from "./types";
 import { useUiPreferences } from "./ui-preferences";
 
+const LIVE_FRAME_INTERVAL_MS = 1_000;
+const REPLAY_FRAME_INTERVAL_MS = 1_400;
+const SETTLEMENT_HOLD_MS = 2_000;
+const REPLAY_RATES = [0.5, 1, 1.5, 2] as const;
+const REPLAY_RATE_OPTIONS = REPLAY_RATES.map((rate) => ({ value: String(rate), label: `${rate}×` }));
+
 export function LivePage() {
   const { locale, text } = useUiPreferences();
-  const resource = useApiResource<{ state: ArenaState | null }>("/api/public/live", 1_500);
-  const state = resource.data?.state ?? null;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tournamentsResource = useApiResource<{ tournaments: TournamentSummary[] }>("/api/public/tournaments", 1_500);
+  const tournaments = tournamentsResource.data?.tournaments ?? [];
+  const requestedTournamentId = searchParams.get("tournament");
+  const defaultTournament = defaultWatchRoomTournament(tournaments);
+  const selectedTournament = tournaments.find((tournament) => tournament.id === requestedTournamentId)
+    ?? defaultTournament;
+  const selectedTournamentId = selectedTournament?.id ?? null;
+  const selectedIsTerminal = selectedTournament?.status === "COMPLETED" || selectedTournament?.status === "CANCELLED";
+  const resource = useApiResource<{ state: ArenaState | null; broadcast: ArenaBroadcast | null; timeline: ArenaBroadcast[]; playerBrands: Record<string, ProviderBrand | null> }>(
+    selectedTournamentId ? `/api/public/tournaments/${selectedTournamentId}/broadcast` : null,
+    selectedTournamentId && !selectedIsTerminal ? 1_500 : 0,
+  );
+  const selectedResourceData = resource.data?.state?.tournamentId === selectedTournamentId ? resource.data : null;
+  const state = selectedResourceData?.state ?? null;
+  const broadcast = selectedResourceData?.broadcast ?? null;
+  const timeline = selectedResourceData?.timeline ?? [];
+  const [presentedBroadcast, setPresentedBroadcast] = useState<ArenaBroadcast | null>(null);
+  const [broadcastQueue, setBroadcastQueue] = useState<ArenaBroadcast[]>([]);
+  const broadcastTournament = useRef<string | null>(null);
+  const lastBroadcastSequence = useRef(0);
   const [events, setEvents] = useState<ArenaEvent[]>([]);
   const [streamStatus, setStreamStatus] = useState<"idle" | "connected" | "reconnecting">("idle");
+  const [replayTournamentId, setReplayTournamentId] = useState<string | null>(null);
+  const [replayStatus, setReplayStatus] = useState<"idle" | "loading" | "playing" | "paused" | "ended">("idle");
+  const [replayStepIndex, setReplayStepIndex] = useState(0);
+  const [replayRate, setReplayRate] = useState<number>(1);
+  const replayRequested = selectedTournamentId !== null && replayTournamentId === selectedTournamentId;
+  const replayResource = useApiResource<{ state: ArenaState; timeline: ArenaBroadcast[]; events: ArenaEvent[]; playerBrands: Record<string, ProviderBrand | null> }>(
+    replayRequested && selectedTournamentId && selectedIsTerminal
+      ? `/api/public/tournaments/${selectedTournamentId}/broadcast-replay`
+      : null,
+  );
+  const replayData = replayResource.data?.state.tournamentId === selectedTournamentId ? replayResource.data : null;
+  const replayTimeline = replayData?.timeline ?? [];
+  const replayEvents = replayData?.events ?? [];
+  const replaySpectatorTimeline = useMemo(() => spectatorTimeline(replayEvents), [replayEvents]);
+  const suppressedReplayFrames = useMemo(() => new Set(replaySpectatorTimeline.flatMap(({ event, sourceSequences }) => (
+    event.type === "POT_AWARDED" ? sourceSequences.filter((sequence) => sequence !== event.sequence) : []
+  ))), [replaySpectatorTimeline]);
+  const replaySteps = useMemo(() => replaySequenceSteps(
+    replayTimeline,
+    replaySpectatorTimeline.map(({ event }) => event.sequence),
+    suppressedReplayFrames,
+  ), [replaySpectatorTimeline, replayTimeline, suppressedReplayFrames]);
+  const replayActive = replayRequested && replayData !== null && replayStatus !== "loading";
+  const replaySequence = replayStepIndex >= replaySteps.length
+    ? Number.POSITIVE_INFINITY
+    : replaySteps[replayStepIndex] ?? 0;
+  const terminalReplaySequence = replayEvents.find((event) => event.type === "TOURNAMENT_COMPLETED"
+    || event.type === "TOURNAMENT_CANCELLED")?.sequence ?? Number.POSITIVE_INFINITY;
+  const replayFrame = replayActive && replaySequence < terminalReplaySequence
+    ? broadcastFrameAtSequence(replayTimeline, replaySequence)
+    : null;
+  const replaySettlement = useMemo(() => settlementPresentationAtSequence(replaySpectatorTimeline, replaySequence), [replaySequence, replaySpectatorTimeline]);
+  const replayVisibleEvents = replayActive
+    ? replayEvents.filter((event) => event.sequence <= replaySequence)
+    : [];
+  const replayEliminatedPlayerIds = useMemo(() => new Set(replayVisibleEvents.flatMap((event) => {
+    if (event.type !== "PLAYER_ELIMINATED") return [];
+    const playerId = event.actorId ?? event.publicPayload.playerId;
+    return typeof playerId === "string" ? [playerId] : [];
+  })), [replayVisibleEvents]);
+  const liveSpectatorTimeline = useMemo(() => spectatorTimeline(events), [events]);
+  const liveSettlement = useMemo(() => settlementPresentationAtSequence(
+    liveSpectatorTimeline,
+    presentedBroadcast?.sequence ?? Number.NaN,
+  ), [liveSpectatorTimeline, presentedBroadcast?.sequence]);
 
   const isTerminal = state?.status === "COMPLETED" || state?.status === "CANCELLED";
+  useLayoutEffect(() => {
+    broadcastTournament.current = null;
+    lastBroadcastSequence.current = 0;
+    setPresentedBroadcast(null);
+    setBroadcastQueue([]);
+    setEvents([]);
+    setStreamStatus("idle");
+    setReplayTournamentId(null);
+    setReplayStatus("idle");
+    setReplayStepIndex(0);
+  }, [selectedTournamentId]);
   useEffect(() => {
-    if (!state?.tournamentId || isTerminal) return;
+    if (!state?.tournamentId || replayRequested || isTerminal) return;
+    const tournamentId = state.tournamentId;
+    if (broadcastTournament.current !== tournamentId) {
+      broadcastTournament.current = tournamentId;
+      lastBroadcastSequence.current = Math.max(0, ...timeline.map((frame) => frame.sequence));
+      setBroadcastQueue([]);
+      setPresentedBroadcast(broadcast);
+      return;
+    }
+    const incoming = unseenBroadcastFrames(
+      timeline,
+      lastBroadcastSequence.current,
+      new Set(broadcastQueue.map((frame) => frame.sequence)),
+    );
+    if (incoming.length === 0) {
+      if (broadcastQueue.length === 0) setPresentedBroadcast(broadcast);
+      return;
+    }
+    lastBroadcastSequence.current = incoming.at(-1)!.sequence;
+    setBroadcastQueue((current) => {
+      const known = new Set(current.map((frame) => frame.sequence));
+      return [...current, ...incoming.filter((frame) => !known.has(frame.sequence))];
+    });
+  }, [broadcast, broadcastQueue.length, isTerminal, replayRequested, state?.tournamentId, timeline]);
+  useEffect(() => {
+    const next = broadcastQueue[0];
+    if (!next || !state?.tournamentId || isTerminal || replayRequested || broadcastTournament.current !== state.tournamentId) return;
+    const timer = window.setTimeout(() => {
+      setPresentedBroadcast(next);
+      setBroadcastQueue((current) => current.slice(1));
+    }, LIVE_FRAME_INTERVAL_MS + (liveSettlement?.isFinalAward ? SETTLEMENT_HOLD_MS : 0));
+    return () => window.clearTimeout(timer);
+  }, [broadcastQueue, isTerminal, liveSettlement?.isFinalAward, replayRequested, state?.tournamentId]);
+  useEffect(() => {
+    if (!state?.tournamentId || isTerminal || replayRequested) return;
     setEvents([]);
     const source = new EventSource(`/api/public/tournaments/${state.tournamentId}/events?tail=120`);
     const handleArena = (message: MessageEvent<string>) => {
@@ -61,9 +180,27 @@ export function LivePage() {
     source.onopen = () => setStreamStatus("connected");
     source.onerror = () => setStreamStatus("reconnecting");
     return () => source.close();
-  }, [state?.tournamentId, isTerminal]);
+  }, [state?.tournamentId, isTerminal, replayRequested]);
+  useEffect(() => {
+    if (!replayRequested || !replayData || replayStatus !== "loading") return;
+    setReplayStepIndex(0);
+    setReplayStatus(replaySteps.length > 0 ? "playing" : "ended");
+  }, [replayData, replayRequested, replayStatus, replaySteps.length]);
+  useEffect(() => {
+    if (replayStatus !== "playing" || replaySteps.length === 0) return;
+    const timer = window.setTimeout(() => {
+      if (replayStepIndex >= replaySteps.length - 1) {
+        setReplayStepIndex(replaySteps.length);
+        setReplayStatus("ended");
+      } else {
+        setReplayStepIndex((current) => current + 1);
+      }
+    }, (REPLAY_FRAME_INTERVAL_MS + (replaySettlement?.isFinalAward ? SETTLEMENT_HOLD_MS : 0)) / replayRate);
+    return () => window.clearTimeout(timer);
+  }, [replayRate, replaySettlement?.isFinalAward, replayStatus, replayStepIndex, replaySteps.length]);
 
-  if (resource.loading) return <main className="page-shell"><LoadingBlock /></main>;
+  if (tournamentsResource.loading || (selectedTournamentId && (resource.loading || !state))) return <main className="page-shell"><LoadingBlock /></main>;
+  if (tournamentsResource.error) return <main className="page-shell"><ErrorBlock message={tournamentsResource.error} onRetry={() => void tournamentsResource.refresh()} /></main>;
   if (resource.error && !state) return <main className="page-shell"><ErrorBlock message={resource.error} onRetry={() => void resource.refresh()} /></main>;
   if (!state) {
     return (
@@ -77,27 +214,76 @@ export function LivePage() {
   }
 
   const hand = state.hand;
+  const displayBroadcast = replayActive ? replayFrame : presentedBroadcast ?? broadcast;
+  const displayBlinds = displayBroadcast?.blinds ?? hand?.blinds ?? null;
+  const displayedEvents = replayActive ? replayVisibleEvents : events;
+  const displaySettlement = replayActive ? replaySettlement : liveSettlement;
+  const playerBrands = replayActive
+    ? replayData?.playerBrands ?? selectedResourceData?.playerBrands ?? {}
+    : selectedResourceData?.playerBrands ?? {};
+  const activePlayers = replayActive
+    ? state.players.length - replayEliminatedPlayerIds.size
+    : state.players.filter((player) => player.status !== "ELIMINATED").length;
+  const replayProgress = replaySteps.length === 0 ? 0 : Math.min(replayStepIndex + 1, replaySteps.length);
+  const tournamentOptions = tournaments.map((tournament) => {
+    const status = tournament.status === "RUNNING" ? text("直播中", "Live")
+      : tournament.status === "PAUSED_INFRA" ? text("已暂停", "Paused")
+        : tournament.status === "READY" ? text("准备中", "Ready")
+          : tournament.status === "COMPLETED" ? text("已结束", "Completed")
+            : text("已取消", "Cancelled");
+    return { value: tournament.id, label: `${status} · ${tournament.name}` };
+  });
+  const selectTournament = (tournamentId: string) => {
+    setReplayTournamentId(null);
+    setReplayStatus("idle");
+    setReplayStepIndex(0);
+    const next = new URLSearchParams(searchParams);
+    next.set("tournament", tournamentId);
+    setSearchParams(next);
+  };
+  const startReplay = () => {
+    setReplayTournamentId(selectedTournamentId);
+    setReplayStatus("loading");
+    setReplayStepIndex(0);
+    if (replayRequested) void replayResource.refresh();
+  };
   return (
     <main className="page-shell live-page">
       <div className="live-titlebar">
-        <div><h1>{state.name}</h1></div>
-        <div className="live-meta"><StatusBadge status={state.status} /><span>{text("第", "Hand")} <b>{String(hand?.handNo ?? state.completedHands).padStart(3, "0")}</b> {text("手", "")}</span>{hand ? <span>{text("盲注", "Blinds")} <b>{formatChips(hand.blinds.smallBlind)} / {formatChips(hand.blinds.bigBlind)}</b></span> : <span>{text("最终筹码", "Final stack")} <b>{formatChips(state.players.find((player) => player.id === state.championPlayerId)?.stack)}</b></span>}</div>
+        <div className="watch-room-heading">
+          <div className="watch-room-picker"><span>{text("观赛赛事", "Tournament")}</span><SelectControl value={selectedTournamentId ?? ""} options={tournamentOptions} onChange={selectTournament} ariaLabel={text("切换观赛赛事", "Switch tournament")} /></div>
+          <h1>{state.name}</h1>
+        </div>
+        <div className="live-meta"><StatusBadge status={state.status} /><span>{text("第", "Hand")} <b>{String(displayBroadcast?.handNo ?? hand?.handNo ?? state.completedHands).padStart(3, "0")}</b> {text("手", "")}</span>{displayBlinds ? <span>{text("盲注", "Blinds")} <b>{formatChips(displayBlinds.smallBlind)} / {formatChips(displayBlinds.bigBlind)}</b></span> : <span>{text("最终筹码", "Final stack")} <b>{formatChips(state.players.find((player) => player.id === state.championPlayerId)?.stack)}</b></span>}</div>
       </div>
       <div className="live-layout">
-        <PokerTable state={state} />
+        <PokerTable state={state} broadcast={displayBroadcast} playerBrands={playerBrands} historical={replayActive && displayBroadcast !== null} eliminatedPlayerIds={replayEliminatedPlayerIds} settlement={displaySettlement} />
         <aside className="broadcast-sidebar">
-          <div className="panel-heading"><div><h2>{text("牌局时间线", "Game timeline")}</h2></div>{isTerminal ? <span className="stream-state">{text("赛事已结束", "Tournament ended")}</span> : <span className={`stream-state ${streamStatus}`}><i />{streamStatus === "connected" ? text("同步中", "Synced") : streamStatus === "reconnecting" ? text("正在重连", "Reconnecting") : text("正在连接", "Connecting")}</span>}</div>
-          <EventTape events={events} players={state.players} limit={28} emptyLabel={isTerminal ? text("赛事已结束，可打开回放查看完整记录。", "Tournament ended — open the replay for the full record.") : undefined} />
+          <div className="panel-heading watch-room-panel-heading">
+            <div><h2>{text("牌局时间线", "Game timeline")}</h2></div>
+            {isTerminal ? (
+              <div className="watch-room-replay-controls">
+                <SelectControl className="watch-room-speed-select" menuClassName="watch-room-speed-menu" value={String(replayRate)} options={REPLAY_RATE_OPTIONS} onChange={(value) => setReplayRate(Number(value))} ariaLabel={text("回放速度", "Playback speed")} />
+                {replayStatus === "playing" ? <button className="watch-room-replay-toggle" type="button" onClick={() => setReplayStatus("paused")}>{text("暂停", "Pause")}</button>
+                  : replayStatus === "paused" ? <button type="button" onClick={() => setReplayStatus("playing")}>{text("继续", "Resume")}</button>
+                    : replayStatus === "loading" ? <button type="button" disabled>{text("加载…", "Loading…")}</button>
+                      : <button type="button" onClick={startReplay}>{text("回放", "Replay")}</button>}
+              </div>
+            ) : <span className={`stream-state ${streamStatus}`}><i />{streamStatus === "connected" ? text("同步中", "Synced") : streamStatus === "reconnecting" ? text("正在重连", "Reconnecting") : text("正在连接", "Connecting")}</span>}
+          </div>
+          {replayActive && <div className="watch-room-replay-progress"><progress max={Math.max(1, replaySteps.length)} value={replayProgress} /><span><b>H{String(displayBroadcast?.handNo ?? state.completedHands).padStart(3, "0")}</b>{replayProgress} / {replaySteps.length}</span></div>}
+          {replayResource.error && replayRequested ? <div className="watch-room-replay-error"><span>{text("回放暂时无法载入", "Replay could not be loaded")}</span><button type="button" onClick={startReplay}>{text("重试", "Retry")}</button></div>
+            : <EventTape events={displayedEvents} players={state.players} limit={28} emptyLabel={isTerminal ? text("赛事已结束，点击“回放”重现完整牌局。", "Tournament ended — select Replay to relive the match.") : undefined} />}
           <div className="broadcast-facts">
-            <div><span>{text("阶段", "Stage")}</span><b>{formatArenaPhase(hand?.phase ?? state.status, locale)}</b></div>
-            <div><span>{text("在席", "Active")}</span><b>{state.players.filter((player) => player.status !== "ELIMINATED").length} / {state.players.length}</b></div>
+            <div><span>{text("阶段", "Stage")}</span><b>{formatArenaPhase(displayBroadcast?.street ?? hand?.phase ?? state.status, locale)}</b></div>
+            <div><span>{text("在席", "Active")}</span><b>{activePlayers} / {state.players.length}</b></div>
             <div><span>{text("种子承诺", "Seed commit")}</span><b title={state.seedCommitment}>{state.seedCommitment.slice(0, 12)}…</b></div>
           </div>
         </aside>
       </div>
       <div className="under-table-bar">
         <span>{text("规则版本", "Ruleset")} <b>{state.rulesetVersion}</b></span><span>{text("提示词哈希", "Prompt hash")} <b>{state.promptHash.slice(0, 12)}…</b></span>
-        <Link to={`/tournaments/${state.tournamentId}/replay`}>{text("打开赛程回放", "Open replay")} →</Link>
+        <Link to={`/tournaments/${state.tournamentId}/replay`}>{text("查看赛事解析", "View match analysis")} →</Link>
       </div>
     </main>
   );
@@ -238,10 +424,22 @@ export function LeaderboardPage() {
   const sortedEfficiency = sortLeaderboardEntries(efficiencyEntries, (entry) => metricValue(entry, sortFor("efficiency").key), sortFor("efficiency").direction);
   const styleEntries = data?.styles ?? [];
   const sortedStyles = sortLeaderboardEntries(styleEntries, (entry) => metricValue(entry, sortFor("styles").key), sortFor("styles").direction);
-  const identity = (index: number, modelId: string, displayName: string, warning: boolean, warningText: string) => (
+  const identity = (
+    index: number,
+    modelId: string,
+    displayName: string,
+    providerBrand: ProviderBrand | null,
+    warning: boolean,
+    warningText: string,
+  ) => (
     <div className="rank-model">
       <b>{String(index + 1).padStart(2, "0")}</b>
-      <span className="model-monogram" style={modelTint(modelId)}>{displayName.slice(0, 1).toUpperCase()}</span>
+      <ProviderLogo
+        brand={providerBrand}
+        label={displayName}
+        fallback={displayName.slice(0, 1).toUpperCase()}
+        fallbackStyle={modelTint(modelId)}
+      />
       <div>
         <strong>{displayName}</strong>
         {warning && <small>{warningText}</small>}
@@ -270,7 +468,7 @@ export function LeaderboardPage() {
               <div className="leaderboard-head" role="row"><span role="columnheader">{text("排名 / 模型", "Rank / model")}</span>{sortHeader("Rating", "rating")}{sortHeader(text("积分", "Points"), "points")}{sortHeader(text("赛事", "Events"), "tournaments")}{sortHeader(text("冠军", "Wins"), "championships")}{sortHeader(text("前三率", "Top 3"), "topThreeRate")}{sortHeader(text("平均名次", "Avg finish"), "averageFinish")}</div>
               {sortedCompetition.map((entry, index) => (
                 <article className="leaderboard-row" key={entry.modelId}>
-                  {identity(index, entry.modelId, entry.displayName, entry.sampleWarning, text("样本少于 10 场", "Fewer than 10 events"))}
+                  {identity(index, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("样本少于 10 场", "Fewer than 10 events"))}
                   <strong data-label="Rating">{entry.rating}</strong>
                   <span data-label={text("积分", "Points")}>{entry.points.toFixed(1)}</span>
                   <span data-label={text("赛事", "Events")}>{entry.tournaments}</span>
@@ -286,7 +484,7 @@ export function LeaderboardPage() {
               <div className="leaderboard-head" role="row"><span role="columnheader">{text("排名 / 模型", "Rank / model")}</span>{sortHeader(text("有效决策", "Valid"), "validDecisionRate")}{sortHeader(text("一次成功", "First pass"), "firstPassRate")}{sortHeader(text("协议纠错", "Corrections"), "protocolCorrections")}{sortHeader(text("规则兜底", "Fallbacks"), "fallbacks")}{sortHeader(text("超时", "Timeouts"), "timeouts")}{sortHeader(text("暂停", "Pauses"), "infrastructurePauses")}</div>
               {sortedReliability.map((entry, index) => (
                 <article className="leaderboard-row" key={entry.modelId}>
-                  {identity(index, entry.modelId, entry.displayName, entry.sampleWarning, text("决策少于 50 次", "Fewer than 50 decisions"))}
+                  {identity(index, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("决策少于 50 次", "Fewer than 50 decisions"))}
                   <strong data-label={text("有效决策", "Valid")}>{percent(entry.validDecisionRate)}</strong>
                   <span data-label={text("一次成功", "First pass")}>{percent(entry.firstPassRate)}</span>
                   <span data-label={text("协议纠错", "Corrections")}>{entry.protocolCorrections}</span>
@@ -302,7 +500,7 @@ export function LeaderboardPage() {
               <div className="leaderboard-head" role="row"><span role="columnheader">{text("排名 / 模型", "Rank / model")}</span>{sortHeader(text("平均响应", "Average"), "averageLatencyMs")}{sortHeader(text("95% 响应", "P95"), "p95LatencyMs")}{sortHeader(text("调用次数", "Calls"), "providerCalls")}{sortHeader(text("总 Token", "Total tokens"), "totalTokens")}{sortHeader(text("每次决策", "Per decision"), "tokensPerDecision")}</div>
               {sortedEfficiency.map((entry, index) => (
                 <article className="leaderboard-row" key={entry.modelId}>
-                  {identity(index, entry.modelId, entry.displayName, entry.sampleWarning, text("决策少于 50 次", "Fewer than 50 decisions"))}
+                  {identity(index, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("决策少于 50 次", "Fewer than 50 decisions"))}
                   <strong data-label={text("平均响应", "Average")}>{latency(entry.averageLatencyMs)}</strong>
                   <span data-label={text("95% 响应", "P95")}>{latency(entry.p95LatencyMs)}</span>
                   <span data-label={text("调用次数", "Calls")}>{entry.providerCalls}</span>
@@ -317,7 +515,7 @@ export function LeaderboardPage() {
               <div className="leaderboard-head" role="row"><span role="columnheader">{text("模型", "Model")}</span><span role="columnheader">{text("牌风", "Style")}</span>{sortHeader(text("主动入池", "VPIP"), "vpipRate")}{sortHeader(text("翻前加注", "PFR"), "pfrRate")}{sortHeader(text("再加注手牌", "3-bet"), "threeBetRate")}{sortHeader(text("摊牌胜率", "Showdown win"), "showdownWinRate")}{sortHeader(text("样本手数", "Hands"), "handsPlayed")}</div>
               {sortedStyles.map((entry, index) => (
                 <article className="leaderboard-row" key={entry.modelId}>
-                  {identity(index, entry.modelId, entry.displayName, entry.sampleWarning, text("样本少于 200 手", "Fewer than 200 hands"))}
+                  {identity(index, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("样本少于 200 手", "Fewer than 200 hands"))}
                   <span data-label={text("牌风", "Style")}>{styleProfileLabel(entry.profile, locale)}</span>
                   <strong data-label={text("主动入池", "VPIP")}>{percent(entry.vpipRate)}</strong>
                   <span data-label={text("翻前加注", "PFR")}>{percent(entry.pfrRate)}</span>
@@ -391,7 +589,7 @@ function HandSelector({ hands, activeHand, tournamentId }: {
       {scrollPos.atStart
         ? <span className="hand-nav" aria-disabled="true">‹</span>
         : <button type="button" className="hand-nav" aria-label={text("向前翻一屏手数", "Scroll back one page of hands")} onClick={() => scrollByPage(-1)}>‹</button>}
-      <div className="hand-selector" aria-label={text("选择要回放的牌局", "Select a hand")} ref={containerRef} onScroll={updateScrollPos}>
+      <div className="hand-selector" aria-label={text("选择要查看的手牌", "Select a hand to analyze")} ref={containerRef} onScroll={updateScrollPos}>
         {hands.map((hand) => <Link ref={hand.handNo === activeHand ? activeRef : undefined} className={hand.handNo === activeHand ? "active" : ""} to={`/tournaments/${tournamentId}/replay/${hand.handNo}`} key={hand.handNo}>{text("第", "Hand")} {String(hand.handNo).padStart(3, "0")} {text("手", "")}</Link>)}
       </div>
       {scrollPos.atEnd
@@ -415,8 +613,8 @@ export function ReplayPage() {
     decisions: DecisionAuditTurn[];
     decisionAuditAvailable: boolean;
   }>(handNo > 0 ? `/api/public/tournaments/${id}/hands/${handNo}/replay` : null);
-  if (tournament.loading || hands.loading) return <main className="page-shell"><LoadingBlock label={text("正在装载赛程回放", "Loading replay")} /></main>;
-  if (tournament.error || hands.error) return <main className="page-shell"><ErrorBlock message={tournament.error ?? hands.error ?? text("赛程回放暂时不可用", "Replay is temporarily unavailable")} /></main>;
+  if (tournament.loading || hands.loading) return <main className="page-shell"><LoadingBlock label={text("正在加载赛事解析", "Loading match analysis")} /></main>;
+  if (tournament.error || hands.error) return <main className="page-shell"><ErrorBlock message={tournament.error ?? hands.error ?? text("赛事解析暂时不可用", "Match analysis is temporarily unavailable")} /></main>;
   const state = tournament.data?.state;
   if (!state) return <main className="page-shell"><EmptyState title={text("赛事不存在", "Tournament not found")} body={text("无法找到对应的赛事记录。", "The requested tournament could not be found.")} /></main>;
   const events = replay.data?.events ?? [];

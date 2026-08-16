@@ -89,6 +89,10 @@ records per query and about 4,000 cumulative input tokens. Results are
 deterministic and contain only public information from hands strictly earlier
 than the current hand.
 
+The spectator-only broadcast projection is outside this protocol. Real-time
+opponent hole cards and broadcast equity are never included in `arena_state`,
+`history_results`, correction requests or any later decision turn.
+
 `hand` and `recent_hands` return normalized hand summaries with explicit
 completion and action-truncation metadata while retaining board, showdown and
 result information; recent hands are wrapped with requested and returned hand

@@ -112,13 +112,17 @@ describe("tournament statistics", () => {
       createdAt: "2026-08-10T00:00:00.000Z",
       statistics: result.statistics,
       internals: result.internals,
-    }]);
+    }], { a: "deepseek", b: "claude" });
 
-    expect(boards.competition[0]).toMatchObject({ modelId: "a", rating: 1516, points: 10, championships: 1 });
+    expect(boards.competition[0]).toMatchObject({ modelId: "a", providerBrand: "deepseek", rating: 1516, points: 10, championships: 1 });
     expect(boards.competition.at(-1)?.modelId).toBe("b");
+    expect(boards.competition.find((entry) => entry.modelId === "b")?.providerBrand).toBe("claude");
     expect(boards.reliability.find((entry) => entry.modelId === "a")?.firstPassRate).toBe(1);
+    expect(boards.reliability.find((entry) => entry.modelId === "a")?.providerBrand).toBe("deepseek");
     expect(boards.efficiency.find((entry) => entry.modelId === "a")?.averageLatencyMs).toBe(100);
+    expect(boards.efficiency.find((entry) => entry.modelId === "a")?.providerBrand).toBe("deepseek");
     expect(boards.styles.find((entry) => entry.modelId === "a")?.profile).toBe("松凶");
+    expect(boards.styles.find((entry) => entry.modelId === "a")?.providerBrand).toBe("deepseek");
     expect(boards.methodology.separation).toContain("never alter");
   });
 

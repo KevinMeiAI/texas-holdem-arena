@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import { projectArenaEvent, type ProjectionRole } from "../../../../packages/contracts/src/visibility.js";
 import { deriveSeed, DeterministicRng } from "../../../../packages/fairness/src/rng.js";
 import { createProvider } from "../../../../packages/providers/src/provider-factory.js";
+import { resolveProviderBrand, type ProviderBrand } from "../../../../packages/providers/src/provider-brand.js";
 import type { FrozenModelConfig, ModelProvider } from "../../../../packages/providers/src/provider.js";
 import { inspectOutputPolicy } from "../../../../packages/providers/src/output-policy.js";
 import { ModelConfigService } from "../admin/model-service.js";
@@ -32,6 +33,7 @@ import {
   type DealSchedule,
 } from "../../../../packages/fairness/src/deal-schedule.js";
 import { decryptJson, encryptJson } from "../security/encryption.js";
+import { BroadcastViewBuilder } from "./broadcast-view.js";
 
 export interface CreateArenaTournamentInput {
   name: string;
@@ -118,6 +120,9 @@ export class ArenaService {
   readonly #records = new Map<string, ActiveArena>();
   readonly #statisticsCache = new Map<string, TournamentStatisticsComputation>();
   readonly #statisticsPending = new Map<string, Promise<TournamentStatisticsComputation>>();
+  readonly #broadcastViews = new BroadcastViewBuilder();
+  readonly #broadcastReplayCache = new Map<string, { state: unknown; timeline: unknown[]; events: unknown[]; playerBrands: Record<string, ProviderBrand | null> }>();
+  readonly #playerBrandCache = new Map<string, Record<string, ProviderBrand | null>>();
   readonly #store: PgEventStore;
   readonly #systemPrompts: SystemPromptVersionService;
   #stopping = false;
@@ -471,6 +476,49 @@ export class ArenaService {
     return result.rows[0]?.public_state ?? null;
   }
 
+  async broadcastState(tournamentId?: string): Promise<{ state: unknown; broadcast: unknown; timeline: unknown[]; playerBrands: Record<string, ProviderBrand | null> } | null> {
+    const state = await this.publicState(tournamentId);
+    const id = (state as { tournamentId?: unknown } | null)?.tournamentId;
+    if (!state || typeof id !== "string") return null;
+    const [events, playerBrands] = await Promise.all([
+      this.projectedEvents(id, "SPECTATOR_BROADCAST"),
+      this.#playerBrands(state),
+    ]);
+    return {
+      state,
+      broadcast: this.#broadcastViews.build(state, events),
+      timeline: this.#broadcastViews.buildTimeline(state, events),
+      playerBrands,
+    };
+  }
+
+  async broadcastReplayState(tournamentId: string): Promise<{ state: unknown; timeline: unknown[]; events: unknown[]; playerBrands: Record<string, ProviderBrand | null> } | null> {
+    const cached = this.#broadcastReplayCache.get(tournamentId);
+    if (cached) return cached;
+    const state = await this.publicState(tournamentId);
+    const id = (state as { tournamentId?: unknown } | null)?.tournamentId;
+    if (!state || typeof id !== "string") return null;
+    const [events, playerBrands] = await Promise.all([
+      this.projectedEvents(id, "SPECTATOR_BROADCAST"),
+      this.#playerBrands(state),
+    ]);
+    const replay = {
+      state,
+      timeline: this.#broadcastViews.buildTimeline(state, events, {
+        allHands: true,
+        includeReplayFrames: true,
+        equitySampleCount: 500,
+      }),
+      events,
+      playerBrands,
+    };
+    this.#broadcastReplayCache.set(tournamentId, replay);
+    if (this.#broadcastReplayCache.size > 8) {
+      this.#broadcastReplayCache.delete(this.#broadcastReplayCache.keys().next().value!);
+    }
+    return replay;
+  }
+
   async listTournaments(): Promise<unknown[]> {
     const result = await this.pool.query<{
       id: string;
@@ -517,7 +565,7 @@ export class ArenaService {
 
   async projectedEvents(
     tournamentId: string,
-    role: Extract<ProjectionRole, "SPECTATOR_LIVE" | "SPECTATOR_REPLAY">,
+    role: Extract<ProjectionRole, "SPECTATOR_LIVE" | "SPECTATOR_BROADCAST" | "SPECTATOR_REPLAY">,
     afterSequence = 0,
   ) {
     const loaded = await this.#store.loadEvents(tournamentId, { includePrivate: true });
@@ -557,7 +605,22 @@ export class ArenaService {
         internals: calculation.internals,
       };
     }));
-    return buildArenaLeaderboards(completed.filter((record): record is NonNullable<typeof record> => record !== null));
+    const completedRecords = completed.filter((record): record is NonNullable<typeof record> => record !== null);
+    const revisionIds = [...new Set(completedRecords.flatMap((record) => (
+      record.statistics.players.map((player) => player.playerId)
+    )))];
+    const revisions = await this.models.revisionDetails(revisionIds);
+    const providerBrands: Record<string, ProviderBrand | null> = Object.fromEntries(revisions.map((model) => [
+      model.revisionId,
+      resolveProviderBrand({
+        providerProfile: model.providerProfile,
+        providerType: model.providerType,
+        label: model.providerLabel,
+        baseUrl: model.providerBaseUrl,
+        modelId: model.modelId,
+      }),
+    ]));
+    return buildArenaLeaderboards(completedRecords, providerBrands);
   }
 
   async fairness(tournamentId: string): Promise<unknown> {
@@ -614,6 +677,35 @@ export class ArenaService {
       providers.set(id, createProvider(await this.models.runtimeConfig(id)));
     }
     return providers;
+  }
+
+  async #playerBrands(rawState: unknown): Promise<Record<string, ProviderBrand | null>> {
+    const state = rawState as { tournamentId?: unknown; players?: Array<{ id?: unknown }> } | null;
+    if (!state || typeof state.tournamentId !== "string" || !Array.isArray(state.players)) return {};
+    const cached = this.#playerBrandCache.get(state.tournamentId);
+    if (cached) return cached;
+
+    const playerIds = [...new Set(state.players.flatMap((player) => (
+      typeof player.id === "string" ? [player.id] : []
+    )))];
+    const revisionIds = playerIds.filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id));
+    const revisions = await this.models.revisionDetails(revisionIds);
+    const resolved = new Map(revisions.map((model) => [
+      model.revisionId,
+      resolveProviderBrand({
+        providerProfile: model.providerProfile,
+        providerType: model.providerType,
+        label: model.providerLabel,
+        baseUrl: model.providerBaseUrl,
+        modelId: model.modelId,
+      }),
+    ] as const));
+    const playerBrands = Object.fromEntries(playerIds.map((id) => [id, resolved.get(id) ?? null]));
+    this.#playerBrandCache.set(state.tournamentId, playerBrands);
+    if (this.#playerBrandCache.size > 32) {
+      this.#playerBrandCache.delete(this.#playerBrandCache.keys().next().value!);
+    }
+    return playerBrands;
   }
 
   #providersFromFrozen(configByProviderId: Readonly<Record<string, FrozenModelConfig>>): Map<string, ModelProvider> {

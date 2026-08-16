@@ -151,6 +151,25 @@ export async function registerTournamentRoutes(
   }
 
   app.get("/api/public/live", async () => ({ state: await context.arena.publicState() }));
+  app.get("/api/public/broadcast/live", async () => (
+    await context.arena.broadcastState() ?? { state: null, broadcast: null, timeline: [], playerBrands: {} }
+  ));
+  app.get<{ Params: { id: string } }>("/api/public/tournaments/:id/broadcast", async (request, reply) => (
+    await context.arena.broadcastState(request.params.id)
+      ?? reply.code(404).send({ error: "tournament_not_found" })
+  ));
+  app.get<{ Params: { id: string } }>("/api/public/tournaments/:id/broadcast-replay", async (request, reply) => {
+    const replay = await context.arena.broadcastReplayState(request.params.id);
+    if (!replay) return reply.code(404).send({ error: "tournament_not_found" });
+    const status = (replay.state as { status?: unknown }).status;
+    if (status !== "COMPLETED" && status !== "CANCELLED") {
+      return reply.code(409).send({
+        error: "tournament_not_finished",
+        message: "Broadcast replay is available after the tournament ends",
+      });
+    }
+    return replay;
+  });
   app.get("/api/public/tournaments", async () => ({ tournaments: await context.arena.listTournaments() }));
   app.get("/api/public/benchmark-series", async () => ({ series: await context.arena.listBenchmarkSeries() }));
   app.get<{ Params: { id: string } }>("/api/public/tournaments/:id", async (request, reply) => {

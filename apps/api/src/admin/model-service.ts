@@ -34,6 +34,7 @@ interface ModelRow {
   provider_type: ProviderKind;
   provider_profile: ProviderProfile;
   default_output_mode: OutputMode;
+  base_url: string | null;
   model_id: string;
   parameters: Record<string, unknown>;
   output_mode: ModelOutputMode;
@@ -111,6 +112,7 @@ function publicModel(row: ModelRow) {
     providerLabel: row.provider_label,
     providerType: row.provider_type,
     providerProfile: row.provider_profile,
+    providerBaseUrl: row.base_url,
     providerDefaultOutputMode: row.default_output_mode,
     modelId: row.model_id,
     parameters: row.parameters,
@@ -210,7 +212,7 @@ async function createRevision(
 }
 
 const MODEL_SELECT = `select m.*, p.label as provider_label, p.provider_type,
-  p.provider_profile, p.default_output_mode, r.revision_number, r.configuration_hash
+  p.provider_profile, p.default_output_mode, p.base_url, r.revision_number, r.configuration_hash
   from model_configs m join provider_connections p on p.id = m.provider_connection_id
   join competitor_revisions r on r.id = m.current_revision_id`;
 
@@ -509,6 +511,7 @@ export class ModelConfigService {
       `select m.*, r.id as current_revision_id, p.label as provider_label,
               r.provider_type, r.provider_profile,
               r.provider_default_output_mode as default_output_mode,
+              r.base_url,
               r.model_id, r.parameters, r.output_mode, r.revision_number,
               r.configuration_hash
          from competitor_revisions r

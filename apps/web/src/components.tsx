@@ -1,14 +1,23 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { spectatorTimeline, type SpectatorEventTone } from "./spectator-event-timeline";
+import { ProviderLogo } from "./provider-logo";
+import type { ProviderBrand } from "./provider-brand";
+import { spectatorTimeline, type SettlementPresentation, type SpectatorEventTone } from "./spectator-event-timeline";
 import { tableSeatLayout } from "./table-layout";
-import type { ArenaEvent, ArenaPlayer, ArenaState } from "./types";
+import type {
+  ArenaBroadcast,
+  ArenaBroadcastLastAction,
+  ArenaBroadcastPlayer,
+  ArenaEvent,
+  ArenaPlayer,
+  ArenaState,
+} from "./types";
 import { PreferenceControls, type UiLocale, uiText, useUiPreferences } from "./ui-preferences";
 
 export function Brand() {
   const { text } = useUiPreferences();
   return (
-    <Link className="brand" to="/" aria-label={text("返回德扑竞技场直播页", "Return to the live table")}>
+    <Link className="brand" to="/" aria-label={text("返回德扑竞技场观赛室", "Return to the watch room")}>
       <span className="brand-mark" aria-hidden="true">A♠</span>
       <span className="brand-copy"><strong>{text("德扑竞技场", "Hold'em Arena")}</strong></span>
     </Link>
@@ -21,7 +30,7 @@ export function AppHeader({ admin = false }: { admin?: boolean }) {
     <header className="site-header">
       <Brand />
       <nav className="site-nav" aria-label={text("公开页面导航", "Public navigation")}>
-        <NavLink to="/" end>{text("现场", "Live")}</NavLink>
+        <NavLink to="/" end>{text("观赛室", "Watch Room")}</NavLink>
         <NavLink to="/tournaments">{text("赛事", "Events")}</NavLink>
         <NavLink to="/leaderboard">{text("榜单", "Ranks")}</NavLink>
         <NavLink className={admin ? "admin-link active" : "admin-link"} to="/admin">{text("控制室", "Admin")}</NavLink>
@@ -106,22 +115,54 @@ export function PlayingCard({ card, hidden = false, compact = false }: {
   );
 }
 
-export function PokerTable({ state }: { state: ArenaState }) {
+export function PokerTable({
+  state,
+  broadcast = null,
+  playerBrands = {},
+  historical = false,
+  eliminatedPlayerIds = new Set<string>(),
+  settlement = null,
+}: {
+  state: ArenaState;
+  broadcast?: ArenaBroadcast | null;
+  playerBrands?: Readonly<Record<string, ProviderBrand | null>>;
+  historical?: boolean;
+  eliminatedPlayerIds?: ReadonlySet<string>;
+  settlement?: SettlementPresentation | null;
+}) {
   const { text } = useUiPreferences();
   const players = [...state.players].sort((a, b) => a.seat - b.seat);
   const hand = state.hand;
-  const board = hand?.boards[0] ?? [];
+  const board = broadcast?.board ?? hand?.boards[0] ?? [];
   const settledPot = hand?.pots.reduce((sum, item) => sum + item.amount, 0) ?? 0;
-  const pot = settledPot > 0 ? settledPot : players.reduce((sum, player) => sum + player.totalCommitted, 0);
+  const pot = broadcast?.pot ?? (settledPot > 0 ? settledPot : players.reduce((sum, player) => sum + player.totalCommitted, 0));
   const labels = new Map(players.map((player) => [player.id, player.displayName]));
   const champion = players.find((player) => player.id === state.championPlayerId);
+  const broadcastByPlayer = new Map(broadcast?.players.map((player) => [player.playerId, player]) ?? []);
+  const sidePots = broadcast?.pots ?? hand?.pots ?? [];
+  const winnerPlayerIds = new Set(settlement?.winnerPlayerIds ?? []);
+  const tablePlayers = players.map((player, index) => {
+    const placement = tableSeatLayout(players.length, index);
+    const style = {
+      "--seat-x": `${placement.compact.x}%`,
+      "--seat-y": `${placement.compact.y}%`,
+      "--seat-x-wide": `${placement.wide.x}%`,
+      "--seat-y-wide": `${placement.wide.y}%`,
+      "--bet-shift-x": `${placement.compactBetShift.x}rem`,
+      "--bet-shift-y": `${placement.compactBetShift.y}rem`,
+      "--bet-shift-x-wide": `${placement.wideBetShift.x}rem`,
+      "--bet-shift-y-wide": `${placement.wideBetShift.y}rem`,
+      "--tint": `var(--chart-series-${(index % 9) + 1})`,
+    } as CSSProperties;
+    return { player, style };
+  });
 
   return (
     <section className="table-broadcast" aria-label={`${state.name} ${text("牌桌", "table")}`}>
       <div className="table-room-light" />
       <div className="poker-table-shell" data-player-count={players.length}>
         <div className="poker-table-felt">
-          {hand ? <>
+          {hand || broadcast ? <>
             <div className="table-center" role="group" aria-label={text("公共牌与底池", "Board and pot")}>
               <div className="community-cards">
                 {Array.from({ length: 5 }, (_, index) => <PlayingCard card={board[index]} key={index} />)}
@@ -129,48 +170,110 @@ export function PokerTable({ state }: { state: ArenaState }) {
               <div className="pot-display"><span>{text("总底池", "Pot")}</span><strong>{formatChips(pot)}</strong></div>
             </div>
           </> : <div className="table-result"><span>♛ {text("冠军", "Champion")}</span><strong>{champion?.displayName ?? "—"}</strong></div>}
-          {players.map((player, index) => {
-            const placement = tableSeatLayout(players.length, index);
-            const style = {
-              "--seat-x": `${placement.compact.x}%`,
-              "--seat-y": `${placement.compact.y}%`,
-              "--seat-x-wide": `${placement.wide.x}%`,
-              "--seat-y-wide": `${placement.wide.y}%`,
-              "--bet-shift-x": `${placement.compactBetShift.x}rem`,
-              "--bet-shift-y": `${placement.compactBetShift.y}rem`,
-              "--bet-shift-x-wide": `${placement.wideBetShift.x}rem`,
-              "--bet-shift-y-wide": `${placement.wideBetShift.y}rem`,
-              "--tint": `var(--chart-series-${(index % 9) + 1})`,
-            } as CSSProperties;
-            return <TableSeat key={player.id} player={player} state={state} style={style} />;
-          })}
+          {settlement && tablePlayers.filter(({ player }) => winnerPlayerIds.has(player.id)).map(({ player, style }) => (
+            <span className="pot-transfer" style={style} key={`${settlement.sequence}-${player.id}`} aria-hidden="true"><i /><i /><i /></span>
+          ))}
+          {tablePlayers.map(({ player, style }) => <TableSeat key={player.id} player={player} providerBrand={playerBrands[player.id] ?? null} state={state} broadcast={broadcastByPlayer.get(player.id)} broadcastHandNo={broadcast?.handNo ?? null} currentActorId={broadcast ? broadcast.currentActorId : hand?.currentActorId ?? null} positions={broadcast?.positions ?? hand?.positions ?? null} estimated={broadcast?.estimated === true} samples={broadcast?.samples ?? 0} historical={historical} eliminated={eliminatedPlayerIds.has(player.id)} winnerAmount={settlement?.amountsByPlayer[player.id] ?? null} settlementSequence={settlement?.sequence ?? null} style={style} />)}
         </div>
       </div>
-      {hand?.pots && hand.pots.length > 1 && (
+      {sidePots.length > 1 && (!hand || !broadcast || broadcast.handNo === hand.handNo) && (
         <div className="side-pot-strip" aria-label={text("边池", "Side pots")}>
-          {hand.pots.map((item) => <span key={item.index}>{text("边池", "Side pot")} {item.index + 1} <b>{formatChips(item.amount)}</b> · {item.eligible.map((id) => labels.get(id) ?? id).join(", ")}</span>)}
+          {sidePots.map((item) => <span key={item.index}>{text("边池", "Side pot")} {item.index + 1} <b>{formatChips(item.amount)}</b> · {item.eligible.map((id) => labels.get(id) ?? id).join(", ")}</span>)}
         </div>
       )}
     </section>
   );
 }
 
-function TableSeat({ player, state, style }: { player: ArenaPlayer; state: ArenaState; style: CSSProperties }) {
-  const { text } = useUiPreferences();
+function compactActionLabel(action: ArenaBroadcastLastAction, locale: "zh-CN" | "en"): string {
+  const format = (value: number) => new Intl.NumberFormat("en-US", { notation: value >= 10_000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(value);
+  const amount = action.classification === "call" ? action.paid : action.amountTo;
+  const labels: Record<string, [string, string]> = {
+    fold: ["弃牌", "Fold"],
+    check: ["过牌", "Check"],
+    call: ["跟注", "Call"],
+    bet: ["下注至", "Bet to"],
+    raise: ["加注至", "Raise to"],
+    short_raise: ["加注至", "Raise to"],
+  };
+  const actionLabel = action.action === "all_in"
+    ? locale === "en" ? "All-in" : "全下"
+    : labels[action.classification]?.[locale === "en" ? 1 : 0] ?? action.action.toUpperCase();
+  return `${action.term ? `${action.term} · ` : ""}${actionLabel}${amount > 0 ? ` ${format(amount)}` : ""}`;
+}
+
+function TableSeat({ player, providerBrand, state, broadcast, broadcastHandNo, currentActorId, positions, estimated, samples, historical, eliminated, winnerAmount, settlementSequence, style }: {
+  player: ArenaPlayer;
+  providerBrand: ProviderBrand | null;
+  state: ArenaState;
+  broadcast?: ArenaBroadcastPlayer | undefined;
+  broadcastHandNo: number | null;
+  currentActorId: string | null;
+  positions: { button: number; smallBlind: number; bigBlind: number; headsUp: boolean } | null;
+  estimated: boolean;
+  samples: number;
+  historical: boolean;
+  eliminated: boolean;
+  winnerAmount: number | null;
+  settlementSequence: number | null;
+  style: CSSProperties;
+}) {
+  const { locale, text } = useUiPreferences();
   const hand = state.hand;
-  const isActing = hand?.currentActorId === player.id;
-  const isChampion = state.championPlayerId === player.id;
-  const position = hand?.positions.headsUp && hand.positions.button === player.seat ? "D · SB"
-    : hand?.positions.button === player.seat ? "D"
-    : hand?.positions.smallBlind === player.seat ? "SB"
-      : hand?.positions.bigBlind === player.seat ? "BB" : null;
+  const isCurrentHand = broadcastHandNo === null || hand?.handNo === broadcastHandNo;
+  const isActing = isCurrentHand && currentActorId === player.id;
+  const isChampion = !historical && state.championPlayerId === player.id;
+  const position = positions?.headsUp && positions.button === player.seat ? "D · SB"
+    : positions?.button === player.seat ? "D"
+    : positions?.smallBlind === player.seat ? "SB"
+      : positions?.bigBlind === player.seat ? "BB" : null;
   const playerStatus: Record<string, string> = { ACTIVE: text("在席", "Active"), ELIMINATED: text("已淘汰", "Out"), CHAMPION: text("冠军", "Champion") };
+  const folded = broadcast?.folded ?? player.folded;
+  const allIn = broadcast?.allIn ?? player.allIn;
+  const stack = broadcast?.stack ?? player.stack;
+  const streetCommitted = broadcast?.streetCommitted ?? player.streetCommitted;
+  const cardsReady = (broadcast?.holeCards.length ?? 0) >= 2;
+  const equityPercent = broadcast?.equity === null || broadcast?.equity === undefined ? null : broadcast.equity * 100;
+  const equityLabel = equityPercent === null ? "—" : `${estimated ? "≈" : ""}${Math.round(equityPercent)}%`;
+  const equityTitle = !cardsReady
+    ? text("等待发牌", "Waiting for the deal")
+    : equityPercent === null
+    ? text("已弃牌，不参与当前胜率计算", "Folded — excluded from live equity")
+    : `${text("摊牌权益", "Showdown equity")} ${equityPercent.toFixed(1)}% · ${samples.toLocaleString()} ${text("次牌面", "runouts")}`;
+  const statusLabel = isActing ? text("思考中", "Thinking")
+    : allIn ? text("全下", "All-in")
+      : folded ? text("弃牌", "Folded")
+        : historical && eliminated ? text("已淘汰", "Out")
+          : historical && broadcast ? text("在席", "Active")
+            : playerStatus[player.status] ?? player.status;
+  const isPotWinner = winnerAmount !== null;
+  const visibleLastAction = broadcast?.lastAction?.classification === "fold" && folded ? null : broadcast?.lastAction;
   return (
-    <article className={`table-seat${isActing ? " is-acting" : ""}${player.folded ? " is-folded" : ""}${player.status === "ELIMINATED" ? " is-out" : ""}`} style={style}>
+    <article className={`table-seat${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${isPotWinner ? " is-pot-winner" : ""}${historical ? eliminated ? " is-out" : "" : player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} style={style}>
+      {isPotWinner && <span className="seat-winner-amount" key={`${settlementSequence}-${player.id}`}>+{formatChips(winnerAmount)}</span>}
       <div className="seat-meta"><span><span className="seat-word">{text("座位", "Seat")} </span>{String(player.seat + 1).padStart(2, "0")}</span>{position && <b>{position}</b>}</div>
-      <div className="seat-name"><strong title={player.displayName}>{player.displayName}</strong>{isChampion && <span title={text("冠军", "Champion")}>♛</span>}</div>
-      <div className="seat-stack"><span className={isActing ? "seat-turn" : ""}>{isActing ? text("思考中", "Thinking") : player.allIn ? text("全下", "All-in") : player.folded ? text("弃牌", "Folded") : playerStatus[player.status] ?? player.status}</span><b>{formatChips(player.stack)}</b></div>
-      {player.streetCommitted > 0 && <span className="seat-bet"><i aria-hidden="true" />{formatChips(player.streetCommitted)}</span>}
+      <div className="seat-name">
+        <ProviderLogo
+          brand={providerBrand}
+          label={player.displayName}
+          fallback={player.displayName.trim().slice(0, 1).toLocaleUpperCase() || "?"}
+          fallbackStyle={modelTint(player.id)}
+          className="seat-provider-logo"
+        />
+        <strong title={player.displayName}>{player.displayName}</strong>
+        {isChampion && <span className="seat-champion" title={text("冠军", "Champion")}>♛</span>}
+      </div>
+      {broadcast && <div className="seat-broadcast">
+        <div className="seat-hole-cards" aria-label={`${player.displayName} ${text("手牌", "hole cards")}`}>
+          <PlayingCard card={broadcast.holeCards[0]} hidden={!cardsReady} compact />
+          <PlayingCard card={broadcast.holeCards[1]} hidden={!cardsReady} compact />
+        </div>
+        <strong className="seat-equity" title={equityTitle}>{equityLabel}</strong>
+      </div>}
+      {broadcast && <span className="seat-equity-track" aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(100, equityPercent ?? 0))}%` }} /></span>}
+      <div className="seat-stack"><span className={isActing ? "seat-turn" : ""}>{statusLabel}</span><b>{formatChips(stack)}</b></div>
+      {visibleLastAction && <div className={`seat-last-action is-${visibleLastAction.classification}`}>{compactActionLabel(visibleLastAction, locale)}</div>}
+      {streetCommitted > 0 && <span className="seat-bet"><i aria-hidden="true" />{formatChips(streetCommitted)}</span>}
     </article>
   );
 }

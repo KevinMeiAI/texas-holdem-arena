@@ -24,6 +24,26 @@ export interface BuiltApp {
   masterKey: Buffer | null;
 }
 
+export async function registerWebAssets(app: FastifyInstance, webRoot: string): Promise<void> {
+  await app.register(fastifyStatic, {
+    root: webRoot,
+    setHeaders(response, filePath) {
+      if (filePath.endsWith("index.html")) {
+        response.header("Cache-Control", "no-store");
+      } else if (/[\\/]assets[\\/]/.test(filePath)) {
+        response.header("Cache-Control", "public, max-age=31536000, immutable");
+      }
+    },
+  });
+  app.setNotFoundHandler((request, reply) => {
+    const requestUrl = request.raw.url ?? "";
+    if (requestUrl.startsWith("/api/") || requestUrl.startsWith("/assets/")) {
+      return reply.code(404).send({ error: "not_found" });
+    }
+    return reply.sendFile("index.html");
+  });
+}
+
 export async function buildApp(config: AppConfig): Promise<BuiltApp> {
   const app = Fastify({
     logger: {
@@ -119,13 +139,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
 
   const webRoot = resolve(process.cwd(), "dist-web");
   if (existsSync(webRoot)) {
-    await app.register(fastifyStatic, { root: webRoot, wildcard: false });
-    app.setNotFoundHandler((request, reply) => {
-      if (request.raw.url?.startsWith("/api/")) {
-        return reply.code(404).send({ error: "not_found" });
-      }
-      return reply.sendFile("index.html");
-    });
+    await registerWebAssets(app, webRoot);
   }
 
   app.addHook("onClose", async () => {

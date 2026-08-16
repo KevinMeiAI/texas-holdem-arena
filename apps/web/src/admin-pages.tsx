@@ -11,6 +11,7 @@ import {
   StatusBadge,
   formatChips,
 } from "./components";
+import { ProviderLogo } from "./provider-logo";
 import { SelectControl } from "./select-control";
 import type { AdminSession, ArenaState, ModelConfig, ProviderConnection, SystemPromptVersion, TournamentSummary } from "./types";
 import { PreferenceControls, type UiLocale, uiText, useUiPreferences } from "./ui-preferences";
@@ -80,7 +81,7 @@ function LoginScreen({ onLogin }: { onLogin: (payload: AuthPayload) => void }) {
   };
   return (
     <main className="login-screen">
-      <div className="login-topbar"><Link className="back-home" to="/">← {text("返回直播间", "Back to live")}</Link><PreferenceControls /></div>
+      <div className="login-topbar"><Link className="back-home" to="/">← {text("返回观赛室", "Back to watch room")}</Link><PreferenceControls /></div>
       <section className="login-editorial">
         <h1>{text("进入赛事", "Tournament")}<br /><span>{text("控制室", "Control room")}</span></h1>
         <p>{text("控制室仅面向本机管理员。模型配置、API 密钥与赛事指令只作用于本机部署；发牌种子承诺、每次模型决策与 API 调用全程留痕，可独立验证。", "The control room is for local administrators only. Model configs, API keys and tournament commands apply to this deployment; seed commitments, model decisions and API calls are fully auditable.")}</p>
@@ -123,7 +124,7 @@ function AdminDashboard({ csrfToken }: { csrfToken: string }) {
             {state.status === "RUNNING" && <button className="button secondary" onClick={() => void command("pause")}>{text("暂停", "Pause")}</button>}
             {state.status === "PAUSED_INFRA" && <button className="button primary" onClick={() => void command("resume")}>{text("继续", "Resume")}</button>}
             {!(["COMPLETED", "CANCELLED"] as string[]).includes(state.status) && <button className="button danger" onClick={() => void command("cancel")}>{text("取消赛事", "Cancel tournament")}</button>}
-            <Link className="text-button" to="/">{text("打开直播间", "Open live table")} ↗</Link>
+            <Link className="text-button" to="/">{text("打开观赛室", "Open watch room")} ↗</Link>
           </div>
           {commandError && <p className="form-error">{commandError}</p>}
         </> : <EmptyState title={text("牌桌空闲", "Table idle")} body={text("至少选择两个模型即可开始。", "Select at least two models to begin.")} action={<Link className="button primary" to="/admin/tournaments/new">{text("配置新赛事", "Set up tournament")}</Link>} />}
@@ -194,7 +195,7 @@ function ModelsAdmin({ csrfToken }: { csrfToken: string }) {
         ) : (
           <div className="provider-grid">{providers.data!.providers.map((provider) => (
             <article className="provider-card" key={provider.id}>
-              <header><span className="provider-glyph">{provider.label.slice(0, 2).toUpperCase()}</span><div><h3>{provider.label}</h3><p>{provider.providerType}</p></div><i className={provider.hasApiKey ? "ready" : "local"} /></header>
+              <header><ProviderLogo providerProfile={provider.providerProfile} providerType={provider.providerType} label={provider.label} baseUrl={provider.baseUrl} fallback={provider.label.slice(0, 2).toUpperCase()} /><div><h3>{provider.label}</h3><p>{provider.providerType}</p></div><i className={provider.hasApiKey ? "ready" : "local"} /></header>
               <dl>
                 <div><dt>{text("兼容档案", "Profile")}</dt><dd>{providerProfileLabel(provider.providerProfile, locale)}</dd></div>
                 <div><dt>{text("默认输出", "Default output")}</dt><dd>{outputModeLabel(provider.defaultOutputMode, locale)}</dd></div>
@@ -215,7 +216,7 @@ function ModelsAdmin({ csrfToken }: { csrfToken: string }) {
             <div className="model-table-head"><span>{text("显示名 / 模型", "Name / model")}</span><span>Provider</span><span>{text("有效输出", "Output")}</span><span>{text("状态", "Status")}</span><span /></div>
             {models.data!.models.map((model) => (
               <article key={model.id}>
-                <div className="model-cell-main"><span className="model-monogram" style={modelTint(model.id)}>{model.displayName.slice(0, 1).toUpperCase()}</span><div><strong>{model.displayName}</strong><small>{model.modelId}</small></div></div>
+                <div className="model-cell-main"><ProviderLogo providerProfile={model.providerProfile} providerType={model.providerType} label={model.providerLabel} baseUrl={model.providerBaseUrl} modelId={model.modelId} fallback={model.displayName.slice(0, 1).toUpperCase()} fallbackStyle={modelTint(model.id)} /><div><strong>{model.displayName}</strong><small>{model.modelId}</small></div></div>
                 <span data-label="Provider">{model.providerLabel}</span>
                 <code className={model.outputModeSupported ? "" : "policy-issue"} data-label={text("有效输出", "Output")} title={model.outputModeMessage ?? `${providerProfileLabel(model.effectiveProviderProfile, locale)} · ${outputModeLabel(model.outputMode, locale)}`}>{outputModeLabel(model.effectiveOutputMode, locale)}{model.outputModeSupported ? "" : text(" · 配置冲突", " · Conflict")}</code>
                 <button className={`enable-toggle ${model.enabled ? "on" : ""}`} aria-label={`${model.enabled ? text("停用", "Disable") : text("启用", "Enable")} ${model.displayName}`} onClick={async () => { await apiRequest(`/api/admin/models/${model.id}`, { method: "PATCH", csrfToken, body: JSON.stringify({ enabled: !model.enabled }) }); await models.refresh(); }}><i /></button>
@@ -443,7 +444,7 @@ function NewTournament({ csrfToken }: { csrfToken: string }) {
       {enabledModels.length < 2 ? <EmptyState title={text("至少需要两个可用模型", "At least two models required")} body={text("先添加并启用模型。", "Add and enable models first.")} action={<Link className="button primary" to="/admin/models">{text("配置模型", "Configure models")}</Link>} /> : <form className="tournament-form" onSubmit={async (event) => { event.preventDefault(); if (selected.length < 2) { setError(text("请选择 2—9 个不同模型", "Select 2–9 different models")); return; } if (!selectedPrompt) { setError(text("没有可用的 System Prompt 版本", "No active system prompt version")); return; } setWorking(true); setError(null); try { const result = await apiRequest<{ tournamentId: string }>(benchmarkSeries ? "/api/admin/benchmark-series" : "/api/admin/tournaments", { method: "POST", csrfToken, body: JSON.stringify({ name, modelConfigIds: selected, initialStack, handsPerLevel, decisionTimeoutMs: decisionTimeoutSeconds * 1_000, blindLevels, interfaceTrack, historyMode, systemPromptVersionId: selectedPrompt.id }) }); navigate(`/?tournament=${result.tournamentId}`); } catch (reason) { setError(reason instanceof Error ? reason.message : text("锦标赛创建失败", "Unable to create tournament")); } finally { setWorking(false); } }}>
         <section className="form-section"><header><div><h2>{text("赛事身份", "Tournament")}</h2></div></header><label className="field-large"><span>{text("赛事名称", "Name")}</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={120} required /></label></section>
         <section className="form-section"><header><div><h2>System Prompt</h2></div><Link className="text-button" to="/admin/prompts">{text("版本管理", "Manage versions")} →</Link></header><label className="field-large"><span>{text("提示词版本", "Prompt version")}</span><SelectControl value={selectedPrompt?.id ?? ""} onChange={setSystemPromptVersionId} options={activePrompts.map((version) => ({ value: version.id, label: `${version.name}${version.isDefault ? ` · ${text("默认", "Default")}` : ""} · ${version.sha256.slice(0, 8)}` }))} /></label>{selectedPrompt && <div className="selected-prompt-summary"><strong>{selectedPrompt.protocolBundleId}</strong><span>SHA-256 {selectedPrompt.sha256}</span><p>{selectedPrompt.systemPrompt}</p></div>}</section>
-        <section className="form-section"><header><div><h2>{text("选择模型席位", "Select models")}</h2></div><b>{text("已选", "Selected")} {selected.length} / 9</b></header><div className="model-picker">{enabledModels.map((model) => <button className={selected.includes(model.id) ? "selected" : ""} type="button" onClick={() => toggle(model.id)} key={model.id}><span className="model-monogram" style={modelTint(model.id)}>{model.displayName.slice(0, 1)}</span><div><strong>{model.displayName}</strong><small>{model.providerLabel} · {model.modelId}</small></div><i>{selected.includes(model.id) ? "✓" : "+"}</i></button>)}</div></section>
+        <section className="form-section"><header><div><h2>{text("选择模型席位", "Select models")}</h2></div><b>{text("已选", "Selected")} {selected.length} / 9</b></header><div className="model-picker">{enabledModels.map((model) => <button className={selected.includes(model.id) ? "selected" : ""} type="button" onClick={() => toggle(model.id)} key={model.id}><ProviderLogo providerProfile={model.providerProfile} providerType={model.providerType} label={model.providerLabel} baseUrl={model.providerBaseUrl} modelId={model.modelId} fallback={model.displayName.slice(0, 1)} fallbackStyle={modelTint(model.id)} /><div><strong>{model.displayName}</strong><small>{model.providerLabel} · {model.modelId}</small></div><i>{selected.includes(model.id) ? "✓" : "+"}</i></button>)}</div></section>
         <section className="form-section"><header><div><h2>{text("锦标赛结构", "Structure")}</h2></div></header><div className="structure-grid"><label><span>{text("初始筹码", "Starting stack")}</span><input type="number" min={100} max={10_000_000} value={initialStack} onChange={(event) => setInitialStack(Number(event.target.value))} /></label><label><span>{text("每级手数", "Hands per level")}</span><input type="number" min={1} max={1000} value={handsPerLevel} onChange={(event) => setHandsPerLevel(Number(event.target.value))} /></label><label><span>{text("模型调用超时（秒）", "Model timeout (seconds)")}</span><input type="number" min={30} max={600} step={10} value={decisionTimeoutSeconds} onChange={(event) => setDecisionTimeoutSeconds(Number(event.target.value))} /></label><label><span>{text("接口赛道", "Interface track")}</span><SelectControl value={interfaceTrack} onChange={(next) => setInterfaceTrack(next as "native" | "normalized")} options={[
           { value: "native", label: text("Native · 各模型最佳官方输出", "Native · best official output") },
           { value: "normalized", label: text("Normalized · 统一 Prompt JSON", "Normalized · prompt JSON only") },

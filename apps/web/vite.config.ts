@@ -6,7 +6,10 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: "../../dist-web",
-    emptyOutDir: true,
+    // Keep prior content-hashed bundles available for tabs that reload while a
+    // new build is being written. The new index replaces their references once
+    // every new asset exists, so an in-flight page never loses its stylesheet.
+    emptyOutDir: false,
   },
   server: {
     host: "127.0.0.1",

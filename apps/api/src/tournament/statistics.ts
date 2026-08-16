@@ -1,6 +1,7 @@
 import { cardCode, createDeck, type Card } from "../../../../packages/domain/src/cards.js";
 import { compareHandRanks, evaluateBest } from "../../../../packages/domain/src/evaluator.js";
 import { awardPots, buildPots } from "../../../../packages/domain/src/pots.js";
+import type { ProviderBrand } from "../../../../packages/providers/src/provider-brand.js";
 
 export interface StatisticsEvent {
   sequence: number;
@@ -677,6 +678,7 @@ export interface CompletedTournamentStatistics {
 export interface CompetitiveLeaderboardEntry {
   modelId: string;
   displayName: string;
+  providerBrand: ProviderBrand | null;
   rating: number;
   points: number;
   tournaments: number;
@@ -691,6 +693,7 @@ export interface CompetitiveLeaderboardEntry {
 export interface ReliabilityLeaderboardEntry {
   modelId: string;
   displayName: string;
+  providerBrand: ProviderBrand | null;
   decisions: number;
   validDecisionRate: number | null;
   firstPassRate: number | null;
@@ -704,6 +707,7 @@ export interface ReliabilityLeaderboardEntry {
 export interface EfficiencyLeaderboardEntry {
   modelId: string;
   displayName: string;
+  providerBrand: ProviderBrand | null;
   decisions: number;
   providerCalls: number;
   averageLatencyMs: number | null;
@@ -717,6 +721,7 @@ export interface EfficiencyLeaderboardEntry {
 export interface StyleProfileEntry {
   modelId: string;
   displayName: string;
+  providerBrand: ProviderBrand | null;
   handsPlayed: number;
   vpipRate: number;
   pfrRate: number;
@@ -827,7 +832,10 @@ function styleProfile(vpip: number, pfr: number): StyleProfileEntry["profile"] {
   return "均衡";
 }
 
-export function buildArenaLeaderboards(records: readonly CompletedTournamentStatistics[]): ArenaLeaderboards {
+export function buildArenaLeaderboards(
+  records: readonly CompletedTournamentStatistics[],
+  providerBrands: Readonly<Record<string, ProviderBrand | null>> = {},
+): ArenaLeaderboards {
   const entries = new Map<string, AggregateEntry>();
   const chronological = [...records].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   for (const record of chronological) {
@@ -892,6 +900,7 @@ export function buildArenaLeaderboards(records: readonly CompletedTournamentStat
   const competition = [...entries.values()].map((entry): CompetitiveLeaderboardEntry => ({
     modelId: entry.modelId,
     displayName: entry.displayName,
+    providerBrand: providerBrands[entry.modelId] ?? null,
     rating: Math.round(entry.rating),
     points: Math.round(entry.points * 10) / 10,
     tournaments: entry.tournaments,
@@ -907,6 +916,7 @@ export function buildArenaLeaderboards(records: readonly CompletedTournamentStat
   const reliability = [...entries.values()].map((entry): ReliabilityLeaderboardEntry => ({
     modelId: entry.modelId,
     displayName: entry.displayName,
+    providerBrand: providerBrands[entry.modelId] ?? null,
     decisions: entry.decisions,
     validDecisionRate: nullableRate(entry.validDecisions, entry.decisions),
     firstPassRate: nullableRate(entry.firstPassDecisions, entry.decisions),
@@ -923,6 +933,7 @@ export function buildArenaLeaderboards(records: readonly CompletedTournamentStat
   const efficiency = [...entries.values()].map((entry): EfficiencyLeaderboardEntry => ({
     modelId: entry.modelId,
     displayName: entry.displayName,
+    providerBrand: providerBrands[entry.modelId] ?? null,
     decisions: entry.decisions,
     providerCalls: entry.providerCalls,
     averageLatencyMs: mean(entry.latencySamplesMs),
@@ -941,6 +952,7 @@ export function buildArenaLeaderboards(records: readonly CompletedTournamentStat
     return {
       modelId: entry.modelId,
       displayName: entry.displayName,
+      providerBrand: providerBrands[entry.modelId] ?? null,
       handsPlayed: entry.handsPlayed,
       vpipRate,
       pfrRate,
