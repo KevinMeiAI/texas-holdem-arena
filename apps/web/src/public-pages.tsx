@@ -36,7 +36,7 @@ import type {
   HandSummary,
   LeaderboardResponse,
   StackHistoryPoint,
-  TournamentStatistics,
+  TournamentStatisticsResponse,
   TournamentSummary,
 } from "./types";
 import { useUiPreferences } from "./ui-preferences";
@@ -606,7 +606,7 @@ export function ReplayPage() {
   const tournament = useApiResource<{ state: ArenaState }>(id ? `/api/public/tournaments/${id}` : null);
   const hands = useApiResource<{ hands: HandSummary[] }>(id ? `/api/public/tournaments/${id}/hands` : null);
   const stackHistory = useApiResource<{ points: StackHistoryPoint[] }>(id ? `/api/public/tournaments/${id}/stack-history` : null);
-  const performance = useApiResource<{ statistics: TournamentStatistics }>(id ? `/api/public/tournaments/${id}/statistics` : null);
+  const performance = useApiResource<TournamentStatisticsResponse>(id ? `/api/public/tournaments/${id}/statistics` : null);
   const handNo = Number(routeHandNo ?? hands.data?.hands.at(-1)?.handNo ?? 0);
   const replay = useApiResource<{
     events: ArenaEvent[];
@@ -650,7 +650,7 @@ export function ReplayPage() {
           </section>
           {performance.loading ? <LoadingBlock label={text("正在计算赛后战报", "Loading tournament report")} />
             : performance.error ? <ErrorBlock message={performance.error} onRetry={() => void performance.refresh()} />
-              : performance.data && <TournamentStatisticsReport statistics={performance.data.statistics} />}
+              : performance.data && <TournamentStatisticsReport statistics={performance.data.statistics} playerBrands={performance.data.playerBrands} />}
         </>
       )}
       <HandSelector hands={hands.data?.hands ?? []} activeHand={handNo} tournamentId={id} />

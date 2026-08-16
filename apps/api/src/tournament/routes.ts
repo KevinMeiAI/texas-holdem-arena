@@ -196,9 +196,9 @@ export async function registerTournamentRoutes(
     return { points: stackHistoryFromEvents(events) };
   });
   app.get<{ Params: { id: string } }>("/api/public/tournaments/:id/statistics", async (request, reply) => {
-    const statistics = await context.arena.tournamentStatistics(request.params.id);
-    return statistics
-      ? { statistics }
+    const report = await context.arena.tournamentStatistics(request.params.id);
+    return report
+      ? report
       : reply.code(404).send({ error: "tournament_not_found" });
   });
   app.get<{ Params: { id: string; handNo: string } }>(

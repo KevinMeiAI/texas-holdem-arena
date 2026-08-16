@@ -578,10 +578,17 @@ export class ArenaService {
       .map((item) => projectArenaEvent(item, { role, completedHandNos }));
   }
 
-  async tournamentStatistics(tournamentId: string): Promise<TournamentStatistics | null> {
+  async tournamentStatistics(tournamentId: string): Promise<{
+    statistics: TournamentStatistics;
+    playerBrands: Record<string, ProviderBrand | null>;
+  } | null> {
     const state = await this.publicState(tournamentId);
     if (!state) return null;
-    return (await this.#calculateStatistics(tournamentId, state)).statistics;
+    const [calculation, playerBrands] = await Promise.all([
+      this.#calculateStatistics(tournamentId, state),
+      this.#playerBrands(state),
+    ]);
+    return { statistics: calculation.statistics, playerBrands };
   }
 
   async leaderboard(): Promise<ArenaLeaderboards> {

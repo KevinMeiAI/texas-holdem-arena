@@ -1815,7 +1815,6 @@ button:disabled {
   font-weight: 500;
 }
 
-.model-monogram,
 .provider-logo {
   width: 2.75rem;
   height: 2.75rem;
@@ -1825,7 +1824,6 @@ button:disabled {
   border-radius: var(--radius-xs);
 }
 
-.model-monogram,
 .provider-logo.is-fallback {
   color: var(--tint, var(--color-accent));
   background: color-mix(in oklch, var(--tint, var(--color-accent)) 9%, transparent);

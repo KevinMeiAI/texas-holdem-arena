@@ -524,3 +524,8 @@ export interface TournamentStatistics {
     monetaryCost: string;
   };
 }
+
+export interface TournamentStatisticsResponse {
+  statistics: TournamentStatistics;
+  playerBrands: Record<string, ProviderBrand | null>;
+}

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { formatChips, modelTint } from "./components";
+import type { ProviderBrand } from "./provider-brand";
+import { ProviderLogo } from "./provider-logo";
 import type { TournamentPlayerStatistics, TournamentStatistics } from "./types";
 import { type UiLocale, uiText, useUiPreferences } from "./ui-preferences";
 
@@ -78,7 +80,13 @@ function metricsFor(player: TournamentPlayerStatistics, view: ReportView, locale
   ];
 }
 
-export function TournamentStatisticsReport({ statistics }: { statistics: TournamentStatistics }) {
+export function TournamentStatisticsReport({
+  statistics,
+  playerBrands,
+}: {
+  statistics: TournamentStatistics;
+  playerBrands: Readonly<Record<string, ProviderBrand | null>>;
+}) {
   const { locale, text } = useUiPreferences();
   const [view, setView] = useState<ReportView>("competition");
   const reportViews: { id: ReportView; label: string }[] = [
@@ -99,7 +107,11 @@ export function TournamentStatisticsReport({ statistics }: { statistics: Tournam
       </header>
       <div className="report-overview">
         <div className="report-champion">
-          <span className="model-monogram" style={modelTint(champion?.playerId ?? "")}>{champion?.displayName.slice(0, 1).toUpperCase() ?? "—"}</span>
+          <ProviderLogo
+            brand={champion ? playerBrands[champion.playerId] ?? null : null}
+            fallback={champion?.displayName.trim().slice(0, 1).toLocaleUpperCase() || "—"}
+            fallbackStyle={modelTint(champion?.playerId ?? "")}
+          />
           <div><small>{text("本场冠军", "Champion")}</small><strong>{champion?.displayName ?? text("尚未产生", "Pending")}</strong></div>
         </div>
         <dl>
@@ -127,7 +139,11 @@ export function TournamentStatisticsReport({ statistics }: { statistics: Tournam
           <article className="report-player" role="row" key={player.playerId}>
             <div className="report-player-identity" role="rowheader">
               <b>{player.finishingPosition ?? "—"}</b>
-              <span className="model-monogram" style={modelTint(player.playerId)}>{player.displayName.slice(0, 1).toUpperCase()}</span>
+              <ProviderLogo
+                brand={playerBrands[player.playerId] ?? null}
+                fallback={player.displayName.trim().slice(0, 1).toLocaleUpperCase() || "?"}
+                fallbackStyle={modelTint(player.playerId)}
+              />
               <div><strong>{player.displayName}</strong><small>{player.finishingPosition === 1 ? text("冠军", "Champion") : `${text("第", "Rank")} ${player.finishingPosition ?? "—"} ${text("名", "")}`}</small></div>
             </div>
             <div className="report-player-metrics">
