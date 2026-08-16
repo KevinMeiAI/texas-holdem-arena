@@ -271,6 +271,7 @@ export interface ModelConfig {
   providerLabel: string;
   providerType: string;
   providerProfile: string;
+  providerBaseUrl: string | null;
   providerDefaultOutputMode: string;
   modelId: string;
   parameters: Record<string, unknown>;
