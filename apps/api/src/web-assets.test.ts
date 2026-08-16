@@ -19,10 +19,12 @@ describe("web asset serving", () => {
       const asset = await app.inject({ method: "GET", url: "/assets/index-new.js" });
       expect(asset.statusCode).toBe(200);
       expect(asset.headers["content-type"]).toContain("application/javascript");
+      expect(asset.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
       expect(asset.body).toContain("ready = true");
 
       const route = await app.inject({ method: "GET", url: "/leaderboard" });
       expect(route.statusCode).toBe(200);
+      expect(route.headers["cache-control"]).toBe("no-store");
       expect(route.body).toContain("Arena shell");
 
       const missingAsset = await app.inject({ method: "GET", url: "/assets/missing.js" });

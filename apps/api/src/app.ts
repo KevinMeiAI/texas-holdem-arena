@@ -25,7 +25,16 @@ export interface BuiltApp {
 }
 
 export async function registerWebAssets(app: FastifyInstance, webRoot: string): Promise<void> {
-  await app.register(fastifyStatic, { root: webRoot });
+  await app.register(fastifyStatic, {
+    root: webRoot,
+    setHeaders(response, filePath) {
+      if (filePath.endsWith("index.html")) {
+        response.header("Cache-Control", "no-store");
+      } else if (/[\\/]assets[\\/]/.test(filePath)) {
+        response.header("Cache-Control", "public, max-age=31536000, immutable");
+      }
+    },
+  });
   app.setNotFoundHandler((request, reply) => {
     const requestUrl = request.raw.url ?? "";
     if (requestUrl.startsWith("/api/") || requestUrl.startsWith("/assets/")) {
