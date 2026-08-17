@@ -99,7 +99,7 @@ function LoginScreen({ onLogin }: { onLogin: (payload: AuthPayload) => void }) {
 }
 
 function AdminDashboard({ csrfToken }: { csrfToken: string }) {
-  const { text } = useUiPreferences();
+  const { locale, text } = useUiPreferences();
   const live = useApiResource<{ state: ArenaState | null }>("/api/public/live", 1_500);
   const tournaments = useApiResource<{ tournaments: TournamentSummary[] }>("/api/public/tournaments", 5_000);
   const [commandError, setCommandError] = useState<string | null>(null);
@@ -107,7 +107,9 @@ function AdminDashboard({ csrfToken }: { csrfToken: string }) {
   const tournamentList = tournaments.data?.tournaments;
   const activeStatuses = new Set<ArenaState["status"]>(["READY", "RUNNING", "PAUSED_INFRA"]);
   const isActiveTournament = state ? activeStatuses.has(state.status) : false;
-  const champion = state?.players.find((player) => player.id === state.championPlayerId);
+  const recentTournaments = (tournamentList ?? [])
+    .filter((tournament) => !isActiveTournament || tournament.id !== state?.tournamentId)
+    .slice(0, 5);
   const overviewMetrics = tournamentList ? {
     total: tournamentList.length,
     active: tournamentList.filter((tournament) => activeStatuses.has(tournament.status)).length,
@@ -131,22 +133,43 @@ function AdminDashboard({ csrfToken }: { csrfToken: string }) {
         <article><span>{text("已完成赛事", "Completed tournaments")}</span><b>{overviewMetrics?.completed ?? "—"}</b></article>
         <article><span>{text("累计手数", "Total hands")}</span><b>{overviewMetrics?.hands ?? "—"}</b></article>
       </div>
-      <section className="admin-live-card">
-        <header><div><h2>{state?.name ?? text("没有正在进行的赛事", "No active tournament")}</h2><p>{state ? (isActiveTournament ? text("当前赛事", "Current tournament") : text("最近赛事", "Latest tournament")) : text("牌桌状态", "Table status")}</p></div>{state && <StatusBadge status={state.status} />}</header>
-        {state ? <>
-          {isActiveTournament ? (
+      {isActiveTournament && state && (
+        <section className="admin-section">
+          <div className="admin-section-title"><h2>{text("当前赛事", "Current tournament")}</h2></div>
+          <div className="admin-live-card">
+            <header><div><h2>{state.name}</h2></div><StatusBadge status={state.status} /></header>
             <div className="control-state"><div><span>{text("当前牌局", "Current hand")}</span><b>{text("第", "Hand")} {String(state.hand?.handNo ?? state.completedHands).padStart(3, "0")} {text("手", "")}</b></div><div><span>{text("盲注", "Blinds")}</span><b>{formatChips(state.hand?.blinds.smallBlind)} / {formatChips(state.hand?.blinds.bigBlind)}</b></div><div><span>{text("行动席位", "Action")}</span><b>{state.players.find((player) => player.id === state.hand?.currentActorId)?.displayName ?? "—"}</b></div></div>
-          ) : (
-            <div className="control-state"><div><span>{text("完成手数", "Hands played")}</span><b>{state.completedHands}</b></div><div><span>{text("模型席位", "Seats")}</span><b>{state.players.length}</b></div><div><span>{text("冠军", "Champion")}</span><b>{champion?.displayName ?? "—"}</b></div></div>
-          )}
-          <div className="control-actions">
-            {state.status === "RUNNING" && <button className="button secondary" onClick={() => void command("pause")}>{text("暂停", "Pause")}</button>}
-            {state.status === "PAUSED_INFRA" && <button className="button primary" onClick={() => void command("resume")}>{text("继续", "Resume")}</button>}
-            {!(["COMPLETED", "CANCELLED"] as string[]).includes(state.status) && <button className="button danger" onClick={() => void command("cancel")}>{text("取消赛事", "Cancel tournament")}</button>}
-            <Link className="text-button" to={isActiveTournament ? "/" : `/tournaments/${state.tournamentId}/replay`}>{isActiveTournament ? text("打开观赛室", "Open watch room") : text("查看赛事解析", "View match analysis")} ↗</Link>
+            <div className="control-actions">
+              {state.status === "RUNNING" && <button className="button secondary" onClick={() => void command("pause")}>{text("暂停", "Pause")}</button>}
+              {state.status === "PAUSED_INFRA" && <button className="button primary" onClick={() => void command("resume")}>{text("继续", "Resume")}</button>}
+              <button className="button danger" onClick={() => void command("cancel")}>{text("取消赛事", "Cancel tournament")}</button>
+              <Link className="text-button" to="/">{text("打开观赛室", "Open watch room")} ↗</Link>
+            </div>
+            {commandError && <p className="form-error">{commandError}</p>}
           </div>
-          {commandError && <p className="form-error">{commandError}</p>}
-        </> : <EmptyState title={text("牌桌空闲", "Table idle")} body={text("至少选择两个模型即可开始。", "Select at least two models to begin.")} action={<Link className="button primary" to="/admin/tournaments/new">{text("配置新赛事", "Set up tournament")}</Link>} />}
+        </section>
+      )}
+      <section className="admin-section admin-recent-tournaments">
+        <div className="admin-section-title">
+          <h2>{text("最近赛事", "Recent tournaments")}</h2>
+          {(overviewMetrics?.total ?? 0) > 0 && <Link className="text-button" to="/tournaments">{text(`查看全部 ${overviewMetrics!.total} 场`, `View all ${overviewMetrics!.total}`)} →</Link>}
+        </div>
+        {tournaments.loading ? <LoadingBlock label={text("正在读取最近赛事", "Loading recent tournaments")} /> : tournaments.error ? <ErrorBlock message={tournaments.error} onRetry={() => void tournaments.refresh()} /> : recentTournaments.length > 0 ? (
+          <div className="tournament-list">
+            {recentTournaments.map((tournament, index) => {
+              const tournamentState = tournament.publicState;
+              const tournamentChampion = tournamentState.players.find((player) => player.id === tournamentState.championPlayerId);
+              return (
+                <Link className="tournament-card" to={`/tournaments/${tournament.id}/replay`} key={tournament.id}>
+                  <span className="archive-index">{String(index + 1).padStart(2, "0")}</span>
+                  <div className="tournament-card-main"><StatusBadge status={tournament.status} /><h2>{tournament.name}</h2><p>{new Date(tournament.createdAt).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" })}</p></div>
+                  <dl className="tournament-stats"><div><dt>{text("手数", "Hands")}</dt><dd>{tournamentState.completedHands}</dd></div><div><dt>{text("阵容", "Field")}</dt><dd>{tournamentState.players.length}</dd></div><div><dt>{text("冠军", "Champion")}</dt><dd>{tournamentChampion?.displayName ?? "—"}</dd></div></dl>
+                  <span className="card-arrow">↗</span>
+                </Link>
+              );
+            })}
+          </div>
+        ) : <EmptyState title={text("还没有赛事", "No tournaments yet")} body={text("创建一场锦标赛后，赛事会出现在这里。", "Create a tournament to start the archive.")} action={<Link className="button primary" to="/admin/tournaments/new">{text("创建赛事", "Create tournament")}</Link>} />}
       </section>
     </>
   );
