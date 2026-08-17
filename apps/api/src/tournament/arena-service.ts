@@ -498,6 +498,12 @@ export class ArenaService {
     const state = await this.publicState(tournamentId);
     const id = (state as { tournamentId?: unknown } | null)?.tournamentId;
     if (!state || typeof id !== "string") return null;
+    const status = (state as { status?: unknown }).status;
+    if (status !== "COMPLETED" && status !== "CANCELLED") {
+      // Preserve the route's not-finished response without doing the expensive
+      // replay projection or caching a snapshot that can still change.
+      return { state, timeline: [], events: [], playerBrands: {} };
+    }
     const [events, playerBrands] = await Promise.all([
       this.projectedEvents(id, "SPECTATOR_BROADCAST"),
       this.#playerBrands(state),
