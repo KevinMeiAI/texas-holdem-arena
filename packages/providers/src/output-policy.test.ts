@@ -23,10 +23,12 @@ describe("provider output policy", () => {
     expect(inspectOutputPolicy(config({ provider: "google-gemini" })).effectiveMode).toBe("json_schema");
   });
 
-  it("keeps generic, DeepSeek and GLM compatible endpoints on JSON Object", () => {
+  it("keeps generic and object-only compatibility profiles on JSON Object", () => {
     expect(inspectOutputPolicy(config({})).effectiveMode).toBe("json_object");
     expect(inspectOutputPolicy(config({ providerProfile: "deepseek" })).effectiveMode).toBe("json_object");
     expect(inspectOutputPolicy(config({ providerProfile: "zhipu" })).effectiveMode).toBe("json_object");
+    expect(inspectOutputPolicy(config({ providerProfile: "hunyuan" })).effectiveMode).toBe("json_object");
+    expect(inspectOutputPolicy(config({ providerProfile: "minimax" })).effectiveMode).toBe("json_object");
   });
 
   it("recognizes common compatible endpoints when the Provider profile is automatic", () => {
@@ -36,6 +38,16 @@ describe("provider output policy", () => {
       .toMatchObject({ effectiveProviderProfile: "kimi", effectiveMode: "json_schema" });
     expect(inspectOutputPolicy(config({ model: "glm-4.5", baseUrl: "https://open.bigmodel.cn/api/paas/v4" })))
       .toMatchObject({ effectiveProviderProfile: "zhipu", effectiveMode: "json_object" });
+    expect(inspectOutputPolicy(config({ model: "qwen3.8-max", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" })))
+      .toMatchObject({ effectiveProviderProfile: "qwen", effectiveMode: "json_schema" });
+    expect(inspectOutputPolicy(config({ model: "doubao-seed-1-6-251015", baseUrl: "https://ark.cn-beijing.volces.com/api/v3" })))
+      .toMatchObject({ effectiveProviderProfile: "doubao", effectiveMode: "json_schema" });
+    expect(inspectOutputPolicy(config({ model: "ernie-4.5-turbo-128k", baseUrl: "https://qianfan.baidubce.com/v2" })))
+      .toMatchObject({ effectiveProviderProfile: "wenxin", effectiveMode: "json_schema" });
+    expect(inspectOutputPolicy(config({ model: "hunyuan-turbos-latest", baseUrl: "https://api.hunyuan.cloud.tencent.com/v1" })))
+      .toMatchObject({ effectiveProviderProfile: "hunyuan", effectiveMode: "json_object" });
+    expect(inspectOutputPolicy(config({ model: "MiniMax-M2.5", baseUrl: "https://api.minimax.io/v1" })))
+      .toMatchObject({ effectiveProviderProfile: "minimax", effectiveMode: "json_object" });
     expect(inspectOutputPolicy(config({ model: "example-model", baseUrl: "https://api.x.ai/v1" })))
       .toMatchObject({ effectiveProviderProfile: "xai", effectiveMode: "json_schema" });
     expect(inspectOutputPolicy(config({ model: "grok-4", baseUrl: "https://compatible.example/v1" })))
@@ -54,11 +66,41 @@ describe("provider output policy", () => {
       .toBe("json_object");
   });
 
+  it("matches the documented Qwen JSON Schema model families", () => {
+    for (const model of ["qwen3.8-max", "qwen3.8-max-preview", "qwen3.7-max", "qwen3.7-plus-20260801"]) {
+      expect(inspectOutputPolicy(config({ providerProfile: "qwen", model })).effectiveMode).toBe("json_schema");
+    }
+    for (const model of ["qwen3-max", "qwen3.7-flash", "qwen3.7-coder", "qwen-plus"]) {
+      expect(inspectOutputPolicy(config({ providerProfile: "qwen", model })).effectiveMode).toBe("json_object");
+    }
+  });
+
+  it("uses Wenxin schema only for the model families listed by the official API", () => {
+    for (const model of ["ernie-4.5", "ernie-4.5-turbo-128k-preview", "ernie-4.0-turbo-8k", "ernie-3.5-8k"]) {
+      expect(inspectOutputPolicy(config({ providerProfile: "wenxin", model })).effectiveMode).toBe("json_schema");
+    }
+    expect(inspectOutputPolicy(config({ providerProfile: "wenxin", model: "ernie-5.1" })).effectiveMode)
+      .toBe("json_object");
+  });
+
+  it("lets the compatible endpoint determine the profile for hosted third-party models", () => {
+    expect(inspectOutputPolicy(config({ model: "deepseek-v3", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" })))
+      .toMatchObject({ effectiveProviderProfile: "qwen", effectiveMode: "json_object" });
+    expect(inspectOutputPolicy(config({ model: "deepseek-v3", baseUrl: "https://aistudio.baidu.com/llm/lmapi/v3" })))
+      .toMatchObject({ effectiveProviderProfile: "wenxin", effectiveMode: "json_object" });
+  });
+
   it("reports unsupported explicit modes as configuration errors", () => {
     const deepseekSchema = config({ providerProfile: "deepseek", outputMode: "json_schema" });
     expect(inspectOutputPolicy(deepseekSchema)).toMatchObject({ supported: false });
     expect(() => resolveOutputPolicy(deepseekSchema, "ACTION_OR_HISTORY"))
       .toThrow(/DeepSeek|deepseek/);
+    expect(inspectOutputPolicy(config({ providerProfile: "qwen", model: "qwen-plus", outputMode: "json_schema" })))
+      .toMatchObject({ supported: false });
+    expect(inspectOutputPolicy(config({ providerProfile: "wenxin", model: "ernie-5.1", outputMode: "json_schema" })))
+      .toMatchObject({ supported: false });
+    expect(inspectOutputPolicy(config({ providerProfile: "minimax", outputMode: "json_schema" })))
+      .toMatchObject({ supported: false });
   });
 
   it("attaches the platform-owned schema only in JSON Schema mode", () => {

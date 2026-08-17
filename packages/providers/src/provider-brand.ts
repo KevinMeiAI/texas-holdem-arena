@@ -27,6 +27,11 @@ const PROFILE_BRANDS: Readonly<Record<string, ProviderBrand>> = {
   deepseek: "deepseek",
   kimi: "kimi",
   zhipu: "glm",
+  qwen: "qwen",
+  doubao: "doubao",
+  wenxin: "wenxin",
+  hunyuan: "hunyuan",
+  minimax: "minimax",
   xai: "xai",
 };
 

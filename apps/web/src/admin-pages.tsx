@@ -154,6 +154,11 @@ const providerProfileLabel = (profile: string, locale: UiLocale = "zh-CN") => ({
   deepseek: "DeepSeek",
   kimi: "Kimi",
   zhipu: uiText(locale, "智谱 GLM", "Zhipu GLM"),
+  qwen: uiText(locale, "Qwen / 通义千问", "Qwen"),
+  doubao: uiText(locale, "豆包 / 火山方舟", "Doubao / Ark"),
+  wenxin: uiText(locale, "文心 / 千帆", "ERNIE / Qianfan"),
+  hunyuan: uiText(locale, "腾讯混元", "Tencent Hunyuan"),
+  minimax: "MiniMax",
   xai: "xAI / Grok",
   generic: uiText(locale, "通用兼容", "Generic compatible"),
 }[profile] ?? profile);
@@ -287,6 +292,11 @@ function ProviderModal({ value, onClose, onSave }: { value: { draft: ProviderDra
           { value: "deepseek", label: "DeepSeek" },
           { value: "kimi", label: "Kimi" },
           { value: "zhipu", label: text("智谱 GLM", "Zhipu GLM") },
+          { value: "qwen", label: text("Qwen / 通义千问", "Qwen") },
+          { value: "doubao", label: text("豆包 / 火山方舟", "Doubao / Ark") },
+          { value: "wenxin", label: text("文心 / 千帆", "ERNIE / Qianfan") },
+          { value: "hunyuan", label: text("腾讯混元", "Tencent Hunyuan") },
+          { value: "minimax", label: "MiniMax" },
           { value: "xai", label: "xAI / Grok" },
           { value: "generic", label: text("通用兼容端点", "Generic compatible") },
         ]} /></label>

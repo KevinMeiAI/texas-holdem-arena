@@ -206,6 +206,48 @@ describe("real provider transport adapters", () => {
     });
   });
 
+  it.each([
+    ["qwen", "qwen3.8-max"],
+    ["doubao", "doubao-seed-1-6-251015"],
+    ["wenxin", "ernie-4.5-turbo-128k-preview"],
+  ] as const)("maps the %s profile to the documented OpenAI-compatible JSON Schema envelope", async (providerProfile, model) => {
+    const provider = new OpenAICompatibleProvider({
+      ...common,
+      provider: "openai-compatible",
+      providerProfile,
+      model,
+      baseUrl: "https://provider.test/compatible/v1",
+    });
+    await provider.decide(request());
+    expect(captured.at(-1)?.body).toMatchObject({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "arena_action_or_history",
+          schema: expect.any(Object),
+          strict: true,
+        },
+      },
+    });
+  });
+
+  it.each([
+    ["qwen", "qwen-plus"],
+    ["wenxin", "ernie-5.1"],
+    ["hunyuan", "hunyuan-turbos-latest"],
+    ["minimax", "MiniMax-M2.5"],
+  ] as const)("falls back to JSON Object for %s model %s", async (providerProfile, model) => {
+    const provider = new OpenAICompatibleProvider({
+      ...common,
+      provider: "openai-compatible",
+      providerProfile,
+      model,
+      baseUrl: "https://provider.test/compatible/v1",
+    });
+    await provider.decide(request());
+    expect(captured.at(-1)?.body).toMatchObject({ response_format: { type: "json_object" } });
+  });
+
   it("locks all v2 adapter wire fixtures", async () => {
     const fixtures: { provider: { decide(request: CanonicalModelRequest): Promise<unknown> }; expectedHash: string }[] = [
       {

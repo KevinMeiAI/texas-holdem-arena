@@ -5,6 +5,11 @@ describe("provider brand resolution", () => {
   it("lets an explicit compatibility profile take priority", () => {
     expect(resolveProviderBrand({ providerProfile: "deepseek", label: "Kimi proxy" })).toBe("deepseek");
     expect(resolveProviderBrand({ providerProfile: "anthropic", providerType: "openai-compatible" })).toBe("claude");
+    expect(resolveProviderBrand({ providerProfile: "qwen", label: "Private gateway" })).toBe("qwen");
+    expect(resolveProviderBrand({ providerProfile: "doubao", label: "Private gateway" })).toBe("doubao");
+    expect(resolveProviderBrand({ providerProfile: "wenxin", label: "Private gateway" })).toBe("wenxin");
+    expect(resolveProviderBrand({ providerProfile: "hunyuan", label: "Private gateway" })).toBe("hunyuan");
+    expect(resolveProviderBrand({ providerProfile: "minimax", label: "Private gateway" })).toBe("minimax");
   });
 
   it("recognizes native provider protocols", () => {
