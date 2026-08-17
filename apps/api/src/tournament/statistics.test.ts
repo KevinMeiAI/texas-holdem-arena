@@ -156,4 +156,39 @@ describe("tournament statistics", () => {
       totalTokens: full.totalTokens,
     });
   });
+
+  it("keeps folded hole cards out of exact all-in EV runouts", () => {
+    const allInState: StatisticsTournamentState = {
+      tournamentId: "00000000-0000-4000-8000-000000000002",
+      completedHands: 1,
+      championPlayerId: "a",
+      players: [
+        { id: "a", displayName: "Alpha", seat: 0, stack: 200, finishingPosition: 1 },
+        { id: "b", displayName: "Beta", seat: 1, stack: 0, finishingPosition: 3 },
+        { id: "c", displayName: "Gamma", seat: 2, stack: 100, finishingPosition: 2 },
+      ],
+    };
+    const allInEvents: StatisticsEvent[] = [
+      event(1, "BLIND_LEVEL_SELECTED", null, { handNo: 1, level: { smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 } }),
+      event(2, "HAND_STARTED", 1, { handNo: 1, positions: { button: 0, smallBlind: 1, bigBlind: 2 } }),
+      event(3, "HOLE_CARDS_DEALT", 1, { playerId: "a" }, null, { cards: [{ rank: 14, suit: "s" }, { rank: 14, suit: "d" }] }),
+      event(4, "HOLE_CARDS_DEALT", 1, { playerId: "b" }, null, { cards: [{ rank: 13, suit: "c" }, { rank: 13, suit: "d" }] }),
+      event(5, "HOLE_CARDS_DEALT", 1, { playerId: "c" }, null, { cards: [{ rank: 13, suit: "h" }, { rank: 12, suit: "h" }] }),
+      event(6, "STREET_DEALT", 1, { street: "FLOP", boardIndex: 0, cards: [{ rank: 2, suit: "h" }, { rank: 3, suit: "d" }, { rank: 4, suit: "s" }] }),
+      event(7, "STREET_DEALT", 1, { street: "TURN", boardIndex: 0, cards: [{ rank: 9, suit: "c" }] }),
+      event(8, "ACTION_APPLIED", 1, { street: "TURN", classification: "fold", paid: 0, amountTo: 0 }, "c"),
+      event(9, "ACTION_APPLIED", 1, { street: "TURN", classification: "raise", paid: 100, amountTo: 100, command: { action: "all_in" } }, "a"),
+      event(10, "ACTION_APPLIED", 1, { street: "TURN", classification: "call", paid: 100, amountTo: 100 }, "b"),
+      event(11, "STREET_DEALT", 1, { street: "RIVER", boardIndex: 0, cards: [{ rank: 7, suit: "c" }] }),
+      event(12, "POT_AWARDED", 1, { award: { potIndex: 0, boardIndex: 0, playerId: "a", amount: 200 } }),
+      event(13, "HAND_COMPLETED", 1, { result: { stacks: { a: 200, b: 0, c: 100 }, winnerPlayerIds: ["a"] } }),
+    ];
+
+    const alpha = calculateTournamentStatistics(allInState, allInEvents)
+      .statistics.players.find((player) => player.playerId === "a")!;
+
+    // With Kh dead in Gamma's folded hand, only Ks remains among 42 possible
+    // rivers to beat aces: (41 / 42 * 200) / 10 BB.
+    expect(alpha.allInExpectedBigBlinds).toBeCloseTo((41 / 42 * 200) / 10, 8);
+  });
 });

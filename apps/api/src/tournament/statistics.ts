@@ -343,7 +343,9 @@ function allInEquity(
 
   const visibleCodes = new Set([
     ...knownBoard.map(cardCode),
-    ...contenders.flatMap((player) => holeCards.get(player.playerId) ?? []).map(cardCode),
+    // Folded hole cards remain dead cards. They are hidden from opponents but
+    // are known to the post-tournament audit and must never re-enter a runout.
+    ...[...holeCards.values()].flat().map(cardCode),
   ]);
   const deck = createDeck().filter((card) => !visibleCodes.has(cardCode(card)));
   const cardsNeeded = 5 - knownBoard.length;
