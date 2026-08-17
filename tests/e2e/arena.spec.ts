@@ -92,6 +92,32 @@ test("switching a finished tournament does not start replay", async ({ page }) =
   expect(api.replayRequests()).toBe(0);
 });
 
+test("a late response from the previous tournament cannot replace the new selection", async ({ page }) => {
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (value: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
+    if (path === "/api/public/tournaments") return json({ tournaments: summaries });
+    if (path === `/api/public/tournaments/${completedId}/broadcast`) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      return json({ state: completedState, broadcast: null, timeline: [], playerBrands: {} });
+    }
+    if (path === `/api/public/tournaments/${cancelledId}/broadcast`) {
+      return json({ state: cancelledState, broadcast: null, timeline: [], playerBrands: {} });
+    }
+    return json({ error: "fixture_not_found" });
+  });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(80);
+  await page.evaluate((tournamentId) => {
+    window.history.pushState({}, "", `/?tournament=${tournamentId}`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, cancelledId);
+
+  await expect(page.getByRole("heading", { name: "Cancelled fixture" })).toBeVisible();
+  await page.waitForTimeout(400);
+  await expect(page.getByRole("heading", { name: "Cancelled fixture" })).toBeVisible();
+});
+
 test("match analysis navigation starts at the top", async ({ page }) => {
   await mockArenaApi(page);
   await page.goto("/");
