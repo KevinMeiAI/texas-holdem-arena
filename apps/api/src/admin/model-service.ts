@@ -305,6 +305,16 @@ export class ModelConfigService {
         );
         for (const model of models.rows) await createRevision(client, model.id, randomUUID());
       }
+      if (apiKeyWasProvided) {
+        await client.query(
+          `delete from provider_preflight_cache
+            where configuration_hash in (
+              select configuration_hash from competitor_revisions
+               where provider_connection_id = $1
+            )`,
+          [id],
+        );
+      }
       await client.query("commit");
       return publicProvider(row);
     } catch (error) {
