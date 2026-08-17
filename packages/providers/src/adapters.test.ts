@@ -162,6 +162,9 @@ describe("real provider transport adapters", () => {
     const result = await provider.decide(request());
     expect(result.parsed).toEqual({ type: "action", action: "check" });
     expect(result.usage.totalTokens).toBe(12);
+    expect(captured.at(-1)?.url).not.toContain("secret");
+    expect(captured.at(-1)?.url).not.toContain("?key=");
+    expect(captured.at(-1)?.headers.get("x-goog-api-key")).toBe("secret");
     expect(captured.at(-1)?.body).toMatchObject({
       generationConfig: {
         responseMimeType: "application/json",

@@ -31,8 +31,8 @@ export class GoogleGeminiProvider implements ModelProvider {
       generationConfig: { ...this.config.parameters, ...structuredConfig },
     };
     const response = await postJson(
-      `${base}/models/${encodeURIComponent(this.config.model)}:generateContent?key=${encodeURIComponent(this.config.apiKey)}`,
-      {},
+      `${base}/models/${encodeURIComponent(this.config.model)}:generateContent`,
+      { "x-goog-api-key": this.config.apiKey },
       wireBody,
       request.timeoutMs,
     );
