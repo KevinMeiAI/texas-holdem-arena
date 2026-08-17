@@ -16,7 +16,7 @@ import {
   type FrozenModelConfig,
 } from "../../../../packages/providers/src/provider.js";
 import { requireAdmin, type AdminAuthContext } from "../auth/routes.js";
-import { ModelConfigService } from "./model-service.js";
+import { ModelConfigService, ProviderConnectionNotFoundError } from "./model-service.js";
 
 const providerType = z.enum([
   "openai-responses",
@@ -312,8 +312,12 @@ export async function registerAdminModelRoutes(
       const model = await context.models.createModel(parsed.data);
       await audit(context.pool, admin.adminUserId, "model.create", "model", model?.id ?? null);
       return reply.code(201).send({ model });
-    } catch {
-      return reply.code(400).send({ error: "provider_not_found" });
+    } catch (error) {
+      if (error instanceof ProviderConnectionNotFoundError) {
+        return reply.code(404).send({ error: "provider_not_found" });
+      }
+      request.log.error({ err: error }, "model creation failed");
+      return reply.code(500).send({ error: "model_create_failed" });
     }
   });
 
@@ -332,8 +336,12 @@ export async function registerAdminModelRoutes(
       if (!model) return reply.code(404).send({ error: "model_not_found" });
       await audit(context.pool, admin.adminUserId, "model.update", "model", model.id);
       return { model };
-    } catch {
-      return reply.code(400).send({ error: "provider_not_found" });
+    } catch (error) {
+      if (error instanceof ProviderConnectionNotFoundError) {
+        return reply.code(404).send({ error: "provider_not_found" });
+      }
+      request.log.error({ err: error, modelId: request.params.id }, "model update failed");
+      return reply.code(500).send({ error: "model_update_failed" });
     }
   });
 

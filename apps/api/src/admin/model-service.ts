@@ -73,6 +73,21 @@ export interface ModelConfigUpdate {
   enabled?: boolean | undefined;
 }
 
+export class ProviderConnectionNotFoundError extends Error {
+  constructor() {
+    super("Provider connection not found");
+    this.name = "ProviderConnectionNotFoundError";
+  }
+}
+
+async function requireActiveProvider(client: PoolClient, id: string): Promise<void> {
+  const result = await client.query<{ id: string }>(
+    "select id from provider_connections where id = $1 and deleted_at is null",
+    [id],
+  );
+  if (!result.rows[0]) throw new ProviderConnectionNotFoundError();
+}
+
 function providerAad(id: string): string {
   return `arena:provider:${id}:api-key`;
 }
@@ -350,6 +365,7 @@ export class ModelConfigService {
     const client = await this.pool.connect();
     try {
       await client.query("begin");
+      await requireActiveProvider(client, input.providerConnectionId);
       await client.query(
         `insert into model_configs
           (id, display_name, provider_connection_id, model_id, parameters, output_mode, current_revision_id)
@@ -371,6 +387,9 @@ export class ModelConfigService {
     const client = await this.pool.connect();
     try {
       await client.query("begin");
+      if (input.providerConnectionId !== undefined) {
+        await requireActiveProvider(client, input.providerConnectionId);
+      }
       const identityChanged = input.providerConnectionId !== undefined
         || input.modelId !== undefined
         || input.parameters !== undefined
