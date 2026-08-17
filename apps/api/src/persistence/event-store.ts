@@ -740,6 +740,20 @@ export class PgEventStore {
     } : null;
   }
 
+  async renewDecisionLease(id: string, workerId: string, leaseMilliseconds: number): Promise<boolean> {
+    if (!Number.isSafeInteger(leaseMilliseconds) || leaseMilliseconds < 1) {
+      throw new Error("leaseMilliseconds must be a positive integer");
+    }
+    const result = await this.pool.query(
+      `update decision_requests
+          set lease_expires_at = now() + ($3::text || ' milliseconds')::interval,
+              updated_at = now()
+        where id = $1 and status = 'IN_FLIGHT' and lease_owner = $2`,
+      [id, workerId, leaseMilliseconds],
+    );
+    return result.rowCount === 1;
+  }
+
   async completeDecision(id: string, workerId: string, finalResponse: unknown): Promise<void> {
     canonicalJson(finalResponse);
     const result = await this.pool.query(

@@ -104,6 +104,16 @@ const defaultDecisionConfig: DecisionRunnerConfig = {
   history: { maxQueries: 2, maxRecordsPerQuery: 80, maxApproxTokens: 4_000 },
 };
 
+const DECISION_LEASE_GRACE_MS = 30_000;
+
+function decisionLeaseTiming(decisionTimeoutMs: number): { leaseMs: number; renewalMs: number } {
+  const leaseMs = decisionTimeoutMs + DECISION_LEASE_GRACE_MS;
+  return {
+    leaseMs,
+    renewalMs: Math.min(30_000, Math.max(5_000, Math.floor(leaseMs / 3))),
+  };
+}
+
 function jsonSafe<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -428,7 +438,8 @@ export class TournamentOrchestrator {
     if (runtime.operationalStatus !== "RUNNING" || !runtime.pendingDecisionId) {
       throw new Error("Tournament has no runnable decision");
     }
-    const claimed = await this.#store.claimNextDecision(runtime.tournamentId, workerId, 30_000);
+    const leaseTiming = decisionLeaseTiming(runtime.decisionTimeoutMs);
+    const claimed = await this.#store.claimNextDecision(runtime.tournamentId, workerId, leaseTiming.leaseMs);
     if (!claimed || claimed.id !== runtime.pendingDecisionId) {
       throw new Error("Expected decision could not be claimed");
     }
@@ -483,34 +494,52 @@ export class TournamentOrchestrator {
     const providerConfigHash = frozenModelConfig
       ? modelConfigHash(frozenModelConfig)
       : createHash("sha256").update(`legacy-provider:${providerId}`).digest("hex");
-    const decision = await runModelDecision({
-      provider,
-      request,
-      resumeState,
-      saveResumeState: (state) => this.#store.saveDecisionResumeState(claimed.id, state),
-      auditTurn: (turn) => this.#store.appendDecisionTurn({
-        decisionId: claimed.id,
-        turnIndex: turn.turnIndex,
-        request: turn.request,
-        ...(turn.response ? { response: turn.response } : {}),
-        outcome: turn.outcome,
-        errorKind: turn.errorKind,
-        providerConfigHash,
-        outputSchemaVersion: outputSchema.version,
-        outputSchemaHash: outputSchema.sha256,
-        latencyMs: turn.latencyMs,
-        usage: turn.usage,
-        ...(turn.response?.transportAudit ? { transportAudit: turn.response.transportAudit } : {}),
-      }),
-      validateAction: (response) => toDomainAction(hand, response),
-      fallbackAction: () => protocolFallbackAction(hand),
-      executeHistoryQuery: (query) => this.#history.execute(
-        runtime.tournamentId,
-        hand.handNo,
-        query,
-      ),
-      historyProtocolVersion: runtime.protocolBundle.historyProtocolVersion,
-    }, decisionConfig);
+    let leaseRenewalFailure: unknown = null;
+    let leaseRenewal = Promise.resolve();
+    const leaseTimer = setInterval(() => {
+      if (leaseRenewalFailure) return;
+      leaseRenewal = leaseRenewal.then(async () => {
+        const renewed = await this.#store.renewDecisionLease(claimed.id, workerId, leaseTiming.leaseMs);
+        if (!renewed) throw new Error("Decision lease is no longer owned by this worker");
+      }).catch((error: unknown) => {
+        leaseRenewalFailure = error;
+      });
+    }, leaseTiming.renewalMs);
+    let decision: Awaited<ReturnType<typeof runModelDecision>>;
+    try {
+      decision = await runModelDecision({
+        provider,
+        request,
+        resumeState,
+        saveResumeState: (state) => this.#store.saveDecisionResumeState(claimed.id, state),
+        auditTurn: (turn) => this.#store.appendDecisionTurn({
+          decisionId: claimed.id,
+          turnIndex: turn.turnIndex,
+          request: turn.request,
+          ...(turn.response ? { response: turn.response } : {}),
+          outcome: turn.outcome,
+          errorKind: turn.errorKind,
+          providerConfigHash,
+          outputSchemaVersion: outputSchema.version,
+          outputSchemaHash: outputSchema.sha256,
+          latencyMs: turn.latencyMs,
+          usage: turn.usage,
+          ...(turn.response?.transportAudit ? { transportAudit: turn.response.transportAudit } : {}),
+        }),
+        validateAction: (response) => toDomainAction(hand, response),
+        fallbackAction: () => protocolFallbackAction(hand),
+        executeHistoryQuery: (query) => this.#history.execute(
+          runtime.tournamentId,
+          hand.handNo,
+          query,
+        ),
+        historyProtocolVersion: runtime.protocolBundle.historyProtocolVersion,
+      }, decisionConfig);
+    } finally {
+      clearInterval(leaseTimer);
+      await leaseRenewal;
+    }
+    if (leaseRenewalFailure) throw leaseRenewalFailure;
 
     if (decision.status === "PAUSED_INFRA") {
       runtime = {
