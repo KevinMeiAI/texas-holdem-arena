@@ -81,6 +81,8 @@ describe("broadcast view", () => {
       expect.objectContaining({ playerId: "hero", streetCommitted: 100 }),
       expect.objectContaining({ playerId: "villain", streetCommitted: 10 }),
     ]);
+    expect(timeline[1]?.currentActorId).toBe("villain");
+    expect(timeline[2]?.currentActorId).toBeNull();
     expect(timeline[3]?.players).toEqual([
       expect.objectContaining({ playerId: "hero", streetCommitted: 0 }),
       expect.objectContaining({ playerId: "villain", streetCommitted: 0 }),
@@ -95,6 +97,39 @@ describe("broadcast view", () => {
         expect.objectContaining({ playerId: "villain", stack: 0, equity: 0 }),
       ],
     });
+  });
+
+  it("carries the next authoritative actor across replay action and street frames", () => {
+    const builder = new BroadcastViewBuilder();
+    const state = {
+      tournamentId: "tournament",
+      completedHands: 4,
+      players: [
+        { id: "hero", seat: 0, stack: 100, folded: false, allIn: false, streetCommitted: 0, totalCommitted: 0 },
+        { id: "villain", seat: 1, stack: 100, folded: false, allIn: false, streetCommitted: 0, totalCommitted: 0 },
+      ],
+      hand: null,
+    };
+    const timeline = builder.buildTimeline(state, [
+      { ...event(1, "BLIND_LEVEL_SELECTED", { handNo: 4, level: { smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 } }), handNo: null },
+      event(2, "HAND_STARTED", { positions: { button: 0, smallBlind: 0, bigBlind: 1, headsUp: true } }),
+      event(3, "FORCED_BET_POSTED", { playerId: "hero", amount: 5, live: true }),
+      event(4, "FORCED_BET_POSTED", { playerId: "villain", amount: 10, live: true }),
+      event(5, "HOLE_CARDS_DEALT", { playerId: "hero" }, { cards: [parseCard("As"), parseCard("Ah")] }),
+      event(6, "HOLE_CARDS_DEALT", { playerId: "villain" }, { cards: [parseCard("Ks"), parseCard("Kh")] }),
+      event(7, "BETTING_ROUND_STARTED", { street: "PREFLOP", actorId: "hero", currentBet: 10 }),
+      event(8, "ACTION_APPLIED", { street: "PREFLOP", command: { action: "call" }, classification: "call", paid: 5, amountTo: 10 }, undefined, "hero"),
+      event(9, "ACTION_APPLIED", { street: "PREFLOP", command: { action: "check" }, classification: "check", paid: 0, amountTo: 10 }, undefined, "villain"),
+      event(10, "STREET_DEALT", { street: "FLOP", cards: [parseCard("2c"), parseCard("3d"), parseCard("4h")] }),
+      event(11, "BETTING_ROUND_STARTED", { street: "FLOP", actorId: "villain", currentBet: 0 }),
+      event(12, "ACTION_APPLIED", { street: "FLOP", command: { action: "check" }, classification: "check", paid: 0, amountTo: 0 }, undefined, "villain"),
+      event(13, "ACTION_APPLIED", { street: "FLOP", command: { action: "check" }, classification: "check", paid: 0, amountTo: 0 }, undefined, "hero"),
+    ], { allHands: true, includeReplayFrames: true, equitySampleCount: 10 });
+
+    expect(timeline.find((frame) => frame.sequence === 8)?.currentActorId).toBe("villain");
+    expect(timeline.find((frame) => frame.sequence === 9)?.currentActorId).toBeNull();
+    expect(timeline.find((frame) => frame.sequence === 10)?.currentActorId).toBe("villain");
+    expect(timeline.find((frame) => frame.sequence === 12)?.currentActorId).toBe("hero");
   });
 
   it("builds a complete multi-hand replay timeline with settlement frames", () => {

@@ -119,6 +119,35 @@ function actionFromEvent(event: ProjectedArenaEvent): BroadcastLastAction | null
   };
 }
 
+function replayActorAfter(
+  events: readonly ProjectedArenaEvent[],
+  index: number,
+  event: ProjectedArenaEvent,
+): string | null {
+  const payload = recordValue(event.publicPayload);
+  if (event.type === "BETTING_ROUND_STARTED") {
+    return typeof payload?.actorId === "string" ? payload.actorId : null;
+  }
+  if (event.type === "ACTION_APPLIED") {
+    const street = payload?.street;
+    for (const candidate of events.slice(index + 1)) {
+      if (["STREET_DEALT", "SHOWDOWN_REVEALED", "HAND_COMPLETED"].includes(candidate.type)) return null;
+      if (candidate.type !== "ACTION_APPLIED") continue;
+      return recordValue(candidate.publicPayload)?.street === street ? candidate.actorId : null;
+    }
+    return null;
+  }
+  if (event.type === "STREET_DEALT") {
+    for (const candidate of events.slice(index + 1)) {
+      if (["ACTION_APPLIED", "STREET_DEALT", "SHOWDOWN_REVEALED", "HAND_COMPLETED"].includes(candidate.type)) return null;
+      if (candidate.type !== "BETTING_ROUND_STARTED") continue;
+      const actorId = recordValue(candidate.publicPayload)?.actorId;
+      return typeof actorId === "string" ? actorId : null;
+    }
+  }
+  return null;
+}
+
 export class BroadcastViewBuilder {
   readonly #equityCache = new Map<string, BroadcastEquityResult>();
 
@@ -361,8 +390,7 @@ export class BroadcastViewBuilder {
             ...(blinds ? { blinds } : {}),
             boards: [[...board]],
             pots: pots.map((pot) => ({ ...pot, eligible: [...pot.eligible] })),
-            currentActorId: event.type === "BETTING_ROUND_STARTED"
-              && typeof payload?.actorId === "string" ? payload.actorId : null,
+            currentActorId: replayActorAfter(handEvents, index, event),
           },
         };
         const frame = this.build(syntheticState, handEvents.slice(0, index + 1), {
