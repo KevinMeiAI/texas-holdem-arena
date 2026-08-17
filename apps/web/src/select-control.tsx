@@ -21,8 +21,10 @@ interface SelectControlProps {
   options: SelectOption[];
   onChange: (value: string) => void;
   ariaLabel?: string;
+  triggerLabel?: string;
   className?: string;
   menuClassName?: string;
+  menuMinWidth?: number;
   disabled?: boolean;
   name?: string;
   required?: boolean;
@@ -52,14 +54,14 @@ function edgeEnabledIndex(options: SelectOption[], fromEnd = false): number {
   return indexes.find((index) => !options[index]?.disabled) ?? -1;
 }
 
-function menuPosition(trigger: DOMRect): MenuPosition {
+function menuPosition(trigger: DOMRect, menuMinWidth = 0): MenuPosition {
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
   const roomBelow = viewportHeight - trigger.bottom - MENU_GAP - VIEWPORT_GUTTER;
   const roomAbove = trigger.top - MENU_GAP - VIEWPORT_GUTTER;
   const side = roomBelow < 208 && roomAbove > roomBelow ? "top" : "bottom";
   const availableHeight = Math.max(96, side === "bottom" ? roomBelow : roomAbove);
-  const width = Math.min(trigger.width, viewportWidth - VIEWPORT_GUTTER * 2);
+  const width = Math.min(Math.max(trigger.width, menuMinWidth), viewportWidth - VIEWPORT_GUTTER * 2);
   const left = Math.min(
     Math.max(VIEWPORT_GUTTER, trigger.left),
     viewportWidth - VIEWPORT_GUTTER - width,
@@ -79,8 +81,10 @@ export function SelectControl({
   options,
   onChange,
   ariaLabel,
+  triggerLabel,
   className = "",
   menuClassName = "",
+  menuMinWidth = 0,
   disabled = false,
   name,
   required = false,
@@ -103,7 +107,7 @@ export function SelectControl({
 
   const updatePosition = () => {
     const trigger = triggerRef.current;
-    if (trigger) setPosition(menuPosition(trigger.getBoundingClientRect()));
+    if (trigger) setPosition(menuPosition(trigger.getBoundingClientRect(), menuMinWidth));
   };
 
   const openMenu = () => {
@@ -240,7 +244,7 @@ export function SelectControl({
         onClick={() => open ? closeMenu() : openMenu()}
         onKeyDown={handleKeyDown}
       >
-        <span className="select-control__value" title={selected?.label}>{selected?.label ?? "—"}</span>
+        <span className="select-control__value" title={selected?.label}>{triggerLabel ?? selected?.label ?? "—"}</span>
         <svg className="select-control__chevron" viewBox="0 0 16 16" aria-hidden="true">
           <path d="m4 6 4 4 4-4" />
         </svg>

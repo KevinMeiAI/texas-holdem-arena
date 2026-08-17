@@ -251,10 +251,10 @@ export function LivePage() {
     <main className="page-shell live-page">
       <div className="live-titlebar">
         <div className="watch-room-heading">
-          <div className="watch-room-picker"><span>{text("观赛赛事", "Tournament")}</span><SelectControl value={selectedTournamentId ?? ""} options={tournamentOptions} onChange={selectTournament} ariaLabel={text("切换观赛赛事", "Switch tournament")} /></div>
-          <h1>{state.name}</h1>
+          <div className="watch-room-title"><StatusBadge status={state.status} /><h1>{state.name}</h1></div>
+          <SelectControl className="watch-room-switch" menuClassName="watch-room-tournament-menu" menuMinWidth={360} triggerLabel={text("切换", "Switch")} value={selectedTournamentId ?? ""} options={tournamentOptions} onChange={selectTournament} ariaLabel={text("切换观赛赛事", "Switch tournament")} />
         </div>
-        <div className="live-meta"><StatusBadge status={state.status} /><span>{text("第", "Hand")} <b>{String(displayBroadcast?.handNo ?? hand?.handNo ?? state.completedHands).padStart(3, "0")}</b> {text("手", "")}</span>{displayBlinds ? <span>{text("盲注", "Blinds")} <b>{formatChips(displayBlinds.smallBlind)} / {formatChips(displayBlinds.bigBlind)}</b></span> : <span>{text("最终筹码", "Final stack")} <b>{formatChips(state.players.find((player) => player.id === state.championPlayerId)?.stack)}</b></span>}</div>
+        <div className="live-meta"><span>{text("第", "Hand")} <b>{String(displayBroadcast?.handNo ?? hand?.handNo ?? state.completedHands).padStart(3, "0")}</b> {text("手", "")}</span>{displayBlinds ? <span>{text("盲注", "Blinds")} <b>{formatChips(displayBlinds.smallBlind)} / {formatChips(displayBlinds.bigBlind)}</b></span> : <span>{text("最终筹码", "Final stack")} <b>{formatChips(state.players.find((player) => player.id === state.championPlayerId)?.stack)}</b></span>}</div>
       </div>
       <div className="live-layout">
         <PokerTable state={state} broadcast={displayBroadcast} playerBrands={playerBrands} historical={replayActive && displayBroadcast !== null} eliminatedPlayerIds={replayEliminatedPlayerIds} settlement={displaySettlement} />

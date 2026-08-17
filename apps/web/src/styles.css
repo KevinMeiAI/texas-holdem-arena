@@ -433,30 +433,41 @@ button:disabled {
 
 .watch-room-heading {
   min-width: 0;
-  display: grid;
-  gap: var(--space-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
 }
 
-.watch-room-picker {
-  width: min(100%, 30rem);
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+.watch-room-title {
+  min-width: 0;
+  display: flex;
   align-items: center;
   gap: var(--space-xs);
 }
 
-.watch-room-picker > span {
-  color: var(--color-muted);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  white-space: nowrap;
+.watch-room-title h1 {
+  min-width: 0;
 }
 
-.watch-room-picker .select-control__trigger {
+.watch-room-switch {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.watch-room-switch .select-control__trigger {
+  width: auto;
   min-height: 2.75rem;
+  padding-inline: var(--space-sm) 2.5rem;
   background: var(--color-paper-2);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: 700;
+}
+
+.watch-room-tournament-menu .select-control__option > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .live-titlebar > div > p {
@@ -4803,9 +4814,7 @@ textarea[aria-invalid="true"] {
   }
 
   .live-titlebar {
-    flex-direction: row;
-    align-items: flex-end;
-    justify-content: space-between;
+    align-items: stretch;
   }
 
   .live-meta {
