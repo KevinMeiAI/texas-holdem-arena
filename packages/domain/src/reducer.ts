@@ -295,7 +295,6 @@ function completeSingleRunout(state: HandState, events: HandEvent[]): void {
 }
 
 function runOutBoardAndShowDown(state: HandState, events: HandEvent[]): void {
-  normalizeUncalledContribution(state, events);
   if (state.boards[0]!.length === 5) {
     settleShowdown(state, events);
     return;
