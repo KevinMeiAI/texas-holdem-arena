@@ -23,12 +23,12 @@ describe("provider output policy", () => {
     expect(inspectOutputPolicy(config({ provider: "google-gemini" })).effectiveMode).toBe("json_schema");
   });
 
-  it("keeps generic and object-only compatibility profiles on JSON Object", () => {
+  it("uses JSON Object for documented object profiles and prompt mode for unverified profiles", () => {
     expect(inspectOutputPolicy(config({})).effectiveMode).toBe("json_object");
     expect(inspectOutputPolicy(config({ providerProfile: "deepseek" })).effectiveMode).toBe("json_object");
     expect(inspectOutputPolicy(config({ providerProfile: "zhipu" })).effectiveMode).toBe("json_object");
-    expect(inspectOutputPolicy(config({ providerProfile: "hunyuan" })).effectiveMode).toBe("json_object");
-    expect(inspectOutputPolicy(config({ providerProfile: "minimax" })).effectiveMode).toBe("json_object");
+    expect(inspectOutputPolicy(config({ providerProfile: "hunyuan" })).effectiveMode).toBe("prompt");
+    expect(inspectOutputPolicy(config({ providerProfile: "minimax" })).effectiveMode).toBe("prompt");
   });
 
   it("recognizes common compatible endpoints when the Provider profile is automatic", () => {
@@ -45,9 +45,9 @@ describe("provider output policy", () => {
     expect(inspectOutputPolicy(config({ model: "ernie-4.5-turbo-128k", baseUrl: "https://qianfan.baidubce.com/v2" })))
       .toMatchObject({ effectiveProviderProfile: "wenxin", effectiveMode: "json_schema" });
     expect(inspectOutputPolicy(config({ model: "hunyuan-turbos-latest", baseUrl: "https://api.hunyuan.cloud.tencent.com/v1" })))
-      .toMatchObject({ effectiveProviderProfile: "hunyuan", effectiveMode: "json_object" });
+      .toMatchObject({ effectiveProviderProfile: "hunyuan", effectiveMode: "prompt" });
     expect(inspectOutputPolicy(config({ model: "MiniMax-M2.5", baseUrl: "https://api.minimax.io/v1" })))
-      .toMatchObject({ effectiveProviderProfile: "minimax", effectiveMode: "json_object" });
+      .toMatchObject({ effectiveProviderProfile: "minimax", effectiveMode: "prompt" });
     expect(inspectOutputPolicy(config({ model: "example-model", baseUrl: "https://api.x.ai/v1" })))
       .toMatchObject({ effectiveProviderProfile: "xai", effectiveMode: "json_schema" });
     expect(inspectOutputPolicy(config({ model: "grok-4", baseUrl: "https://compatible.example/v1" })))
@@ -80,14 +80,29 @@ describe("provider output policy", () => {
       expect(inspectOutputPolicy(config({ providerProfile: "wenxin", model })).effectiveMode).toBe("json_schema");
     }
     expect(inspectOutputPolicy(config({ providerProfile: "wenxin", model: "ernie-5.1" })).effectiveMode)
-      .toBe("json_object");
+      .toBe("prompt");
+  });
+
+  it("uses Doubao schema only for model families listed with structured output", () => {
+    for (const model of [
+      "doubao-seed-evolving",
+      "doubao-seed-2-1-pro-260628",
+      "doubao-seed-2-0-lite-260428",
+      "doubao-seed-1-8-251228",
+      "doubao-seed-1-6-flash-250828",
+      "doubao-seed-character-260628",
+    ]) {
+      expect(inspectOutputPolicy(config({ providerProfile: "doubao", model })).effectiveMode).toBe("json_schema");
+    }
+    expect(inspectOutputPolicy(config({ providerProfile: "doubao", model: "doubao-seed-2-0-pro-260215" })).effectiveMode)
+      .toBe("prompt");
   });
 
   it("lets the compatible endpoint determine the profile for hosted third-party models", () => {
     expect(inspectOutputPolicy(config({ model: "deepseek-v3", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" })))
       .toMatchObject({ effectiveProviderProfile: "qwen", effectiveMode: "json_object" });
     expect(inspectOutputPolicy(config({ model: "deepseek-v3", baseUrl: "https://aistudio.baidu.com/llm/lmapi/v3" })))
-      .toMatchObject({ effectiveProviderProfile: "wenxin", effectiveMode: "json_object" });
+      .toMatchObject({ effectiveProviderProfile: "wenxin", effectiveMode: "prompt" });
   });
 
   it("reports unsupported explicit modes as configuration errors", () => {
@@ -98,6 +113,8 @@ describe("provider output policy", () => {
     expect(inspectOutputPolicy(config({ providerProfile: "qwen", model: "qwen-plus", outputMode: "json_schema" })))
       .toMatchObject({ supported: false });
     expect(inspectOutputPolicy(config({ providerProfile: "wenxin", model: "ernie-5.1", outputMode: "json_schema" })))
+      .toMatchObject({ supported: false });
+    expect(inspectOutputPolicy(config({ providerProfile: "doubao", model: "doubao-seed-2-0-pro-260215", outputMode: "json_schema" })))
       .toMatchObject({ supported: false });
     expect(inspectOutputPolicy(config({ providerProfile: "minimax", outputMode: "json_schema" })))
       .toMatchObject({ supported: false });

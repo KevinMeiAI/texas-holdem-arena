@@ -73,16 +73,22 @@ function wenxinSupportsJsonSchema(model: string): boolean {
   return /^ernie-(?:4\.5|4\.0-turbo|3\.5)(?:[.\-_]|$)/i.test(model.trim());
 }
 
+function doubaoSupportsJsonSchema(model: string): boolean {
+  return /^doubao-seed-(?:evolving|2-1-(?:pro|turbo)|2-0-(?:lite|mini)|1-8|1-6(?:-(?:vision|flash))?|character)(?:[.\-_]|$)/i
+    .test(model.trim());
+}
+
 function automaticMode(
   config: FrozenModelConfig,
   profile: Exclude<ProviderProfile, "auto">,
 ): EffectiveOutputMode {
   if (config.provider === "mock-scripted") return "prompt";
-  if (profile === "deepseek" || profile === "zhipu" || profile === "hunyuan"
-    || profile === "minimax" || profile === "generic") return "json_object";
+  if (profile === "deepseek" || profile === "zhipu" || profile === "generic") return "json_object";
+  if (profile === "hunyuan" || profile === "minimax") return "prompt";
   if (profile === "kimi") return kimiSupportsJsonSchema(config.model) ? "json_schema" : "json_object";
   if (profile === "qwen") return qwenSupportsJsonSchema(config.model) ? "json_schema" : "json_object";
-  if (profile === "wenxin") return wenxinSupportsJsonSchema(config.model) ? "json_schema" : "json_object";
+  if (profile === "doubao") return doubaoSupportsJsonSchema(config.model) ? "json_schema" : "prompt";
+  if (profile === "wenxin") return wenxinSupportsJsonSchema(config.model) ? "json_schema" : "prompt";
   return "json_schema";
 }
 
@@ -108,7 +114,10 @@ function supportIssue(
     return "Qwen JSON Schema mode is documented only for Qwen3.8-Max, Qwen3.7-Max and Qwen3.7-Plus series; choose JSON Object or update the model ID";
   }
   if (mode === "json_schema" && profile === "wenxin" && !wenxinSupportsJsonSchema(config.model)) {
-    return "Wenxin JSON Schema mode is documented only for ERNIE 4.5, ERNIE 4.0 Turbo and ERNIE 3.5 series; choose JSON Object or update the model ID";
+    return "Wenxin JSON Schema mode is documented only for ERNIE 4.5, ERNIE 4.0 Turbo and ERNIE 3.5 series; choose prompt mode or update the model ID";
+  }
+  if (mode === "json_schema" && profile === "doubao" && !doubaoSupportsJsonSchema(config.model)) {
+    return "Doubao JSON Schema mode is not documented for this model ID; choose prompt mode or update the model ID";
   }
   if (mode === "json_schema" && (profile === "hunyuan" || profile === "minimax")) {
     return `${profile} JSON Schema mode is not enabled by this compatibility profile; choose JSON Object or provide a verified custom configuration`;

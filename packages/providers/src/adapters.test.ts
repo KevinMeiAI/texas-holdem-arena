@@ -233,9 +233,6 @@ describe("real provider transport adapters", () => {
 
   it.each([
     ["qwen", "qwen-plus"],
-    ["wenxin", "ernie-5.1"],
-    ["hunyuan", "hunyuan-turbos-latest"],
-    ["minimax", "MiniMax-M2.5"],
   ] as const)("falls back to JSON Object for %s model %s", async (providerProfile, model) => {
     const provider = new OpenAICompatibleProvider({
       ...common,
@@ -246,6 +243,23 @@ describe("real provider transport adapters", () => {
     });
     await provider.decide(request());
     expect(captured.at(-1)?.body).toMatchObject({ response_format: { type: "json_object" } });
+  });
+
+  it.each([
+    ["doubao", "doubao-seed-2-0-pro-260215"],
+    ["wenxin", "ernie-5.1"],
+    ["hunyuan", "hunyuan-turbos-latest"],
+    ["minimax", "MiniMax-M2.5"],
+  ] as const)("uses prompt-enforced JSON for unverified %s model %s", async (providerProfile, model) => {
+    const provider = new OpenAICompatibleProvider({
+      ...common,
+      provider: "openai-compatible",
+      providerProfile,
+      model,
+      baseUrl: "https://provider.test/compatible/v1",
+    });
+    await provider.decide(request());
+    expect(captured.at(-1)?.body).not.toHaveProperty("response_format");
   });
 
   it("locks all v2 adapter wire fixtures", async () => {
