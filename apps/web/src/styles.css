@@ -442,15 +442,18 @@ button:disabled {
 .watch-room-title {
   min-width: 0;
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: var(--space-xs);
 }
 
 .watch-room-title h1 {
   min-width: 0;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
-.watch-room-switch {
+.select-control.watch-room-switch {
   width: auto;
   flex: 0 0 auto;
 }
