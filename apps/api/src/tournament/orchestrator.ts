@@ -358,11 +358,11 @@ export class TournamentOrchestrator {
   }
 
   async resume(runtime: OrchestratorRuntime): Promise<OrchestratorRuntime> {
-    if (runtime.operationalStatus !== "PAUSED_INFRA" || !runtime.pendingDecisionId) {
-      throw new Error("Tournament is not paused at a recoverable decision");
+    if (runtime.operationalStatus !== "PAUSED_INFRA") {
+      throw new Error("Tournament is not paused");
     }
     return this.#append(
-      { ...runtime, operationalStatus: "RUNNING" },
+      { ...runtime, operationalStatus: runtime.pendingDecisionId ? "RUNNING" : "READY" },
       [publicArenaEvent("TOURNAMENT_RESUMED", {
         decisionId: runtime.pendingDecisionId,
         decisionTimeoutMs: runtime.decisionTimeoutMs,
@@ -379,6 +379,23 @@ export class TournamentOrchestrator {
       { ...runtime, operationalStatus: "PAUSED_INFRA" },
       [publicArenaEvent("TOURNAMENT_PAUSED_ADMIN", {
         decisionId: runtime.pendingDecisionId,
+      })],
+      {},
+    );
+  }
+
+  async pauseForDriverFailure(runtime: OrchestratorRuntime, errorKind: string): Promise<OrchestratorRuntime> {
+    if (runtime.operationalStatus === "COMPLETED" || runtime.operationalStatus === "CANCELLED") {
+      return runtime;
+    }
+    if (runtime.operationalStatus === "PAUSED_INFRA") return runtime;
+    return this.#append(
+      { ...runtime, operationalStatus: "PAUSED_INFRA" },
+      [publicArenaEvent("TOURNAMENT_PAUSED_INFRA", {
+        decisionId: runtime.pendingDecisionId,
+        errorKind,
+        source: "ARENA_DRIVER",
+        attempts: 0,
       })],
       {},
     );

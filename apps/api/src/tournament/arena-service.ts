@@ -796,6 +796,7 @@ export class ArenaService {
         }
         if (record.runtime.operationalStatus === "PAUSED_INFRA") {
           record.runtime = await record.orchestrator.resume(record.runtime);
+          if (record.runtime.operationalStatus === "READY") continue;
         }
         if (record.runtime.operationalStatus !== "RUNNING") return;
         record.runtime = await record.orchestrator.runNextDecision(record.runtime, "arena-local-worker");
@@ -817,6 +818,16 @@ export class ArenaService {
     } catch (error) {
       record.lastError = error instanceof Error ? error.message : "Unknown arena driver failure";
       record.desiredStatus = "PAUSED";
+      try {
+        record.runtime = await record.orchestrator.pauseForDriverFailure(
+          record.runtime,
+          error instanceof Error && error.name ? error.name : "UNKNOWN_DRIVER_ERROR",
+        );
+      } catch {
+        // Persistence may be the source of the driver failure. Keep the
+        // original error in memory rather than replacing it with a secondary
+        // best-effort pause failure.
+      }
     } finally {
       record.driving = false;
       if (!this.#stopping
