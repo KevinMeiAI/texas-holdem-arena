@@ -46,6 +46,7 @@ export interface TournamentPlayerStatistics {
   pfrHands: number;
   pfrRate: number;
   threeBetHands: number;
+  threeBetOpportunities: number;
   threeBetRate: number;
   showdownHands: number;
   showdownWins: number;
@@ -85,6 +86,7 @@ export interface TournamentStatistics {
   methodology: {
     chipPerformance: string;
     allInEquity: string;
+    threeBet: string;
     validDecision: string;
     firstPass: string;
     monetaryCost: string;
@@ -414,6 +416,7 @@ function emptyPlayer(player: StatisticsPlayerState, initialStack: number): Mutab
     pfrHands: 0,
     pfrRate: 0,
     threeBetHands: 0,
+    threeBetOpportunities: 0,
     threeBetRate: 0,
     showdownHands: 0,
     showdownWins: 0,
@@ -488,15 +491,17 @@ export function calculateTournamentStatistics(
     const vpipPlayers = new Set<string>();
     const pfrPlayers = new Set<string>();
     const threeBetPlayers = new Set<string>();
+    const threeBetOpportunityPlayers = new Set<string>();
     for (const event of preflopActions) {
       const playerId = event.actorId;
       const payload = recordValue(event.publicPayload);
       const classification = stringValue(payload?.classification);
       const paid = Math.max(0, safeInteger(payload?.paid) ?? 0);
       if (!playerId) continue;
+      if (preflopRaiseCount === 1) threeBetOpportunityPlayers.add(playerId);
       if (paid > 0 && classification !== "fold" && classification !== "check") vpipPlayers.add(playerId);
       if (["bet", "raise", "short_raise"].includes(classification ?? "")) {
-        if (preflopRaiseCount >= 1) threeBetPlayers.add(playerId);
+        if (preflopRaiseCount === 1) threeBetPlayers.add(playerId);
         pfrPlayers.add(playerId);
         preflopRaiseCount += 1;
       }
@@ -556,6 +561,7 @@ export function calculateTournamentStatistics(
       if (vpipPlayers.has(playerId)) metric.vpipHands += 1;
       if (pfrPlayers.has(playerId)) metric.pfrHands += 1;
       if (threeBetPlayers.has(playerId)) metric.threeBetHands += 1;
+      if (threeBetOpportunityPlayers.has(playerId)) metric.threeBetOpportunities += 1;
       if (showdownPlayers.has(playerId)) {
         metric.showdownHands += 1;
         if (awardWinners.has(playerId)) metric.showdownWins += 1;
@@ -636,7 +642,7 @@ export function calculateTournamentStatistics(
     metric.chipLeadRate = rate(metric.chipLeadHands, state.completedHands);
     metric.vpipRate = rate(metric.vpipHands, metric.handsPlayed);
     metric.pfrRate = rate(metric.pfrHands, metric.handsPlayed);
-    metric.threeBetRate = rate(metric.threeBetHands, metric.handsPlayed);
+    metric.threeBetRate = rate(metric.threeBetHands, metric.threeBetOpportunities);
     metric.showdownWinRate = nullableRate(metric.showdownWins, metric.showdownHands);
     metric.allInWinRate = nullableRate(metric.allInWins, metric.allInHands);
     metric.validDecisionRate = nullableRate(metric.validDecisions, metric.decisions);
@@ -660,6 +666,7 @@ export function calculateTournamentStatistics(
       methodology: {
         chipPerformance: "Each hand's stack change is divided by that hand's big blind before aggregation.",
         allInEquity: "Exact enumeration is used for at most 25,000 runouts; larger spaces use 10,000 deterministic samples at the final betting lock.",
+        threeBet: "A 3-bet is exactly the second preflop raise; its rate is divided by hands where the player acted while facing the opening raise.",
         validDecision: "A decision is valid when the rules engine did not have to execute its fallback action.",
         firstPass: "A first-pass decision used one provider call, no protocol correction, and no fallback.",
         monetaryCost: "Not estimated until provider-specific token pricing is configured and frozen with the tournament.",
@@ -759,6 +766,7 @@ interface AggregateEntry {
   vpipHands: number;
   pfrHands: number;
   threeBetHands: number;
+  threeBetOpportunities: number;
   showdownHands: number;
   showdownWins: number;
   decisions: number;
@@ -807,6 +815,7 @@ function aggregateEntry(modelId: string, displayName: string): AggregateEntry {
     vpipHands: 0,
     pfrHands: 0,
     threeBetHands: 0,
+    threeBetOpportunities: 0,
     showdownHands: 0,
     showdownWins: 0,
     decisions: 0,
@@ -877,6 +886,7 @@ export function buildArenaLeaderboards(
       entry.vpipHands += player.vpipHands;
       entry.pfrHands += player.pfrHands;
       entry.threeBetHands += player.threeBetHands;
+      entry.threeBetOpportunities += player.threeBetOpportunities;
       entry.showdownHands += player.showdownHands;
       entry.showdownWins += player.showdownWins;
       entry.decisions += player.decisions;
@@ -958,7 +968,7 @@ export function buildArenaLeaderboards(
       handsPlayed: entry.handsPlayed,
       vpipRate,
       pfrRate,
-      threeBetRate: rate(entry.threeBetHands, entry.handsPlayed),
+      threeBetRate: rate(entry.threeBetHands, entry.threeBetOpportunities),
       showdownWinRate: nullableRate(entry.showdownWins, entry.showdownHands),
       profile: styleProfile(vpipRate, pfrRate),
       sampleWarning: entry.handsPlayed < 200,

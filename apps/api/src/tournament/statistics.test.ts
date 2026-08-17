@@ -88,6 +88,8 @@ describe("tournament statistics", () => {
       vpipHands: 1,
       pfrHands: 1,
       threeBetHands: 1,
+      threeBetOpportunities: 1,
+      threeBetRate: 1,
       showdownHands: 2,
       showdownWins: 2,
       allInHands: 1,
@@ -190,5 +192,56 @@ describe("tournament statistics", () => {
     // With Kh dead in Gamma's folded hand, only Ks remains among 42 possible
     // rivers to beat aces: (41 / 42 * 200) / 10 BB.
     expect(alpha.allInExpectedBigBlinds).toBeCloseTo((41 / 42 * 200) / 10, 8);
+  });
+
+  it("counts only the second preflop raise as a 3-bet and uses actual opportunities", () => {
+    const fourBetState: StatisticsTournamentState = {
+      tournamentId: "00000000-0000-4000-8000-000000000003",
+      completedHands: 1,
+      championPlayerId: "c",
+      players: [
+        { id: "a", displayName: "Alpha", seat: 0, stack: 90, finishingPosition: 2 },
+        { id: "b", displayName: "Beta", seat: 1, stack: 90, finishingPosition: 3 },
+        { id: "c", displayName: "Gamma", seat: 2, stack: 130, finishingPosition: 1 },
+        { id: "d", displayName: "Delta", seat: 3, stack: 90, finishingPosition: 4 },
+      ],
+    };
+    const fourBetEvents: StatisticsEvent[] = [
+      event(1, "BLIND_LEVEL_SELECTED", null, { handNo: 1, level: { smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 } }),
+      event(2, "HAND_STARTED", 1, { handNo: 1, positions: { button: 0, smallBlind: 1, bigBlind: 2 } }),
+      ...["a", "b", "c", "d"].map((playerId, index) => event(
+        index + 3,
+        "HOLE_CARDS_DEALT",
+        1,
+        { playerId },
+        null,
+        { cards: [{ rank: 2 + index, suit: "c" }, { rank: 2 + index, suit: "d" }] },
+      )),
+      event(7, "ACTION_APPLIED", 1, { street: "PREFLOP", classification: "raise", paid: 20, amountTo: 20 }, "a"),
+      event(8, "ACTION_APPLIED", 1, { street: "PREFLOP", classification: "fold", paid: 0, amountTo: 0 }, "d"),
+      event(9, "ACTION_APPLIED", 1, { street: "PREFLOP", classification: "raise", paid: 40, amountTo: 40 }, "b"),
+      event(10, "ACTION_APPLIED", 1, { street: "PREFLOP", classification: "raise", paid: 70, amountTo: 70 }, "c"),
+      event(11, "ACTION_APPLIED", 1, { street: "PREFLOP", classification: "fold", paid: 0, amountTo: 20 }, "a"),
+      event(12, "ACTION_APPLIED", 1, { street: "PREFLOP", classification: "call", paid: 30, amountTo: 70 }, "b"),
+      event(13, "HAND_COMPLETED", 1, { result: { stacks: { a: 90, b: 90, c: 130, d: 90 }, winnerPlayerIds: ["c"] } }),
+    ];
+
+    const players = calculateTournamentStatistics(fourBetState, fourBetEvents, { includeAllInEquity: false })
+      .statistics.players;
+    expect(players.find((player) => player.playerId === "b")).toMatchObject({
+      threeBetHands: 1,
+      threeBetOpportunities: 1,
+      threeBetRate: 1,
+    });
+    expect(players.find((player) => player.playerId === "c")).toMatchObject({
+      threeBetHands: 0,
+      threeBetOpportunities: 0,
+      threeBetRate: 0,
+    });
+    expect(players.find((player) => player.playerId === "d")).toMatchObject({
+      threeBetHands: 0,
+      threeBetOpportunities: 1,
+      threeBetRate: 0,
+    });
   });
 });

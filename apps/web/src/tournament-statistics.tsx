@@ -50,7 +50,7 @@ function metricsFor(player: TournamentPlayerStatistics, view: ReportView, locale
     return [
       { label: uiText(locale, "主动入池", "VPIP"), value: formatRate(player.vpipRate), detail: `${player.vpipHands}/${player.handsPlayed}` },
       { label: uiText(locale, "翻前加注", "PFR"), value: formatRate(player.pfrRate), detail: `${player.pfrHands}/${player.handsPlayed}` },
-      { label: uiText(locale, "再加注手牌", "3-bet"), value: formatRate(player.threeBetRate), detail: `${player.threeBetHands} ${uiText(locale, "手", "hands")}` },
+      { label: uiText(locale, "再加注率", "3-bet"), value: formatRate(player.threeBetRate), detail: `${player.threeBetHands}/${player.threeBetOpportunities} ${uiText(locale, "次机会", "opportunities")}` },
       { label: uiText(locale, "摊牌胜率", "Showdown win"), value: formatRate(player.showdownWinRate), detail: `${player.showdownWins}/${player.showdownHands}` },
       {
         label: uiText(locale, "全下运气差", "All-in luck"),

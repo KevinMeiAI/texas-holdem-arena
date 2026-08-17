@@ -480,6 +480,7 @@ export interface TournamentPlayerStatistics {
   pfrHands: number;
   pfrRate: number;
   threeBetHands: number;
+  threeBetOpportunities: number;
   threeBetRate: number;
   showdownHands: number;
   showdownWins: number;
