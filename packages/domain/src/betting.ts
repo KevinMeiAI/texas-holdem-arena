@@ -71,13 +71,19 @@ export function legalActions(round: BettingRound): LegalActions {
   const player = actor(round);
   const toCall = Math.max(0, round.currentBet - player.committed);
   const amountTo = player.committed + player.stack;
+  const hasActionableOpponent = round.players.some((candidate) => (
+    candidate.id !== player.id && !candidate.folded && !candidate.allIn
+  ));
   // Tournament rules reopen action after cumulative short all-ins when the
   // total increase faced since this player's last action reaches a full raise.
   // `committed` is that player's amount-to at their last action, so no extra
   // mutable raise-right counter is needed.
   const raiseRightOpen = !player.actedSinceFullRaise
     || round.currentBet - player.committed >= round.lastFullRaiseSize;
-  const canIncrease = amountTo > round.currentBet && raiseRightOpen;
+  // Chips cannot be wagered into a pot when every opponent is already all-in.
+  // A lone actionable player may still need to close the action by calling or
+  // folding a short blind, but any unmatched increase would be meaningless.
+  const canIncrease = hasActionableOpponent && amountTo > round.currentBet && raiseRightOpen;
   const minimumRaiseTo = round.currentBet + round.lastFullRaiseSize;
   const minimumBetTo = round.bigBlind;
 

@@ -403,7 +403,11 @@ export function startHand(config: HandConfig): HandTransition {
     events.push({ type: "HOLE_CARDS_DEALT", playerId: player.id, cards: player.holeCards });
   }
 
-  if (actionableContenders(state).length < 2) {
+  const actionable = actionableContenders(state);
+  const closingActor = actionable.length === 1 ? actionable[0] : undefined;
+  const closingActionRequired = closingActor !== undefined
+    && closingActor.streetCommitted < state.bigBlind;
+  if (actionable.length < 2 && !closingActionRequired) {
     runOutBoardAndShowDown(state, events);
   } else {
     beginBettingRound(state, events, "PREFLOP", state.positions.bigBlind, state.bigBlind);

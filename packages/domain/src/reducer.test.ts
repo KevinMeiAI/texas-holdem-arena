@@ -75,6 +75,61 @@ describe("pure hand reducer", () => {
     }));
   });
 
+  it("gives the small blind a closing call-or-fold decision against a short all-in big blind", () => {
+    const transition = startHand({
+      handNo: 1,
+      seatCount: 2,
+      players: [{ id: "sb", seat: 0, stack: 100 }, { id: "bb", seat: 1, stack: 8 }],
+      positions: initialPositions(0, [0, 1], 2),
+      smallBlind: 5,
+      bigBlind: 10,
+      bigBlindAnte: 0,
+      deck: createDeck(),
+    });
+
+    expect(transition.state.phase).toBe("PREFLOP");
+    expect(transition.state.betting?.currentActorId).toBe("sb");
+    expect(currentLegalActions(transition.state)).toMatchObject({
+      fold: true,
+      call: { amount: 5, allIn: false },
+      raise: undefined,
+      allIn: undefined,
+    });
+
+    const folded = reduceHand(transition.state, {
+      type: "ACTION",
+      playerId: "sb",
+      action: { action: "fold" },
+    });
+    expect(folded.state.phase).toBe("HAND_COMPLETE");
+    expect(folded.state.result?.stacks).toEqual({ sb: 95, bb: 13 });
+  });
+
+  it("gives the lone live player closing action when every blind is short and all-in", () => {
+    const { state } = startHand({
+      handNo: 1,
+      seatCount: 3,
+      players: [
+        { id: "button", seat: 0, stack: 100 },
+        { id: "sb", seat: 1, stack: 5 },
+        { id: "bb", seat: 2, stack: 8 },
+      ],
+      positions: initialPositions(0, [0, 1, 2], 3),
+      smallBlind: 5,
+      bigBlind: 10,
+      bigBlindAnte: 0,
+      deck: createDeck(),
+    });
+
+    expect(state.betting?.currentActorId).toBe("button");
+    expect(currentLegalActions(state)).toMatchObject({
+      fold: true,
+      call: { amount: 10, allIn: false },
+      raise: undefined,
+      allIn: undefined,
+    });
+  });
+
   it("keeps BBA dead money in the main pot and out of side-pot eligibility", () => {
     let { state } = startHand({
       handNo: 1,
