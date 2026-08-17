@@ -95,4 +95,25 @@ describe("arena tournament statistics report", () => {
     await service.broadcastReplayState(tournamentId);
     expect(query.mock.calls.filter(([sql]) => String(sql).includes("from arena_events"))).toHaveLength(1);
   });
+
+  it("pushes an SSE cursor into the event-store query", async () => {
+    const tournamentId = "33333333-3333-4333-8333-333333333333";
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("from arena_events")) return { rows: [] };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const service = new ArenaService(
+      { query } as unknown as Pool,
+      new Uint8Array(32),
+      { revisionDetails: vi.fn(async () => []) } as unknown as ModelConfigService,
+      0,
+    );
+
+    await service.projectedEvents(tournamentId, "SPECTATOR_LIVE", 42);
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("sequence > $2"),
+      [tournamentId, 42],
+    );
+  });
 });

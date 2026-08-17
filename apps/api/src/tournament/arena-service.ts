@@ -574,14 +574,12 @@ export class ArenaService {
     role: Extract<ProjectionRole, "SPECTATOR_LIVE" | "SPECTATOR_BROADCAST" | "SPECTATOR_REPLAY">,
     afterSequence = 0,
   ) {
-    const loaded = await this.#store.loadEvents(tournamentId, { includePrivate: true });
+    const loaded = await this.#store.loadEvents(tournamentId, { afterSequence, includePrivate: true });
     const completedHandNos = new Set<number>(
       loaded.filter((item) => item.event.type === "HAND_COMPLETED" && item.event.handNo !== null)
         .map((item) => item.event.handNo!),
     );
-    return loaded
-      .filter((item) => item.event.sequence > afterSequence)
-      .map((item) => projectArenaEvent(item, { role, completedHandNos }));
+    return loaded.map((item) => projectArenaEvent(item, { role, completedHandNos }));
   }
 
   async tournamentStatistics(tournamentId: string): Promise<{
