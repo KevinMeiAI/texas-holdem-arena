@@ -143,7 +143,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
   }
 
   app.addHook("onClose", async () => {
-    consistency?.shutdown();
+    await consistency?.shutdown();
     await arena?.shutdown();
     await pool?.end();
   });

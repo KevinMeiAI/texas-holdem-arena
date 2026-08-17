@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import type { Pool } from "pg";
+import { describe, expect, it, vi } from "vitest";
 import { CONSISTENCY_SCENARIOS } from "./consistency-scenarios.js";
+import type { ModelConfigService } from "./model-service.js";
 import {
+  ConsistencyTestService,
   deriveConsistencyBatchStatus,
   summarizeConsistencySamples,
   type PublicConsistencySample,
@@ -102,5 +105,35 @@ describe("consistency summaries", () => {
     });
     expect(summary.meanDominantShare).toBe(0.75);
     expect(summary.dimensions.street?.PREFLOP?.scenarios).toBe(2);
+  });
+});
+
+describe("consistency worker lifecycle", () => {
+  it("waits for an active worker before shutdown resolves", async () => {
+    let finishClaim!: (value: { rowCount: number; rows: never[] }) => void;
+    const blockedClaim = new Promise<{ rowCount: number; rows: never[] }>((resolve) => {
+      finishClaim = resolve;
+    });
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("set status = 'QUEUED'")) return { rowCount: 0, rows: [] };
+      if (sql.startsWith("select id from consistency_runs")) return { rowCount: 1, rows: [{ id: "run-1" }] };
+      if (sql.includes("set status = 'RUNNING'")) return blockedClaim;
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const service = new ConsistencyTestService(
+      { query } as unknown as Pool,
+      {} as ModelConfigService,
+      new Uint8Array(32),
+    );
+    await service.restorePending();
+    let shutdownFinished = false;
+
+    const shutdown = service.shutdown().then(() => { shutdownFinished = true; });
+    await Promise.resolve();
+    expect(shutdownFinished).toBe(false);
+
+    finishClaim({ rowCount: 0, rows: [] });
+    await shutdown;
+    expect(shutdownFinished).toBe(true);
   });
 });

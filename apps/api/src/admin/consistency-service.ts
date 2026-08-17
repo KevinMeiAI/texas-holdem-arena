@@ -587,8 +587,9 @@ export class ConsistencyTestService {
     result.rows.forEach((row) => this.#enqueue(row.id));
   }
 
-  shutdown(): void {
+  async shutdown(): Promise<void> {
     this.#stopping = true;
+    await Promise.allSettled([...this.#activeWorkers]);
   }
 
   async createRun(input: CreateConsistencyRunInput): Promise<PublicConsistencyRun> {
