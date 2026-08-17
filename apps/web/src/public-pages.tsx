@@ -603,6 +603,9 @@ export function ReplayPage() {
   const { text } = useUiPreferences();
   const { id = "", handNo: routeHandNo } = useParams();
   const [eventsCollapsed, setEventsCollapsed] = useState(false);
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [id]);
   const tournament = useApiResource<{ state: ArenaState }>(id ? `/api/public/tournaments/${id}` : null);
   const hands = useApiResource<{ hands: HandSummary[] }>(id ? `/api/public/tournaments/${id}/hands` : null);
   const stackHistory = useApiResource<{ points: StackHistoryPoint[] }>(id ? `/api/public/tournaments/${id}/stack-history` : null);
