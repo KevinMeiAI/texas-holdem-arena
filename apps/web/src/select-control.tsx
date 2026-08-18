@@ -147,18 +147,25 @@ export function SelectControl({
       if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
       closeMenu();
     };
-    const dismissFromScroll = (event: Event) => {
+    const keepAlignedOnScroll = (event: Event) => {
       const target = event.target as Node | null;
       if (menuRef.current?.contains(target)) return;
-      closeMenu();
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const bounds = trigger.getBoundingClientRect();
+      if (bounds.bottom < 0 || bounds.top > window.innerHeight) {
+        closeMenu();
+        return;
+      }
+      setPosition(menuPosition(bounds));
     };
     const reposition = () => updatePosition();
     document.addEventListener("pointerdown", dismissFromOutside, true);
-    document.addEventListener("scroll", dismissFromScroll, true);
+    document.addEventListener("scroll", keepAlignedOnScroll, true);
     window.addEventListener("resize", reposition);
     return () => {
       document.removeEventListener("pointerdown", dismissFromOutside, true);
-      document.removeEventListener("scroll", dismissFromScroll, true);
+      document.removeEventListener("scroll", keepAlignedOnScroll, true);
       window.removeEventListener("resize", reposition);
     };
   }, [open]);

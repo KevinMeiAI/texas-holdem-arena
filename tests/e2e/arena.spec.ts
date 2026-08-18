@@ -25,6 +25,33 @@ function state(tournamentId: string, name: string, status: "COMPLETED" | "CANCEL
 
 const completedState = state(completedId, "Completed fixture", "COMPLETED");
 const cancelledState = state(cancelledId, "Cancelled fixture", "CANCELLED");
+const replayTimeline = [1, 2, 3].map((sequence) => ({
+  version: "test",
+  equityVersion: "test",
+  handNo: sequence,
+  sequence,
+  street: "PREFLOP",
+  board: [],
+  pot: 15,
+  pots: [],
+  positions: { button: 0, smallBlind: 0, bigBlind: 1, headsUp: true },
+  blinds: { smallBlind: 5, bigBlind: 10, bigBlindAnte: 0 },
+  currentActorId: "alpha",
+  estimated: false,
+  samples: 1,
+  players: [],
+}));
+const replayEvents = [1, 2, 3].map((sequence) => ({
+  tournamentId: completedId,
+  sequence,
+  aggregateVersion: sequence,
+  type: "HAND_STARTED",
+  actorId: null,
+  handNo: sequence,
+  publicPayload: { positions: { button: 0, smallBlind: 0, bigBlind: 1, headsUp: true } },
+  eventHash: String(sequence).padStart(64, "0"),
+  createdAt: "2026-08-17T00:00:00.000Z",
+}));
 const summaries = [completedState, cancelledState].map((publicState, index) => ({
   id: publicState.tournamentId,
   name: publicState.name,
@@ -49,7 +76,12 @@ async function mockArenaApi(page: Page) {
     const selectedState = id === cancelledId ? cancelledState : completedState;
     if (path.endsWith("/broadcast-replay")) {
       replayRequests += 1;
-      return json({ state: selectedState, timeline: [], events: [], playerBrands: {} });
+      return json({
+        state: selectedState,
+        timeline: id === completedId ? replayTimeline : [],
+        events: id === completedId ? replayEvents : [],
+        playerBrands: {},
+      });
     }
     if (path.endsWith("/broadcast")) return json({ state: selectedState, broadcast: null, timeline: [], playerBrands: {} });
     if (path.endsWith("/stack-history")) return json({ points: [{ handNo: 1, stacks: { alpha: 200, beta: 0 } }] });
@@ -90,6 +122,22 @@ test("switching a finished tournament does not start replay", async ({ page }) =
   await expect(page.getByRole("heading", { name: "Cancelled fixture" })).toBeVisible();
   await expect(page.getByRole("button", { name: "回放" })).toBeVisible();
   expect(api.replayRequests()).toBe(0);
+});
+
+test("replay progress does not dismiss an open playback speed menu", async ({ page }) => {
+  await mockArenaApi(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "回放" }).click();
+  await expect(page.getByRole("button", { name: "暂停" })).toBeVisible();
+
+  const speed = page.getByRole("combobox", { name: "回放速度" });
+  await speed.click();
+  await expect(speed).toHaveAttribute("aria-expanded", "true");
+  await page.locator(".event-tape").dispatchEvent("scroll");
+  await page.waitForTimeout(1_500);
+
+  await expect(speed).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("option", { name: "2×" })).toBeVisible();
 });
 
 test("a late response from the previous tournament cannot replace the new selection", async ({ page }) => {
