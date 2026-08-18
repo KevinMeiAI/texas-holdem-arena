@@ -1147,14 +1147,14 @@ button:disabled {
 
 @media (min-width: 20rem) and (max-width: 25.875rem) {
   .table-seat {
-    --seat-edge: 2rem;
+    --seat-edge: 3.25rem;
     --seat-active-x: clamp(var(--seat-edge), var(--seat-x), calc(100% - var(--seat-edge)));
   }
 
   .poker-table-shell[data-player-count="7"] .table-seat,
   .poker-table-shell[data-player-count="8"] .table-seat,
   .poker-table-shell[data-player-count="9"] .table-seat {
-    --seat-edge: 0.75rem;
+    --seat-edge: 3.25rem;
     width: 4.5rem;
   }
 
@@ -1173,7 +1173,7 @@ button:disabled {
 @media (min-width: 20rem) and (max-width: 22rem) {
   .table-seat {
     --seat-card-width: 5rem;
-    --seat-edge: 1rem;
+    --seat-edge: 3.25rem;
     width: var(--seat-card-width);
   }
 
@@ -1181,7 +1181,7 @@ button:disabled {
   .poker-table-shell[data-player-count="8"] .table-seat,
   .poker-table-shell[data-player-count="9"] .table-seat {
     --seat-card-width: 4rem;
-    --seat-edge: 0.5rem;
+    --seat-edge: 3.25rem;
     width: var(--seat-card-width);
   }
 
