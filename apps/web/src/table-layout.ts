@@ -3,14 +3,11 @@ export interface TableSeatPoint {
   y: number;
 }
 
-export type TableSeatOuterSide = "top" | "right" | "bottom" | "left";
-
 export interface TableSeatPlacement {
   compact: TableSeatPoint;
   wide: TableSeatPoint;
   compactBetShift: TableSeatPoint;
   wideBetShift: TableSeatPoint;
-  outerSide: TableSeatOuterSide;
 }
 
 const wideLayouts: Record<number, TableSeatPoint[]> = {
@@ -77,13 +74,6 @@ function betShift(point: TableSeatPoint, horizontalDistance: number, verticalDis
   };
 }
 
-function outerSide(point: TableSeatPoint): TableSeatOuterSide {
-  const deltaX = point.x - 50;
-  const deltaY = point.y - 50;
-  if (Math.abs(deltaX) > Math.abs(deltaY)) return deltaX > 0 ? "right" : "left";
-  return deltaY > 0 ? "bottom" : "top";
-}
-
 export function tableSeatLayout(playerCount: number, index: number): TableSeatPlacement {
   const normalizedCount = Math.min(9, Math.max(2, Math.round(playerCount)));
   const compactPoints = compactLayouts[normalizedCount] ?? compactLayouts[2]!;
@@ -95,7 +85,6 @@ export function tableSeatLayout(playerCount: number, index: number): TableSeatPl
     wide,
     compactBetShift: betShift(compact, 6.1, 4.7),
     wideBetShift: betShift(wide, 8.1, 5),
-    outerSide: outerSide(wide),
   };
 }
 

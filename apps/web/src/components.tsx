@@ -153,7 +153,7 @@ export function PokerTable({
       "--bet-shift-x-wide": `${placement.wideBetShift.x}rem`,
       "--bet-shift-y-wide": `${placement.wideBetShift.y}rem`,
     } as CSSProperties;
-    return { player, positionSide: placement.outerSide, style };
+    return { player, style };
   });
 
   return (
@@ -172,7 +172,7 @@ export function PokerTable({
           {settlement && tablePlayers.filter(({ player }) => winnerPlayerIds.has(player.id)).map(({ player, style }) => (
             <span className="pot-transfer" style={style} key={`${settlement.sequence}-${player.id}`} aria-hidden="true"><i /><i /><i /></span>
           ))}
-          {tablePlayers.map(({ player, positionSide, style }) => <TableSeat key={player.id} player={player} providerBrand={playerBrands[player.id] ?? null} state={state} broadcast={broadcastByPlayer.get(player.id)} broadcastHandNo={broadcast?.handNo ?? null} currentActorId={broadcast ? broadcast.currentActorId : hand?.currentActorId ?? null} positions={broadcast?.positions ?? hand?.positions ?? null} estimated={broadcast?.estimated === true} samples={broadcast?.samples ?? 0} historical={historical} eliminated={eliminatedPlayerIds.has(player.id)} winnerAmount={settlement?.amountsByPlayer[player.id] ?? null} settlementSequence={settlement?.sequence ?? null} positionSide={positionSide} style={style} />)}
+          {tablePlayers.map(({ player, style }) => <TableSeat key={player.id} player={player} providerBrand={playerBrands[player.id] ?? null} state={state} broadcast={broadcastByPlayer.get(player.id)} broadcastHandNo={broadcast?.handNo ?? null} currentActorId={broadcast ? broadcast.currentActorId : hand?.currentActorId ?? null} positions={broadcast?.positions ?? hand?.positions ?? null} estimated={broadcast?.estimated === true} samples={broadcast?.samples ?? 0} historical={historical} eliminated={eliminatedPlayerIds.has(player.id)} winnerAmount={settlement?.amountsByPlayer[player.id] ?? null} settlementSequence={settlement?.sequence ?? null} style={style} />)}
         </div>
       </div>
       {sidePots.length > 1 && (!hand || !broadcast || broadcast.handNo === hand.handNo) && (
@@ -201,7 +201,7 @@ function compactActionLabel(action: ArenaBroadcastLastAction, locale: "zh-CN" | 
   return `${action.term ? `${action.term} · ` : ""}${actionLabel}${amount > 0 ? ` ${format(amount)}` : ""}`;
 }
 
-function TableSeat({ player, providerBrand, state, broadcast, broadcastHandNo, currentActorId, positions, estimated, samples, historical, eliminated, winnerAmount, settlementSequence, positionSide, style }: {
+function TableSeat({ player, providerBrand, state, broadcast, broadcastHandNo, currentActorId, positions, estimated, samples, historical, eliminated, winnerAmount, settlementSequence, style }: {
   player: ArenaPlayer;
   providerBrand: ProviderBrand | null;
   state: ArenaState;
@@ -215,7 +215,6 @@ function TableSeat({ player, providerBrand, state, broadcast, broadcastHandNo, c
   eliminated: boolean;
   winnerAmount: number | null;
   settlementSequence: number | null;
-  positionSide: "top" | "right" | "bottom" | "left";
   style: CSSProperties;
 }) {
   const { locale, text } = useUiPreferences();
@@ -249,9 +248,12 @@ function TableSeat({ player, providerBrand, state, broadcast, broadcastHandNo, c
   const isPotWinner = winnerAmount !== null;
   const visibleLastAction = broadcast?.lastAction?.classification === "fold" && folded ? null : broadcast?.lastAction;
   return (
-    <article className={`table-seat${position ? " has-position" : ""}${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${isPotWinner ? " is-pot-winner" : ""}${historical ? eliminated ? " is-out" : "" : player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} data-position-side={position ? positionSide : undefined} data-seat={player.seat + 1} style={style}>
+    <article className={`table-seat${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${isPotWinner ? " is-pot-winner" : ""}${historical ? eliminated ? " is-out" : "" : player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} data-seat={player.seat + 1} style={style}>
       {isPotWinner && <span className="seat-winner-amount" key={`${settlementSequence}-${player.id}`}>+{formatChips(winnerAmount)}</span>}
-      {position && <b className="seat-position">{position}</b>}
+      <div className="seat-position-row">
+        <span className="seat-number"><span className="seat-word">{text("座位 ", "Seat ")}</span>{String(player.seat + 1).padStart(2, "0")}</span>
+        {position && <b className="seat-position">{position}</b>}
+      </div>
       <div className="seat-name">
         <ProviderLogo
           brand={providerBrand}

@@ -44,16 +44,4 @@ describe("poker table perimeter layout", () => {
       }
     }
   });
-
-  it("places position markers on the seat edge facing away from the felt", () => {
-    for (let playerCount = 2; playerCount <= 9; playerCount += 1) {
-      for (let index = 0; index < playerCount; index += 1) {
-        const placement = tableSeatLayout(playerCount, index);
-        if (placement.outerSide === "top") expect(placement.wide.y).toBeLessThan(50);
-        if (placement.outerSide === "right") expect(placement.wide.x).toBeGreaterThan(50);
-        if (placement.outerSide === "bottom") expect(placement.wide.y).toBeGreaterThan(50);
-        if (placement.outerSide === "left") expect(placement.wide.x).toBeLessThan(50);
-      }
-    }
-  });
 });
