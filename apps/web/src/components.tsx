@@ -152,7 +152,6 @@ export function PokerTable({
       "--bet-shift-y": `${placement.compactBetShift.y}rem`,
       "--bet-shift-x-wide": `${placement.wideBetShift.x}rem`,
       "--bet-shift-y-wide": `${placement.wideBetShift.y}rem`,
-      "--tint": `var(--chart-series-${(index % 9) + 1})`,
     } as CSSProperties;
     return { player, style };
   });
@@ -234,12 +233,12 @@ function TableSeat({ player, providerBrand, state, broadcast, broadcastHandNo, c
   const streetCommitted = broadcast?.streetCommitted ?? player.streetCommitted;
   const cardsReady = (broadcast?.holeCards.length ?? 0) >= 2;
   const equityPercent = broadcast?.equity === null || broadcast?.equity === undefined ? null : broadcast.equity * 100;
-  const equityLabel = equityPercent === null ? "—" : `${estimated ? "≈" : ""}${Math.round(equityPercent)}%`;
+  const equityLabel = equityPercent === null ? "—" : `${Math.round(equityPercent)}%`;
   const equityTitle = !cardsReady
     ? text("等待发牌", "Waiting for the deal")
     : equityPercent === null
     ? text("已弃牌，不参与当前胜率计算", "Folded — excluded from live equity")
-    : `${text("摊牌权益", "Showdown equity")} ${equityPercent.toFixed(1)}% · ${samples.toLocaleString()} ${text("次牌面", "runouts")}`;
+    : `${estimated ? text("模拟摊牌权益", "Estimated showdown equity") : text("精确摊牌权益", "Exact showdown equity")} ${equityPercent.toFixed(1)}% · ${samples.toLocaleString()} ${text("次牌面", "runouts")}`;
   const statusLabel = isActing ? text("思考中", "Thinking")
     : allIn ? text("全下", "All-in")
       : folded ? text("弃牌", "Folded")
@@ -249,9 +248,9 @@ function TableSeat({ player, providerBrand, state, broadcast, broadcastHandNo, c
   const isPotWinner = winnerAmount !== null;
   const visibleLastAction = broadcast?.lastAction?.classification === "fold" && folded ? null : broadcast?.lastAction;
   return (
-    <article className={`table-seat${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${isPotWinner ? " is-pot-winner" : ""}${historical ? eliminated ? " is-out" : "" : player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} style={style}>
+    <article className={`table-seat${position ? " has-position" : ""}${isActing ? " is-acting" : ""}${folded ? " is-folded" : ""}${isPotWinner ? " is-pot-winner" : ""}${historical ? eliminated ? " is-out" : "" : player.status === "ELIMINATED" && !broadcast ? " is-out" : ""}`} data-seat={player.seat + 1} style={style}>
       {isPotWinner && <span className="seat-winner-amount" key={`${settlementSequence}-${player.id}`}>+{formatChips(winnerAmount)}</span>}
-      <div className="seat-meta"><span><span className="seat-word">{text("座位", "Seat")} </span>{String(player.seat + 1).padStart(2, "0")}</span>{position && <b>{position}</b>}</div>
+      {position && <b className="seat-position">{position}</b>}
       <div className="seat-name">
         <ProviderLogo
           brand={providerBrand}
@@ -270,7 +269,6 @@ function TableSeat({ player, providerBrand, state, broadcast, broadcastHandNo, c
         </div>
         <strong className="seat-equity" title={equityTitle}>{equityLabel}</strong>
       </div>}
-      {broadcast && <span className="seat-equity-track" aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(100, equityPercent ?? 0))}%` }} /></span>}
       <div className="seat-stack"><span className={isActing ? "seat-turn" : ""}>{statusLabel}</span><b>{formatChips(stack)}</b></div>
       {visibleLastAction && <div className={`seat-last-action is-${visibleLastAction.classification}`}>{compactActionLabel(visibleLastAction, locale)}</div>}
       {streetCommitted > 0 && <span className="seat-bet"><i aria-hidden="true" />{formatChips(streetCommitted)}</span>}

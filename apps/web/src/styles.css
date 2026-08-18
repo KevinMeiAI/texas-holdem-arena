@@ -541,8 +541,6 @@ button:disabled {
 
 .table-broadcast {
   --table-room-base: oklch(11.5% 0.01 255);
-  --table-room-panel: oklch(16% 0.012 255);
-  --table-room-rule: oklch(25% 0.014 255 / 0.5);
   --table-rail-edge: oklch(54% 0.015 255);
   --table-rail-light: oklch(34% 0.012 255);
   --table-rail-mid: oklch(24% 0.012 255);
@@ -556,7 +554,6 @@ button:disabled {
   --table-panel-border: oklch(47% 0.018 255 / 0.58);
   --table-panel-ink: oklch(93% 0.012 88);
   --table-panel-muted: oklch(72% 0.014 88);
-  --table-panel-track: oklch(31% 0.013 255);
   min-width: 0;
   min-height: 32rem;
   padding: var(--space-3xl) var(--space-xs);
@@ -565,19 +562,14 @@ button:disabled {
   place-items: center;
   overflow: clip;
   color: var(--table-panel-ink);
-  background:
-    linear-gradient(90deg, transparent 49.92%, var(--table-room-rule) 50%, transparent 50.08%),
-    linear-gradient(180deg, var(--table-room-panel) 0 13%, transparent 13% 87%, var(--table-room-panel) 87%),
-    var(--table-room-base);
+  background: var(--table-room-base);
 }
 
 .table-room-light {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background:
-    radial-gradient(ellipse 64% 54% at 50% 43%, color-mix(in oklch, var(--color-card-paper) 8%, transparent), transparent 72%),
-    repeating-linear-gradient(90deg, transparent 0 11rem, var(--table-room-rule) 11rem calc(11rem + 1px));
+  background: radial-gradient(ellipse 64% 54% at 50% 43%, color-mix(in oklch, var(--color-card-paper) 8%, transparent), transparent 72%);
   opacity: 0.72;
 }
 
@@ -818,7 +810,6 @@ button:disabled {
   border-radius: var(--radius-card);
   box-shadow:
     0 0.75rem 1.65rem color-mix(in oklch, var(--color-shadow) 38%, transparent),
-    inset var(--rule-fine) 0 0 var(--tint, var(--color-transparent)),
     inset 0 var(--rule-hair) 0 color-mix(in oklch, var(--color-card-paper) 10%, transparent);
   transform: translate(-50%, -50%);
   transition:
@@ -833,7 +824,6 @@ button:disabled {
   box-shadow:
     0 0.9rem 1.9rem color-mix(in oklch, var(--color-shadow) 48%, transparent),
     0 0 0 0.14rem color-mix(in oklch, var(--color-accent) 28%, transparent),
-    inset var(--rule-fine) 0 0 var(--tint, var(--color-transparent)),
     inset 0 var(--rule-hair) 0 color-mix(in oklch, var(--color-card-paper) 12%, transparent);
   transform: translate(-50%, -50%) scale(1.03);
 }
@@ -855,8 +845,7 @@ button:disabled {
   box-shadow:
     var(--shadow-card),
     0 0 0 0.18rem color-mix(in oklch, var(--color-accent) 42%, transparent),
-    0 0 1.75rem color-mix(in oklch, var(--color-accent) 46%, transparent),
-    inset var(--rule-fine) 0 0 var(--tint, var(--color-transparent));
+    0 0 1.75rem color-mix(in oklch, var(--color-accent) 46%, transparent);
   animation: pot-winner-seat 720ms var(--ease-out) both;
 }
 
@@ -944,7 +933,6 @@ button:disabled {
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.seat-meta,
 .seat-stack {
   display: flex;
   align-items: center;
@@ -954,21 +942,29 @@ button:disabled {
   font-size: var(--text-xs);
 }
 
-.seat-meta span,
 .seat-stack span,
 .seat-stack b {
   white-space: nowrap;
 }
 
-.seat-meta b {
-  min-width: 1.75rem;
+.seat-position {
+  min-width: 1.6rem;
   padding-inline: var(--space-3xs);
-  color: var(--color-accent-ink);
-  background: var(--color-accent);
+  position: absolute;
+  inset-inline-end: var(--space-2xs);
+  top: var(--space-2xs);
+  color: var(--color-accent-on-dark);
+  background: transparent;
+  border: var(--rule-hair) solid color-mix(in oklch, var(--color-accent) 58%, transparent);
   border-radius: var(--radius-xs);
   font-family: var(--font-mono);
-  font-weight: 500;
+  font-size: var(--text-xs);
+  font-weight: 600;
   text-align: center;
+}
+
+.table-seat.has-position .seat-name {
+  padding-inline-end: 2rem;
 }
 
 .seat-name {
@@ -1030,29 +1026,12 @@ button:disabled {
 }
 
 .seat-equity {
-  color: var(--color-accent-strong);
+  color: var(--table-panel-ink);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.seat-equity-track {
-  width: 100%;
-  height: 0.18rem;
-  margin-bottom: var(--space-3xs);
-  display: block;
-  overflow: hidden;
-  background: var(--table-panel-track);
-  border-radius: var(--radius-pill);
-}
-
-.seat-equity-track i {
-  height: 100%;
-  display: block;
-  background: var(--tint, var(--color-accent));
-  border-radius: inherit;
-  transition: width var(--dur-short) var(--ease-out);
 }
 
 .seat-last-action {
@@ -1158,7 +1137,7 @@ button:disabled {
   }
 
   .poker-table-shell:is([data-player-count="7"], [data-player-count="8"], [data-player-count="9"])
-  :is(.seat-meta, .seat-stack, .seat-stack b) {
+  :is(.seat-stack, .seat-stack b) {
     gap: 0.1rem;
     font-size: 0.6rem;
   }
@@ -1189,12 +1168,6 @@ button:disabled {
   width: 5rem;
 }
 
-.poker-table-shell[data-player-count="7"] .seat-word,
-.poker-table-shell[data-player-count="8"] .seat-word,
-.poker-table-shell[data-player-count="9"] .seat-word {
-  display: none;
-}
-
 .poker-table-shell[data-player-count="7"] .table-seat,
 .poker-table-shell[data-player-count="8"] .table-seat,
 .poker-table-shell[data-player-count="9"] .table-seat {
@@ -1219,12 +1192,6 @@ button:disabled {
   padding: 0.1rem;
   border-radius: 0.2rem;
   font-size: 0.5rem;
-}
-
-.poker-table-shell[data-player-count="7"] .seat-equity-track,
-.poker-table-shell[data-player-count="8"] .seat-equity-track,
-.poker-table-shell[data-player-count="9"] .seat-equity-track {
-  margin-bottom: 0.12rem;
 }
 
 .poker-table-shell[data-player-count="7"] .seat-hole-cards .playing-card.compact,
@@ -4729,8 +4696,6 @@ textarea[aria-invalid="true"] {
 
 :root[data-theme="light"] .table-broadcast {
   --table-room-base: oklch(96.5% 0.018 82);
-  --table-room-panel: oklch(92.5% 0.025 79);
-  --table-room-rule: oklch(73% 0.035 76 / 0.2);
   --table-rail-edge: oklch(70% 0.075 72);
   --table-rail-light: oklch(88% 0.055 75);
   --table-rail-mid: oklch(80% 0.065 70);
@@ -4744,7 +4709,6 @@ textarea[aria-invalid="true"] {
   --table-panel-border: oklch(54% 0.025 205 / 0.62);
   --table-panel-ink: oklch(95% 0.012 84);
   --table-panel-muted: oklch(75% 0.016 84);
-  --table-panel-track: oklch(32% 0.022 205);
 }
 
 :root[data-theme="light"] .button.primary {
@@ -4756,11 +4720,6 @@ textarea[aria-invalid="true"] {
 :root[data-theme="light"] .hand-position {
   color: var(--color-paper);
   background: var(--color-ink);
-}
-
-:root[data-theme="light"] .seat-meta b {
-  color: var(--color-accent-ink);
-  background: var(--color-accent);
 }
 
 :root[data-theme="light"] .model-picker button.selected > i {
@@ -4942,12 +4901,6 @@ textarea[aria-invalid="true"] {
 
   .poker-table-shell[data-player-count="9"] .table-seat.is-acting {
     width: 7.5rem;
-  }
-
-  .poker-table-shell[data-player-count="7"] .seat-word,
-  .poker-table-shell[data-player-count="8"] .seat-word,
-  .poker-table-shell[data-player-count="9"] .seat-word {
-    display: inline;
   }
 
   .seat-name strong {
