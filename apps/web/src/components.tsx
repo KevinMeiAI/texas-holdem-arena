@@ -6,12 +6,12 @@ import { spectatorTimeline, type SettlementPresentation, type SpectatorEventTone
 import { tableSeatLayout } from "./table-layout";
 import type {
   ArenaBroadcast,
-  ArenaBroadcastLastAction,
   ArenaBroadcastPlayer,
   ArenaEvent,
   ArenaPlayer,
   ArenaState,
 } from "./types";
+import { compactBroadcastActionLabel } from "./broadcast-action-label";
 import { PreferenceControls, type UiLocale, uiText, useUiPreferences } from "./ui-preferences";
 
 export function Brand() {
@@ -184,23 +184,6 @@ export function PokerTable({
   );
 }
 
-function compactActionLabel(action: ArenaBroadcastLastAction, locale: "zh-CN" | "en"): string {
-  const format = (value: number) => new Intl.NumberFormat("en-US", { notation: value >= 10_000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(value);
-  const amount = action.classification === "call" ? action.paid : action.amountTo;
-  const labels: Record<string, [string, string]> = {
-    fold: ["弃牌", "Fold"],
-    check: ["过牌", "Check"],
-    call: ["跟注", "Call"],
-    bet: ["下注至", "Bet to"],
-    raise: ["加注至", "Raise to"],
-    short_raise: ["加注至", "Raise to"],
-  };
-  const actionLabel = action.action === "all_in"
-    ? locale === "en" ? "All-in" : "全下"
-    : labels[action.classification]?.[locale === "en" ? 1 : 0] ?? action.action.toUpperCase();
-  return `${action.term ? `${action.term} · ` : ""}${actionLabel}${amount > 0 ? ` ${format(amount)}` : ""}`;
-}
-
 function TableSeat({ player, providerBrand, state, broadcast, broadcastHandNo, currentActorId, positions, estimated, samples, historical, eliminated, winnerAmount, settlementSequence, style }: {
   player: ArenaPlayer;
   providerBrand: ProviderBrand | null;
@@ -273,7 +256,7 @@ function TableSeat({ player, providerBrand, state, broadcast, broadcastHandNo, c
         <strong className="seat-equity" title={equityTitle}>{equityLabel}</strong>
       </div>}
       <div className="seat-stack"><span className={isActing ? "seat-turn" : ""}>{statusLabel}</span><b>{formatChips(stack)}</b></div>
-      {visibleLastAction && <div className={`seat-last-action is-${visibleLastAction.classification}`}>{compactActionLabel(visibleLastAction, locale)}</div>}
+      {visibleLastAction && <div className={`seat-last-action is-${visibleLastAction.classification}`}>{compactBroadcastActionLabel(visibleLastAction, locale)}</div>}
       {streetCommitted > 0 && <span className="seat-bet"><i aria-hidden="true" />{formatChips(streetCommitted)}</span>}
     </article>
   );
