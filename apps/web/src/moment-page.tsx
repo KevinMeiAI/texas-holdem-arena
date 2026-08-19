@@ -1,6 +1,6 @@
 import type { PublicMomentDto } from "../../../packages/contracts/src/moments";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useApiResource } from "./api";
 import { useBroadcastReplayPlayer } from "./broadcast-replay-player";
 import {
@@ -14,7 +14,6 @@ import {
 } from "./components";
 import {
   localizedMomentCopy,
-  momentCanonicalUrl,
   momentOutcomeProjection,
   momentPublicFactsProjection,
   momentReplayData,
@@ -22,6 +21,13 @@ import {
   publicMomentTagLabel,
   sortMomentPlayersBySeat,
 } from "./moment-presentation";
+import {
+  buildMomentStoryCardModel,
+  canonicalMomentUrl,
+  momentStoryCardFilename,
+} from "./moment-story-card-model";
+import { MomentStoryCard } from "./moment-story-card";
+import { copyMomentLink, downloadMomentStoryCard } from "./moment-share";
 import type { ProviderBrand } from "./provider-brand";
 import { ProviderLogo } from "./provider-logo";
 import { SelectControl } from "./select-control";
@@ -86,29 +92,24 @@ function NeutralMomentStage({ handNo, waiting }: { handNo: number; waiting: bool
   );
 }
 
-function copyTextFallback(value: string): boolean {
-  const field = document.createElement("textarea");
-  field.value = value;
-  field.setAttribute("readonly", "");
-  field.style.position = "fixed";
-  field.style.opacity = "0";
-  document.body.append(field);
-  field.select();
-  const copied = document.execCommand("copy");
-  field.remove();
-  return copied;
-}
-
 export function MomentPage() {
   const { locale, text } = useUiPreferences();
   const { slug = "" } = useParams();
+  const navigate = useNavigate();
+  const normalizedSlug = slug.trim().toLocaleLowerCase("en-US");
   const [playbackRequested, setPlaybackRequested] = useState(false);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const [copyState, setCopyState] = useState<"idle" | "copying" | "copied" | "error">("idle");
+  const [exportState, setExportState] = useState<"idle" | "exporting" | "exported" | "error">("idle");
   const copyTimerRef = useRef<number | null>(null);
+  const exportTimerRef = useRef<number | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const exportCardRef = useRef<HTMLElement>(null);
   const resource = useApiResource<PublicMomentReplayResponse>(
-    slug ? `/api/public/moments/${encodeURIComponent(slug)}/replay` : null,
+    normalizedSlug ? `/api/public/moments/${encodeURIComponent(normalizedSlug)}/replay` : null,
   );
-  const response = resource.data?.moment.slug === slug ? resource.data : null;
+  const response = resource.data?.moment.slug.toLocaleLowerCase("en-US") === normalizedSlug
+    ? resource.data
+    : null;
   const replayIdentity = response ? momentReplayKey(response.moment) : null;
   const replayData = useMemo(() => response ? momentReplayData({
     moment: response.moment,
@@ -128,18 +129,39 @@ export function MomentPage() {
 
   useLayoutEffect(() => {
     if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    if (exportTimerRef.current !== null) window.clearTimeout(exportTimerRef.current);
     setPlaybackRequested(false);
     setCopyState("idle");
+    setExportState("idle");
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [slug]);
   useEffect(() => () => {
     if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    if (exportTimerRef.current !== null) window.clearTimeout(exportTimerRef.current);
   }, []);
 
   const copy = useMemo(
     () => response ? localizedMomentCopy(response.moment, locale) : null,
     [locale, response],
   );
+  const storyCard = useMemo(
+    () => response ? buildMomentStoryCardModel({
+      moment: response.moment,
+      state: response.state,
+      coverFrame: response.coverFrame,
+      playerBrands: response.playerBrands,
+      locale,
+    }) : null,
+    [locale, response],
+  );
+  useLayoutEffect(() => {
+    if (!response) return;
+    headingRef.current?.focus({ preventScroll: true });
+  }, [response]);
+  useEffect(() => {
+    if (!response || slug === response.moment.slug) return;
+    navigate(`/moments/${response.moment.slug}`, { replace: true });
+  }, [navigate, response, slug]);
   useEffect(() => {
     if (!copy) return;
     const previousTitle = document.title;
@@ -150,7 +172,7 @@ export function MomentPage() {
   if (resource.loading || (slug && !response && !resource.error)) {
     return <main className="page-shell moment-page"><LoadingBlock label={text("正在载入精彩瞬间", "Loading highlight")} /></main>;
   }
-  if (resource.error || !response || !copy) {
+  if (resource.error || !response || !copy || !storyCard) {
     return (
       <main className="page-shell moment-page">
         <nav className="analysis-back-nav" aria-label={text("精彩瞬间导航", "Highlight navigation")}>
@@ -178,10 +200,9 @@ export function MomentPage() {
     replayPlayer.start();
   };
   const copyCanonicalLink = async () => {
-    const canonical = momentCanonicalUrl(moment.slug, window.location.origin);
+    setCopyState("copying");
     try {
-      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(canonical);
-      else if (!copyTextFallback(canonical)) throw new Error("Clipboard is unavailable");
+      await copyMomentLink(canonicalMomentUrl(window.location.origin, moment.slug));
       setCopyState("copied");
     } catch {
       setCopyState("error");
@@ -189,6 +210,31 @@ export function MomentPage() {
     if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
     copyTimerRef.current = window.setTimeout(() => setCopyState("idle"), 1_800);
   };
+  const downloadStoryCard = async () => {
+    const node = exportCardRef.current;
+    if (!node) {
+      setExportState("error");
+      return;
+    }
+    setExportState("exporting");
+    try {
+      await downloadMomentStoryCard(node, momentStoryCardFilename(moment));
+      setExportState("exported");
+    } catch {
+      setExportState("error");
+    }
+    if (exportTimerRef.current !== null) window.clearTimeout(exportTimerRef.current);
+    exportTimerRef.current = window.setTimeout(() => setExportState("idle"), 2_200);
+  };
+  const shareStatus = copyState === "copied"
+    ? text("链接已复制", "Link copied")
+    : copyState === "error"
+      ? text("无法访问剪贴板", "Clipboard unavailable")
+      : exportState === "exported"
+        ? text("图片已下载", "Image downloaded")
+        : exportState === "error"
+          ? text("图片生成失败，请重试", "Image export failed. Try again.")
+          : "";
 
   return (
     <main className="page-shell moment-page">
@@ -205,7 +251,7 @@ export function MomentPage() {
             <b>{publicMomentTagLabel(moment, locale, replayEnded)}</b>
             {moment.isPrimary && <em>{text("精选", "Featured")}</em>}
           </div>
-          <h1>{copy.title}</h1>
+          <h1 ref={headingRef} tabIndex={-1}>{copy.title}</h1>
           {copy.summary && <p>{copy.summary}</p>}
           <MomentPlayerLine
             playerIds={moment.facts.featuredPlayerIds}
@@ -219,12 +265,25 @@ export function MomentPage() {
             <div><dt>{text("底池", "Pot")}</dt><dd>{publicFacts.potChips === null ? "—" : formatChips(publicFacts.potChips)}</dd></div>
             <div><dt>BB</dt><dd>{publicFacts.potBigBlinds === null ? "—" : publicFacts.potBigBlinds.toFixed(publicFacts.potBigBlinds % 1 === 0 ? 0 : 1)}</dd></div>
           </dl>
-          <button type="button" className="moment-copy-button" onClick={() => void copyCanonicalLink()}>
-            {copyState === "copied" ? text("已复制", "Copied") : copyState === "error" ? text("复制失败", "Copy failed") : text("复制链接", "Copy link")}
-          </button>
-          <span className="moment-copy-status" aria-live="polite">{copyState === "copied" ? text("链接已复制", "Link copied") : copyState === "error" ? text("无法访问剪贴板", "Clipboard unavailable") : ""}</span>
+          <div className="moment-share-buttons">
+            <button type="button" className="moment-copy-button" disabled={copyState === "copying"} onClick={() => void copyCanonicalLink()}>
+              {copyState === "copying" ? text("复制中…", "Copying…") : copyState === "copied" ? text("已复制", "Copied") : copyState === "error" ? text("复制失败", "Copy failed") : text("复制链接", "Copy link")}
+            </button>
+            <button type="button" className="moment-copy-button is-secondary" disabled={exportState === "exporting"} onClick={() => void downloadStoryCard()}>
+              {exportState === "exporting" ? text("生成中…", "Exporting…") : exportState === "exported" ? text("已下载", "Downloaded") : exportState === "error" ? text("重试下载", "Try again") : text("下载 PNG", "Download PNG")}
+            </button>
+          </div>
+          <span className="moment-copy-status" aria-live="polite">{shareStatus}</span>
         </div>
       </header>
+
+      <section className="moment-story-preview" aria-labelledby="moment-story-preview-heading">
+        <header>
+          <h2 id="moment-story-preview-heading">{text("分享卡片", "Share card")}</h2>
+          <span>PNG · 1200 × 675</span>
+        </header>
+        <MomentStoryCard model={storyCard} />
+      </section>
 
       {outcome && (
         <section className="moment-outcome" aria-label={text("本手结果", "Hand result")}>
@@ -278,7 +337,11 @@ export function MomentPage() {
           </div>
           {replayPlayer.active && (
             <div className="watch-room-replay-progress">
-              <progress max={Math.max(1, replayPlayer.steps.length)} value={replayPlayer.progress} />
+              <progress
+                max={Math.max(1, replayPlayer.steps.length)}
+                value={replayPlayer.progress}
+                aria-label={text("片段回放进度", "Highlight replay progress")}
+              />
               <span><b>H{String(moment.handNo).padStart(3, "0")}</b>{replayPlayer.progress} / {replayPlayer.steps.length}</span>
             </div>
           )}
@@ -302,6 +365,9 @@ export function MomentPage() {
         <span>{text("完整行动链、筹码走势与模型决策", "Full action chain, stack history, and model decisions")}</span>
         <Link to={`/tournaments/${moment.tournamentId}/replay/${moment.handNo}`}>{text("查看赛事解析", "View match analysis")} →</Link>
       </footer>
+      <div className="moment-story-export-host" aria-hidden="true">
+        <MomentStoryCard ref={exportCardRef} model={storyCard} fixed />
+      </div>
     </main>
   );
 }
