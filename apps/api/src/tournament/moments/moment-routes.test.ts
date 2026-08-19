@@ -286,4 +286,23 @@ describe("moment replay window", () => {
     expect(window.coverFrame).toBeNull();
     expect(window.timeline).toEqual([]);
   });
+
+  it("never fills the opening baseline with a future frame", () => {
+    const replay: ArenaBroadcastReplayState = {
+      state: { tournamentId: TOURNAMENT_ID, status: "COMPLETED" },
+      timeline: [frame(22)],
+      events: [],
+      playerBrands: {},
+    };
+    const moment = publicMomentDtoSchema.parse({
+      ...publicMoment(),
+      playbackStartSequence: 21,
+      playbackEndSequence: 25,
+    });
+
+    const window = momentReplayWindow(replay, moment);
+
+    expect(window.initialFrame).toBeNull();
+    expect(window.coverFrame?.sequence).toBe(22);
+  });
 });

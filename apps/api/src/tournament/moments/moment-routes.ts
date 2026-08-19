@@ -81,6 +81,16 @@ function nearestFrame(
     ?? null;
 }
 
+function frameAtOrBefore(
+  replay: ArenaBroadcastReplayState,
+  moment: PublicMomentDto,
+  sequence: number,
+): BroadcastView | null {
+  return replay.timeline.filter((frame) => (
+    frame.handNo === moment.handNo && frame.sequence <= sequence
+  )).at(-1) ?? null;
+}
+
 export function momentReplayWindow(
   replay: ArenaBroadcastReplayState,
   moment: PublicMomentDto,
@@ -92,7 +102,10 @@ export function momentReplayWindow(
     timeline: replay.timeline.filter((frame) => frame.sequence >= start && frame.sequence <= end),
     events: replay.events.filter((event) => event.sequence >= start && event.sequence <= end),
     playerBrands: { ...replay.playerBrands },
-    initialFrame: nearestFrame(replay, moment, start, end),
+    // The opening snapshot is a causal baseline. Falling forward to a later
+    // frame could reveal an action, board card, or settlement before playback
+    // reaches its authoritative sequence.
+    initialFrame: frameAtOrBefore(replay, moment, start),
     coverFrame: nearestFrame(replay, moment, moment.coverSequence, moment.facts.endSequence),
     initialEliminatedPlayerIds: [...new Set(replay.events.flatMap((event) => (
       event.sequence < start && event.type === "PLAYER_ELIMINATED" && event.actorId
