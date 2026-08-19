@@ -15,6 +15,7 @@ const UUID_TWO = "00000000-0000-4000-8000-000000000002";
 describe("hand fork contracts", () => {
   it("accepts one to nine unique target models with bounded execution settings", () => {
     expect(createHandForkRequestSchema.parse({
+      clientRequestId: UUID_TWO,
       sourceDecisionId: UUID_ONE,
       modelConfigIds: [UUID_ONE, UUID_TWO],
       sampleCount: 10,
@@ -25,11 +26,19 @@ describe("hand fork contracts", () => {
     });
 
     expect(() => createHandForkRequestSchema.parse({
+      clientRequestId: UUID_TWO,
       sourceDecisionId: UUID_ONE,
       modelConfigIds: [UUID_TWO, UUID_TWO],
       sampleCount: 10,
       timeoutMs: 180_000,
     })).toThrow(/unique/i);
+
+    expect(() => createHandForkRequestSchema.parse({
+      sourceDecisionId: UUID_ONE,
+      modelConfigIds: [UUID_TWO],
+      sampleCount: 10,
+      timeoutMs: 180_000,
+    })).toThrow();
   });
 
   it("models an admin-only source summary without weakening legal-action bounds", () => {

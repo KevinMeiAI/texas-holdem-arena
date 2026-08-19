@@ -514,6 +514,7 @@ export const adminHandForkSchema = z.object({
 export type AdminHandFork = z.infer<typeof adminHandForkSchema>;
 
 export const createHandForkRequestSchema = z.object({
+  clientRequestId: z.string().uuid(),
   sourceDecisionId: z.string().uuid(),
   modelConfigIds: z.array(z.string().uuid()).min(1).max(9),
   sampleCount: z.number().int().min(1).max(20),

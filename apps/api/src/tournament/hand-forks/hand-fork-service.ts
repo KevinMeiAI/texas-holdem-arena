@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   adminHandForkSchema,
   createHandForkRequestSchema,
@@ -65,6 +65,7 @@ const FORBIDDEN_ENVELOPE_KEYS = [
 ] as const;
 
 export type HandForkRepository = Pick<PgHandForkRepository,
+  | "findForkByCreateRequest"
   | "createFork"
   | "listForks"
   | "getFork"
@@ -428,6 +429,16 @@ function publicFork(
   });
 }
 
+export function handForkCreateRequestHash(input: CreateHandForkRequest): string {
+  const request = Object.fromEntries(
+    Object.entries(input).filter(([key]) => key !== "clientRequestId"),
+  );
+  return createHash("sha256").update(canonicalJson({
+    version: "hand-fork-create-v1",
+    request,
+  })).digest("hex");
+}
+
 export class HandForkService {
   readonly #repository: HandForkRepository;
   readonly #sourceResolver: Pick<HandForkSourceResolver, "resolve">;
@@ -479,6 +490,14 @@ export class HandForkService {
   async create(rawInput: CreateHandForkRequest, adminUserId: string | null): Promise<AdminHandFork> {
     if (this.#stopping) throw new HandForkServiceStoppedError();
     const input = createHandForkRequestSchema.parse(rawInput);
+    const createRequestHash = handForkCreateRequestHash(input);
+    const existing = await this.#repository.findForkByCreateRequest(
+      input.clientRequestId,
+      createRequestHash,
+    );
+    if (existing) {
+      return publicFork(existing, await this.#repository.loadSourcePayload(existing.id));
+    }
     const source = await this.#sourceResolver.resolve(input.sourceDecisionId);
     const payload = clone(handForkSourcePayload(source));
     const integrity = handForkSourceIntegrity(source);
@@ -505,6 +524,8 @@ export class HandForkService {
       };
     });
     const record = await this.#repository.createFork({
+      clientRequestId: input.clientRequestId,
+      createRequestHash,
       source: {
         tournamentId: source.tournamentId,
         decisionId: source.decisionId,

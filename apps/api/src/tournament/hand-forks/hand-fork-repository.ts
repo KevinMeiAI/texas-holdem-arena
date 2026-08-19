@@ -373,6 +373,8 @@ export interface HandForkTargetPersistenceInput {
 }
 
 export interface CreateHandForkPersistenceInput {
+  clientRequestId: string;
+  createRequestHash: string;
   source: HandForkSourcePersistenceInput;
   targets: readonly HandForkTargetPersistenceInput[];
   sampleCount: number;
@@ -883,6 +885,24 @@ export class PgHandForkRepository {
     if (masterKey.byteLength !== 32) throw new Error("Hand fork repository requires a 32-byte master key");
   }
 
+  async findForkByCreateRequest(
+    clientRequestId: string,
+    createRequestHash: string,
+  ): Promise<HandForkPersistenceRecord | null> {
+    z.string().uuid().parse(clientRequestId);
+    assertSha256("createRequestHash", createRequestHash);
+    const result = await this.pool.query<{ id: string; create_request_hash: string }>(
+      "select id, create_request_hash from hand_forks where client_request_id = $1",
+      [clientRequestId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    if (row.create_request_hash !== createRequestHash) {
+      throw new HandForkPersistenceConflictError("Client request ID was already used for different hand fork parameters");
+    }
+    return this.getFork(row.id, true);
+  }
+
   async createFork(input: CreateHandForkPersistenceInput): Promise<HandForkPersistenceRecord> {
     assertIntegerBetween("sampleCount", input.sampleCount, 1, 20);
     assertIntegerBetween("timeoutMs", input.timeoutMs, 30_000, 600_000);
@@ -891,6 +911,8 @@ export class PgHandForkRepository {
     assertIntegerBetween("source.handNo", input.source.handNo, 1, Number.MAX_SAFE_INTEGER);
     assertIntegerBetween("source.expectedAggregateVersion", input.source.expectedAggregateVersion, 1, Number.MAX_SAFE_INTEGER);
     assertIntegerBetween("source.actionEventSequence", input.source.actionEventSequence, 1, Number.MAX_SAFE_INTEGER);
+    z.string().uuid().parse(input.clientRequestId);
+    assertSha256("createRequestHash", input.createRequestHash);
     for (const [name, value] of Object.entries({
       sourceEventHash: input.source.sourceEventHash,
       sourceRequestHash: input.source.sourceRequestHash,
@@ -941,9 +963,10 @@ export class PgHandForkRepository {
     const sourcePayloadHash = sha256(sourcePayload);
     const encryptedSourcePayload = encryptJson(sourcePayload, this.masterKey, sourceAad(forkId));
     const client = await this.pool.connect();
+    let persistedForkId: string = forkId;
     try {
       await client.query("begin");
-      const sourceInserted = await client.query(
+      const sourceInserted = await client.query<{ id: string; create_request_hash: string }>(
         `insert into hand_forks
           (id, source_tournament_id, source_decision_id, source_hand_no,
            source_player_id, source_expected_aggregate_version,
@@ -954,11 +977,11 @@ export class PgHandForkRepository {
            parser_policy_version, adapter_protocol_version,
            history_protocol_version, correction_protocol_version, history_budget,
            status, sample_count, timeout_ms, max_parallel_targets, target_count,
-           created_by_admin_user_id)
+           created_by_admin_user_id, client_request_id, create_request_hash)
          select
            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12,
            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23::jsonb,
-           'QUEUED', $24, $25, $26, $27, $28
+           'QUEUED', $24, $25, $26, $27, $28, $30, $31
            from decision_requests d
            join tournaments t on t.id = d.tournament_id
            join decision_turns turn_one
@@ -976,7 +999,9 @@ export class PgHandForkRepository {
           where d.id = $3 and d.tournament_id = $2 and d.hand_no = $4
             and d.player_id = $5 and d.expected_aggregate_version = $6
             and d.request_kind = 'ACTION' and d.status = 'SUCCEEDED'
-            and t.status = 'COMPLETED'`,
+            and t.status = 'COMPLETED'
+         on conflict (client_request_id) do nothing
+         returning id, create_request_hash`,
         [
           forkId,
           input.source.tournamentId,
@@ -1007,29 +1032,43 @@ export class PgHandForkRepository {
           input.targets.length,
           input.createdByAdminUserId,
           sourcePayload.source.snapshotChecksum,
+          input.clientRequestId,
+          input.createRequestHash,
         ],
       );
-      if (sourceInserted.rowCount !== 1) {
-        throw new HandForkPersistenceConflictError("Source decision is no longer a completed, forkable action");
-      }
-      for (const [index, target] of input.targets.entries()) {
-        const targetInserted = await client.query(
-          `insert into hand_fork_targets
-            (id, fork_id, ordinal, model_config_id, competitor_revision_id,
-             sample_count, model_configuration_hash, effective_output_mode, status)
-           select $1, $2, $3, $4, $5, $6, $7, $8, 'QUEUED'
-             from competitor_revisions cr
-            where cr.id = $5 and cr.model_config_id = $4
-              and cr.configuration_hash = $7`,
-          [
-            randomUUID(), forkId, index + 1, target.modelConfigId,
-            target.competitorRevisionId, input.sampleCount,
-            target.modelConfigurationHash, target.effectiveOutputMode,
-          ],
-        );
-        if (targetInserted.rowCount !== 1) {
-          throw new HandForkPersistenceConflictError("Target model revision does not match its frozen configuration");
+      if (sourceInserted.rowCount === 1) {
+        for (const [index, target] of input.targets.entries()) {
+          const targetInserted = await client.query(
+            `insert into hand_fork_targets
+              (id, fork_id, ordinal, model_config_id, competitor_revision_id,
+               sample_count, model_configuration_hash, effective_output_mode, status)
+             select $1, $2, $3, $4, $5, $6, $7, $8, 'QUEUED'
+               from competitor_revisions cr
+              where cr.id = $5 and cr.model_config_id = $4
+                and cr.configuration_hash = $7`,
+            [
+              randomUUID(), forkId, index + 1, target.modelConfigId,
+              target.competitorRevisionId, input.sampleCount,
+              target.modelConfigurationHash, target.effectiveOutputMode,
+            ],
+          );
+          if (targetInserted.rowCount !== 1) {
+            throw new HandForkPersistenceConflictError("Target model revision does not match its frozen configuration");
+          }
         }
+      } else {
+        const existing = await client.query<{ id: string; create_request_hash: string }>(
+          "select id, create_request_hash from hand_forks where client_request_id = $1",
+          [input.clientRequestId],
+        );
+        const row = existing.rows[0];
+        if (!row) {
+          throw new HandForkPersistenceConflictError("Source decision is no longer a completed, forkable action");
+        }
+        if (row.create_request_hash !== input.createRequestHash) {
+          throw new HandForkPersistenceConflictError("Client request ID was already used for different hand fork parameters");
+        }
+        persistedForkId = row.id;
       }
       await client.query("commit");
     } catch (error) {
@@ -1038,7 +1077,7 @@ export class PgHandForkRepository {
     } finally {
       client.release();
     }
-    return (await this.getFork(forkId, true))!;
+    return (await this.getFork(persistedForkId, true))!;
   }
 
   async listForks(limit = 50): Promise<HandForkPersistenceRecord[]> {

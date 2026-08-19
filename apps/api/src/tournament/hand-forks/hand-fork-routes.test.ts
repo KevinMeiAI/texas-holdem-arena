@@ -26,6 +26,7 @@ const MODEL_ONE = "33333333-3333-4333-8333-333333333333";
 const MODEL_TWO = "44444444-4444-4444-8444-444444444444";
 const FORK_ID = "55555555-5555-4555-8555-555555555555";
 const ADMIN_ID = "66666666-6666-4666-8666-666666666666";
+const CLIENT_REQUEST_ID = "77777777-7777-4777-8777-777777777777";
 
 const apps: ReturnType<typeof Fastify>[] = [];
 
@@ -39,6 +40,7 @@ function handFork(status: AdminHandFork["status"] = "QUEUED"): AdminHandFork {
 
 function createBody() {
   return {
+    clientRequestId: CLIENT_REQUEST_ID,
     sourceDecisionId: DECISION_ID,
     modelConfigIds: [MODEL_ONE, MODEL_TWO],
     sampleCount: 10,

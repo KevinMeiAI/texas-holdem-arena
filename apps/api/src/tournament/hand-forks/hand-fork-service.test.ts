@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   arenaOutputSchema,
+  createHandForkRequestSchema,
   decisionProtocolBundle,
   type ActionDecisionResponse,
   type CanonicalModelRequest,
@@ -31,6 +32,7 @@ import {
 import {
   HandForkService,
   HandForkTargetUnavailableError,
+  handForkCreateRequestHash,
   handForkFallbackAction,
   validateHandForkAction,
   type HandForkFrozenModelStore,
@@ -49,6 +51,7 @@ const HASH_F = "f".repeat(64);
 const TOURNAMENT_ID = "10000000-0000-4000-8000-000000000001";
 const DECISION_ID = "20000000-0000-4000-8000-000000000002";
 const FORK_ID = "30000000-0000-4000-8000-000000000003";
+const CLIENT_REQUEST_ID = "40000000-0000-4000-8000-000000000004";
 const CREATED_AT = "2026-08-20T00:00:00.000Z";
 
 function uuid(number: number): string {
@@ -118,6 +121,7 @@ function resolvedSource(overrides: Partial<HandForkResolvedSource> = {}): HandFo
 
 function createRequest(modelConfigIds: string[], overrides: Partial<CreateHandForkRequest> = {}): CreateHandForkRequest {
   return {
+    clientRequestId: CLIENT_REQUEST_ID,
     sourceDecisionId: DECISION_ID,
     modelConfigIds,
     sampleCount: 1,
@@ -286,10 +290,28 @@ class MemoryHandForkRepository {
   claimsEnabled = true;
   renewResult = true;
   maxActiveClaims = 0;
+  #createIdentity: { clientRequestId: string; createRequestHash: string } | null = null;
   #activeClaims = new Set<string>();
 
+  async findForkByCreateRequest(
+    clientRequestId: string,
+    createRequestHash: string,
+  ): Promise<HandForkPersistenceRecord | null> {
+    if (!this.#createIdentity || this.#createIdentity.clientRequestId !== clientRequestId) return null;
+    if (this.#createIdentity.createRequestHash !== createRequestHash) {
+      throw new HandForkPersistenceConflictError("client request conflict");
+    }
+    return this.snapshot(true);
+  }
+
   async createFork(input: CreateHandForkPersistenceInput): Promise<HandForkPersistenceRecord> {
+    const existing = await this.findForkByCreateRequest(input.clientRequestId, input.createRequestHash);
+    if (existing) return existing;
     this.lastCreate = structuredClone(input);
+    this.#createIdentity = {
+      clientRequestId: input.clientRequestId,
+      createRequestHash: input.createRequestHash,
+    };
     this.payload = structuredClone(input.source.privatePayload);
     const targets: HandForkTarget[] = input.targets.map((target, index) => ({
       id: uuid(2_000 + index),
@@ -718,6 +740,8 @@ async function createRecoverableFork(
   const modelId = uuid(100);
   const frozen = models.register(modelId, 1);
   await repository.createFork({
+    clientRequestId: uuid(7_001),
+    createRequestHash: HASH_A,
     source: {
       tournamentId: source.tournamentId,
       decisionId: source.decisionId,
@@ -799,6 +823,42 @@ function deferred<T>() {
 }
 
 describe("HandForkService", () => {
+  it("hashes semantic create parameters independently of the idempotency key", () => {
+    const first = createRequest([uuid(100), uuid(101)]);
+    const retry = { ...first, clientRequestId: uuid(7_002) };
+
+    expect(handForkCreateRequestHash(retry)).toBe(handForkCreateRequestHash(first));
+    for (const changed of [
+      { ...first, sourceDecisionId: uuid(7_003) },
+      { ...first, modelConfigIds: [uuid(101), uuid(100)] },
+      { ...first, sampleCount: 2 },
+      { ...first, timeoutMs: 180_000 },
+      { ...first, maxParallelTargets: 2 },
+    ]) {
+      expect(handForkCreateRequestHash(changed)).not.toBe(handForkCreateRequestHash(first));
+    }
+    const { maxParallelTargets: _defaultParallelism, ...withoutDefault } = first;
+    expect(_defaultParallelism).toBe(3);
+    const parsedDefault = createHandForkRequestSchema.parse(withoutDefault);
+    expect(handForkCreateRequestHash(parsedDefault)).toBe(handForkCreateRequestHash(first));
+  });
+
+  it("returns a persisted retry before resolving or freezing mutable dependencies", async () => {
+    const fixture = serviceFixture();
+    fixture.repository.claimsEnabled = false;
+    const request = createRequest(fixture.modelIds);
+    const first = await fixture.service.create(request, null);
+    fixture.models.failFreezeFor = fixture.modelIds[0]!;
+
+    const retry = await fixture.service.create(request, null);
+    expect(retry.id).toBe(first.id);
+    expect(fixture.models.freezeCalls).toHaveLength(1);
+    await expect(fixture.service.create({ ...request, sampleCount: 2 }, null))
+      .rejects.toBeInstanceOf(HandForkPersistenceConflictError);
+    expect(fixture.models.freezeCalls).toHaveLength(1);
+    await fixture.service.shutdown();
+  });
+
   it("freezes targets and runs each fresh trial with a bare source payload, durable request ID and timeout", async () => {
     const fixture = serviceFixture();
     const created = await fixture.service.create(createRequest(fixture.modelIds), null);
@@ -809,6 +869,10 @@ describe("HandForkService", () => {
       modelConfigId: fixture.modelIds[0],
       competitorRevisionId: fixture.models.byModelConfig.get(fixture.modelIds[0]!)!.competitorRevisionId,
       effectiveOutputMode: "prompt",
+    });
+    expect(fixture.repository.lastCreate).toMatchObject({
+      clientRequestId: CLIENT_REQUEST_ID,
+      createRequestHash: handForkCreateRequestHash(createRequest(fixture.modelIds)),
     });
     expect(fixture.repository.lastCreate?.source.privatePayload.baseRequest.userPayload)
       .not.toHaveProperty("arena_state");
@@ -1072,6 +1136,8 @@ describe("HandForkService", () => {
     const frozen = models.register(modelId, 1);
     const source = resolvedSource();
     await repository.createFork({
+      clientRequestId: uuid(7_003),
+      createRequestHash: HASH_B,
       source: {
         tournamentId: source.tournamentId,
         decisionId: source.decisionId,

@@ -161,6 +161,7 @@ export async function registerHandForkRoutes(
     try {
       const handFork = await context.handForks.create(body.data, admin.adminUserId);
       await auditCompletedMutation(request, context, admin.adminUserId, "hand_fork.create", handFork.id, {
+        clientRequestId: body.data.clientRequestId,
         sourceDecisionId: body.data.sourceDecisionId,
         modelConfigIds: body.data.modelConfigIds,
         sampleCount: body.data.sampleCount,

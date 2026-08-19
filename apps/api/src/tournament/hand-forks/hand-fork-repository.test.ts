@@ -717,7 +717,16 @@ describePostgres("hand fork PostgreSQL lifecycle", () => {
     const systemPrompt = "Return one Arena JSON object.";
     const systemPromptHash = createHash("sha256").update(systemPrompt).digest("hex");
     const canonicalHash = (value: unknown) => createHash("sha256").update(canonicalJson(value)).digest("hex");
+    const clientRequestId = randomUUID();
     const forkInput: CreateHandForkPersistenceInput = {
+      clientRequestId,
+      createRequestHash: canonicalHash({
+        sourceDecisionId: decisionId,
+        modelConfigIds: targetIds,
+        sampleCount: 1,
+        timeoutMs: 180_000,
+        maxParallelTargets: 1,
+      }),
       source: {
         tournamentId,
         decisionId,
@@ -789,8 +798,32 @@ describePostgres("hand fork PostgreSQL lifecycle", () => {
       maxParallelTargets: 1,
       createdByAdminUserId: null,
     };
-    const fork = await repository.createFork(forkInput);
+    const [fork, concurrentRetry] = await Promise.all([
+      repository.createFork(forkInput),
+      repository.createFork(forkInput),
+    ]);
+    expect(concurrentRetry.id).toBe(fork.id);
+    expect((await repository.createFork(forkInput)).id).toBe(fork.id);
+    expect((await repository.findForkByCreateRequest(
+      clientRequestId,
+      forkInput.createRequestHash,
+    ))?.id).toBe(fork.id);
+    await expect(repository.findForkByCreateRequest(clientRequestId, "f".repeat(64)))
+      .rejects.toBeInstanceOf(HandForkPersistenceConflictError);
     expect(fork.targets).toHaveLength(2);
+    const persistedCounts = await pool.query<{ forks: string; targets: string }>(
+      `select count(distinct f.id)::text as forks, count(ft.id)::text as targets
+         from hand_forks f
+         left join hand_fork_targets ft on ft.fork_id = f.id
+        where f.client_request_id = $1`,
+      [clientRequestId],
+    );
+    expect(persistedCounts.rows[0]).toEqual({ forks: "1", targets: "2" });
+    await expect(repository.createFork({
+      ...forkInput,
+      sampleCount: 2,
+      createRequestHash: "f".repeat(64),
+    })).rejects.toBeInstanceOf(HandForkPersistenceConflictError);
     await expect(pool.query(
       "update hand_fork_targets set effective_output_mode = 'auto' where id = $1",
       [fork.targets[0]!.id],
@@ -820,7 +853,10 @@ describePostgres("hand fork PostgreSQL lifecycle", () => {
       },
     ]) {
       await pool.query(tamper.breakSql, [tamper.identity, tamper.broken]);
-      await expect(repository.createFork(forkInput)).rejects.toBeInstanceOf(HandForkPersistenceConflictError);
+      await expect(repository.createFork({
+        ...forkInput,
+        clientRequestId: randomUUID(),
+      })).rejects.toBeInstanceOf(HandForkPersistenceConflictError);
       await pool.query(tamper.restoreSql, [tamper.identity, tamper.restored]);
     }
 
@@ -832,6 +868,14 @@ describePostgres("hand fork PostgreSQL lifecycle", () => {
     expect(claims.filter(Boolean)).toHaveLength(1);
     const serialFork = await repository.createFork({
       ...forkInput,
+      clientRequestId: randomUUID(),
+      createRequestHash: canonicalHash({
+        sourceDecisionId: decisionId,
+        modelConfigIds: [first.modelConfigId],
+        sampleCount: 1,
+        timeoutMs: 180_000,
+        maxParallelTargets: 1,
+      }),
       targets: [forkInput.targets.find((target) => (
         target.competitorRevisionId === first.competitorRevisionId
       ))!],
