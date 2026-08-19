@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   createHandForkRequestSchema,
+  handForkSourceCandidateSchema,
+  handForkSourceErrorCodeSchema,
   handForkSourceSummarySchema,
   handForkTrialSchema,
   handForkTurnMetadataSchema,
@@ -62,6 +64,73 @@ describe("hand fork contracts", () => {
         raise: { min_amount_to: 1_800, max_amount_to: 360 },
       },
     })).toThrow(/maximum/i);
+  });
+
+  it("keeps source discovery availability explicit and reason codes stable", () => {
+    const source = handForkSourceSummarySchema.parse({
+      tournamentId: UUID_ONE,
+      tournamentName: "Final table",
+      handNo: 42,
+      decisionId: UUID_TWO,
+      playerId: "seat-3",
+      playerDisplayName: "Kimi K3",
+      street: "TURN",
+      heroPosition: "BTN",
+      holeCards: ["Ah", "Kd"],
+      legalActions: {
+        allowed: ["fold", "call", "raise", "all_in"],
+        call: { amount: 120, will_be_all_in: false },
+        bet: null,
+        raise: { min_amount_to: 360, max_amount_to: 1_800 },
+        all_in: { resulting_street_commitment: 1_800, classification: "raise" },
+      },
+      originalAction: "call",
+      originalAmountTo: null,
+      originalDecisionSummary: null,
+      originalUsedFallback: false,
+      actionEventSequence: 288,
+    });
+    const integrity = {
+      expectedAggregateVersion: 280,
+      sourceEventHash: "a".repeat(64),
+      sourceRequestHash: "b".repeat(64),
+      sourcePayloadHash: "c".repeat(64),
+      visibleInputHash: "d".repeat(64),
+      legalContractHash: "e".repeat(64),
+      protocolBundleId: "arena-native-v11",
+      rulesetVersion: "arena-rules-v2",
+      contextVersion: "model-context-v4",
+      systemPromptHash: "f".repeat(64),
+      outputSchemaHash: "0".repeat(64),
+      parserPolicyVersion: "arena-parser-strict-v1",
+      adapterProtocolVersion: "arena-adapters-v2",
+      historyProtocolVersion: "arena-history-v2",
+      correctionProtocolVersion: "arena-correction-v1",
+    };
+    expect(handForkSourceCandidateSchema.parse({
+      availability: "AVAILABLE",
+      decisionId: UUID_TWO,
+      playerId: "seat-3",
+      expectedAggregateVersion: 280,
+      source,
+      sourceIntegrity: integrity,
+    })).toMatchObject({ availability: "AVAILABLE", source });
+    expect(handForkSourceCandidateSchema.parse({
+      availability: "UNAVAILABLE",
+      decisionId: UUID_TWO,
+      playerId: "seat-3",
+      expectedAggregateVersion: 280,
+      reasonCode: "SOURCE_CHAIN_MISMATCH",
+    })).not.toHaveProperty("source");
+    expect(() => handForkSourceCandidateSchema.parse({
+      availability: "AVAILABLE",
+      decisionId: UUID_ONE,
+      playerId: "seat-3",
+      expectedAggregateVersion: 280,
+      source,
+      sourceIntegrity: integrity,
+    })).toThrow(/decisionId/);
+    expect(handForkSourceErrorCodeSchema.options).toContain("SOURCE_PROTOCOL_UNSUPPORTED");
   });
 
   it("never represents a response hash without a recorded encrypted response", () => {

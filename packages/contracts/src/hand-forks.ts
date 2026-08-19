@@ -37,6 +37,20 @@ export type HandForkTrialOutcome = z.infer<typeof handForkTrialOutcomeSchema>;
 export const handForkTurnOutcomeSchema = z.enum(["SUCCESS", "PROTOCOL_ERROR", "INFRA_ERROR"]);
 export type HandForkTurnOutcome = z.infer<typeof handForkTurnOutcomeSchema>;
 
+export const handForkSourceErrorCodeSchema = z.enum([
+  "SOURCE_NOT_FOUND",
+  "TOURNAMENT_NOT_COMPLETED",
+  "HAND_NOT_COMPLETED",
+  "DECISION_NOT_SUCCEEDED",
+  "DECISION_AUDIT_INCOMPLETE",
+  "SOURCE_SNAPSHOT_MISSING",
+  "SOURCE_CHAIN_MISMATCH",
+  "VISIBLE_INPUT_MISMATCH",
+  "LEGAL_CONTRACT_MISMATCH",
+  "SOURCE_PROTOCOL_UNSUPPORTED",
+]);
+export type HandForkSourceErrorCode = z.infer<typeof handForkSourceErrorCodeSchema>;
+
 export const handForkLegalActionsSchema = z.object({
   allowed: z.array(pokerActionSchema).min(1).max(6),
   call: z.object({
@@ -127,6 +141,48 @@ export const handForkSourceIntegritySchema = z.object({
   correctionProtocolVersion: z.string().min(1).max(160),
 }).strict();
 export type HandForkSourceIntegrity = z.infer<typeof handForkSourceIntegritySchema>;
+
+const handForkSourceCandidateAnchorSchema = z.object({
+  decisionId: z.string().uuid(),
+  playerId: z.string().min(1).max(200),
+  expectedAggregateVersion: z.number().int().positive(),
+}).strict();
+
+export const handForkSourceCandidateSchema = z.discriminatedUnion("availability", [
+  handForkSourceCandidateAnchorSchema.extend({
+    availability: z.literal("AVAILABLE"),
+    source: handForkSourceSummarySchema,
+    sourceIntegrity: handForkSourceIntegritySchema,
+  }).strict(),
+  handForkSourceCandidateAnchorSchema.extend({
+    availability: z.literal("UNAVAILABLE"),
+    reasonCode: handForkSourceErrorCodeSchema,
+  }).strict(),
+]).superRefine((candidate, context) => {
+  if (candidate.availability !== "AVAILABLE") return;
+  if (candidate.source.decisionId !== candidate.decisionId) {
+    context.addIssue({
+      code: "custom",
+      path: ["source", "decisionId"],
+      message: "Available source decisionId must match its discovery anchor",
+    });
+  }
+  if (candidate.source.playerId !== candidate.playerId) {
+    context.addIssue({
+      code: "custom",
+      path: ["source", "playerId"],
+      message: "Available source playerId must match its discovery anchor",
+    });
+  }
+  if (candidate.sourceIntegrity.expectedAggregateVersion !== candidate.expectedAggregateVersion) {
+    context.addIssue({
+      code: "custom",
+      path: ["sourceIntegrity", "expectedAggregateVersion"],
+      message: "Available source version must match its discovery anchor",
+    });
+  }
+});
+export type HandForkSourceCandidate = z.infer<typeof handForkSourceCandidateSchema>;
 
 export const handForkProviderUsageSchema = z.object({
   inputTokens: nullableTokenCountSchema,
