@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { apiRequest, useApiResource } from "./api";
-import { broadcastFrameAtSequence, defaultWatchRoomTournament, replaySequenceSteps, unseenBroadcastFrames } from "./broadcast-timeline";
+import { useBroadcastReplayPlayer } from "./broadcast-replay-player";
+import { defaultWatchRoomTournament, unseenBroadcastFrames } from "./broadcast-timeline";
 import { HandActionLedger } from "./hand-action-ledger";
 import { styleProfileLabel } from "./leaderboard-format";
 import {
@@ -73,9 +74,6 @@ export function LivePage() {
   const [events, setEvents] = useState<ArenaEvent[]>([]);
   const [streamStatus, setStreamStatus] = useState<"idle" | "connected" | "reconnecting">("idle");
   const [replayTournamentId, setReplayTournamentId] = useState<string | null>(null);
-  const [replayStatus, setReplayStatus] = useState<"idle" | "loading" | "playing" | "paused" | "ended">("idle");
-  const [replayStepIndex, setReplayStepIndex] = useState(0);
-  const [replayRate, setReplayRate] = useState<number>(1);
   const replayRequested = selectedTournamentId !== null && replayTournamentId === selectedTournamentId;
   const replayResource = useApiResource<{ state: ArenaState; timeline: ArenaBroadcast[]; events: ArenaEvent[]; playerBrands: Record<string, ProviderBrand | null> }>(
     replayRequested && selectedTournamentId && selectedIsTerminal
@@ -83,35 +81,14 @@ export function LivePage() {
       : null,
   );
   const replayData = replayResource.data?.state.tournamentId === selectedTournamentId ? replayResource.data : null;
-  const replayTimeline = replayData?.timeline ?? [];
-  const replayEvents = replayData?.events ?? [];
-  const replaySpectatorTimeline = useMemo(() => spectatorTimeline(replayEvents), [replayEvents]);
-  const suppressedReplayFrames = useMemo(() => new Set(replaySpectatorTimeline.flatMap(({ event, sourceSequences }) => (
-    event.type === "POT_AWARDED" ? sourceSequences.filter((sequence) => sequence !== event.sequence) : []
-  ))), [replaySpectatorTimeline]);
-  const replaySteps = useMemo(() => replaySequenceSteps(
-    replayTimeline,
-    replaySpectatorTimeline.map(({ event }) => event.sequence),
-    suppressedReplayFrames,
-  ), [replaySpectatorTimeline, replayTimeline, suppressedReplayFrames]);
-  const replayActive = replayRequested && replayData !== null && replayStatus !== "loading";
-  const replaySequence = replayStepIndex >= replaySteps.length
-    ? Number.POSITIVE_INFINITY
-    : replaySteps[replayStepIndex] ?? 0;
-  const terminalReplaySequence = replayEvents.find((event) => event.type === "TOURNAMENT_COMPLETED"
-    || event.type === "TOURNAMENT_CANCELLED")?.sequence ?? Number.POSITIVE_INFINITY;
-  const replayFrame = replayActive && replaySequence < terminalReplaySequence
-    ? broadcastFrameAtSequence(replayTimeline, replaySequence)
-    : null;
-  const replaySettlement = useMemo(() => settlementPresentationAtSequence(replaySpectatorTimeline, replaySequence), [replaySequence, replaySpectatorTimeline]);
-  const replayVisibleEvents = replayActive
-    ? replayEvents.filter((event) => event.sequence <= replaySequence)
-    : [];
-  const replayEliminatedPlayerIds = useMemo(() => new Set(replayVisibleEvents.flatMap((event) => {
-    if (event.type !== "PLAYER_ELIMINATED") return [];
-    const playerId = event.actorId ?? event.publicPayload.playerId;
-    return typeof playerId === "string" ? [playerId] : [];
-  })), [replayVisibleEvents]);
+  const replayPlayer = useBroadcastReplayPlayer({
+    replayKey: selectedTournamentId,
+    dataKey: replayData?.state.tournamentId ?? null,
+    requested: replayRequested,
+    data: replayData,
+    frameIntervalMs: REPLAY_FRAME_INTERVAL_MS,
+    settlementHoldMs: SETTLEMENT_HOLD_MS,
+  });
   const liveSpectatorTimeline = useMemo(() => spectatorTimeline(events), [events]);
   const liveSettlement = useMemo(() => settlementPresentationAtSequence(
     liveSpectatorTimeline,
@@ -127,8 +104,6 @@ export function LivePage() {
     setEvents([]);
     setStreamStatus("idle");
     setReplayTournamentId(null);
-    setReplayStatus("idle");
-    setReplayStepIndex(0);
   }, [selectedTournamentId]);
   useEffect(() => {
     if (!state?.tournamentId || replayRequested || isTerminal) return;
@@ -181,24 +156,6 @@ export function LivePage() {
     source.onerror = () => setStreamStatus("reconnecting");
     return () => source.close();
   }, [state?.tournamentId, isTerminal, replayRequested]);
-  useEffect(() => {
-    if (!replayRequested || !replayData || replayStatus !== "loading") return;
-    setReplayStepIndex(0);
-    setReplayStatus(replaySteps.length > 0 ? "playing" : "ended");
-  }, [replayData, replayRequested, replayStatus, replaySteps.length]);
-  useEffect(() => {
-    if (replayStatus !== "playing" || replaySteps.length === 0) return;
-    const timer = window.setTimeout(() => {
-      if (replayStepIndex >= replaySteps.length - 1) {
-        setReplayStepIndex(replaySteps.length);
-        setReplayStatus("ended");
-      } else {
-        setReplayStepIndex((current) => current + 1);
-      }
-    }, (REPLAY_FRAME_INTERVAL_MS + (replaySettlement?.isFinalAward ? SETTLEMENT_HOLD_MS : 0)) / replayRate);
-    return () => window.clearTimeout(timer);
-  }, [replayRate, replaySettlement?.isFinalAward, replayStatus, replayStepIndex, replaySteps.length]);
-
   if (tournamentsResource.loading || (selectedTournamentId && (resource.loading || !state))) return <main className="page-shell"><LoadingBlock /></main>;
   if (tournamentsResource.error) return <main className="page-shell"><ErrorBlock message={tournamentsResource.error} onRetry={() => void tournamentsResource.refresh()} /></main>;
   if (resource.error && !state) return <main className="page-shell"><ErrorBlock message={resource.error} onRetry={() => void resource.refresh()} /></main>;
@@ -214,17 +171,16 @@ export function LivePage() {
   }
 
   const hand = state.hand;
-  const displayBroadcast = replayActive ? replayFrame : presentedBroadcast ?? broadcast;
+  const displayBroadcast = replayPlayer.active ? replayPlayer.frame : presentedBroadcast ?? broadcast;
   const displayBlinds = displayBroadcast?.blinds ?? hand?.blinds ?? null;
-  const displayedEvents = replayActive ? replayVisibleEvents : events;
-  const displaySettlement = replayActive ? replaySettlement : liveSettlement;
-  const playerBrands = replayActive
+  const displayedEvents = replayPlayer.active ? replayPlayer.visibleEvents : events;
+  const displaySettlement = replayPlayer.active ? replayPlayer.settlement : liveSettlement;
+  const playerBrands = replayPlayer.active
     ? replayData?.playerBrands ?? selectedResourceData?.playerBrands ?? {}
     : selectedResourceData?.playerBrands ?? {};
-  const activePlayers = replayActive
-    ? state.players.length - replayEliminatedPlayerIds.size
+  const activePlayers = replayPlayer.active
+    ? state.players.length - replayPlayer.eliminatedPlayerIds.size
     : state.players.filter((player) => player.status !== "ELIMINATED").length;
-  const replayProgress = replaySteps.length === 0 ? 0 : Math.min(replayStepIndex + 1, replaySteps.length);
   const tournamentOptions = tournaments.map((tournament) => {
     const status = tournament.status === "RUNNING" ? text("直播中", "Live")
       : tournament.status === "PAUSED_INFRA" ? text("已暂停", "Paused")
@@ -235,16 +191,13 @@ export function LivePage() {
   });
   const selectTournament = (tournamentId: string) => {
     setReplayTournamentId(null);
-    setReplayStatus("idle");
-    setReplayStepIndex(0);
     const next = new URLSearchParams(searchParams);
     next.set("tournament", tournamentId);
     setSearchParams(next);
   };
   const startReplay = () => {
     setReplayTournamentId(selectedTournamentId);
-    setReplayStatus("loading");
-    setReplayStepIndex(0);
+    replayPlayer.start();
     if (replayRequested) void replayResource.refresh();
   };
   return (
@@ -257,21 +210,21 @@ export function LivePage() {
         <div className="live-meta"><StatusBadge status={state.status} /><span>{text("第", "Hand")} <b>{String(displayBroadcast?.handNo ?? hand?.handNo ?? state.completedHands).padStart(3, "0")}</b> {text("手", "")}</span>{displayBlinds ? <span>{text("盲注", "Blinds")} <b>{formatChips(displayBlinds.smallBlind)} / {formatChips(displayBlinds.bigBlind)}</b></span> : <span>{text("最终筹码", "Final stack")} <b>{formatChips(state.players.find((player) => player.id === state.championPlayerId)?.stack)}</b></span>}</div>
       </div>
       <div className="live-layout">
-        <PokerTable state={state} broadcast={displayBroadcast} playerBrands={playerBrands} historical={replayActive && displayBroadcast !== null} eliminatedPlayerIds={replayEliminatedPlayerIds} settlement={displaySettlement} />
+        <PokerTable state={state} broadcast={displayBroadcast} playerBrands={playerBrands} historical={replayPlayer.active && displayBroadcast !== null} eliminatedPlayerIds={replayPlayer.eliminatedPlayerIds} settlement={displaySettlement} />
         <aside className="broadcast-sidebar">
           <div className="panel-heading watch-room-panel-heading">
             <div><h2>{text("牌局时间线", "Game timeline")}</h2></div>
             {isTerminal ? (
               <div className="watch-room-replay-controls">
-                <SelectControl className="watch-room-speed-select" menuClassName="watch-room-speed-menu" value={String(replayRate)} options={REPLAY_RATE_OPTIONS} onChange={(value) => setReplayRate(Number(value))} ariaLabel={text("回放速度", "Playback speed")} />
-                {replayStatus === "playing" ? <button className="watch-room-replay-toggle" type="button" onClick={() => setReplayStatus("paused")}>{text("暂停", "Pause")}</button>
-                  : replayStatus === "paused" ? <button type="button" onClick={() => setReplayStatus("playing")}>{text("继续", "Resume")}</button>
-                    : replayStatus === "loading" ? <button type="button" disabled>{text("加载…", "Loading…")}</button>
+                <SelectControl className="watch-room-speed-select" menuClassName="watch-room-speed-menu" value={String(replayPlayer.rate)} options={REPLAY_RATE_OPTIONS} onChange={(value) => replayPlayer.setRate(Number(value))} ariaLabel={text("回放速度", "Playback speed")} />
+                {replayPlayer.status === "playing" ? <button className="watch-room-replay-toggle" type="button" onClick={replayPlayer.pause}>{text("暂停", "Pause")}</button>
+                  : replayPlayer.status === "paused" ? <button type="button" onClick={replayPlayer.resume}>{text("继续", "Resume")}</button>
+                    : replayPlayer.status === "loading" ? <button type="button" disabled>{text("加载…", "Loading…")}</button>
                       : <button type="button" onClick={startReplay}>{text("回放", "Replay")}</button>}
               </div>
             ) : <span className={`stream-state ${streamStatus}`}><i />{streamStatus === "connected" ? text("同步中", "Synced") : streamStatus === "reconnecting" ? text("正在重连", "Reconnecting") : text("正在连接", "Connecting")}</span>}
           </div>
-          {replayActive && <div className="watch-room-replay-progress"><progress max={Math.max(1, replaySteps.length)} value={replayProgress} /><span><b>H{String(displayBroadcast?.handNo ?? state.completedHands).padStart(3, "0")}</b>{replayProgress} / {replaySteps.length}</span></div>}
+          {replayPlayer.active && <div className="watch-room-replay-progress"><progress max={Math.max(1, replayPlayer.steps.length)} value={replayPlayer.progress} /><span><b>H{String(displayBroadcast?.handNo ?? state.completedHands).padStart(3, "0")}</b>{replayPlayer.progress} / {replayPlayer.steps.length}</span></div>}
           {replayResource.error && replayRequested ? <div className="watch-room-replay-error"><span>{text("回放暂时无法载入", "Replay could not be loaded")}</span><button type="button" onClick={startReplay}>{text("重试", "Retry")}</button></div>
             : <EventTape events={displayedEvents} players={state.players} limit={28} emptyLabel={isTerminal ? text("赛事已结束，点击“回放”重现完整牌局。", "Tournament ended — select Replay to relive the match.") : undefined} />}
           <div className="broadcast-facts">
