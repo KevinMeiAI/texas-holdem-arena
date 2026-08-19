@@ -7,10 +7,17 @@ import type {
   ProviderKind,
   ProviderProfile,
 } from "../../../../packages/providers/src/provider.js";
-import { inspectOutputPolicy } from "../../../../packages/providers/src/output-policy.js";
+import {
+  inspectOutputPolicy,
+  type EffectiveOutputMode,
+} from "../../../../packages/providers/src/output-policy.js";
 import { encryptedPayloadSchema } from "../../../../packages/contracts/src/events.js";
 import { decryptJson, encryptJson } from "../security/encryption.js";
-import { ARENA_DECISION_TIMEOUT_MS } from "../model-runtime.js";
+import {
+  ARENA_DECISION_TIMEOUT_MAX_MS,
+  ARENA_DECISION_TIMEOUT_MIN_MS,
+  ARENA_DECISION_TIMEOUT_MS,
+} from "../model-runtime.js";
 import { canonicalJson } from "../../../../packages/fairness/src/canonical-json.js";
 
 interface ProviderRow {
@@ -159,8 +166,128 @@ interface RevisionIdentity {
   outputMode: ModelOutputMode;
 }
 
+interface FrozenRevisionRow {
+  model_config_id: string;
+  competitor_revision_id: string;
+  provider_connection_id: string;
+  provider_type: ProviderKind;
+  provider_profile: ProviderProfile;
+  provider_default_output_mode: OutputMode;
+  base_url: string | null;
+  model_id: string;
+  parameters: Record<string, unknown>;
+  output_mode: ModelOutputMode;
+  configuration_hash: string;
+  legacy_identity_text: string;
+  encrypted_api_key: unknown | null;
+}
+
+export interface FrozenModelTarget {
+  modelConfigId: string;
+  competitorRevisionId: string;
+  configurationHash: string;
+  effectiveOutputMode: EffectiveOutputMode;
+  runtimeConfig: FrozenModelConfig;
+}
+
 function revisionHash(identity: RevisionIdentity): string {
   return createHash("sha256").update(canonicalJson(identity)).digest("hex");
+}
+
+function legacyRevisionHash(identityText: string): string {
+  return createHash("md5").update(identityText).digest("hex")
+    + createHash("md5").update(`arena:${identityText}`).digest("hex");
+}
+
+function revisionIdentity(row: FrozenRevisionRow): RevisionIdentity {
+  return {
+    providerConnectionId: row.provider_connection_id,
+    providerType: row.provider_type,
+    providerProfile: row.provider_profile,
+    providerDefaultOutputMode: row.provider_default_output_mode,
+    baseUrl: row.base_url,
+    modelId: row.model_id,
+    parameters: row.parameters,
+    outputMode: row.output_mode,
+  };
+}
+
+function requireDecisionTimeout(timeoutMs: number): void {
+  if (!Number.isSafeInteger(timeoutMs)
+    || timeoutMs < ARENA_DECISION_TIMEOUT_MIN_MS
+    || timeoutMs > ARENA_DECISION_TIMEOUT_MAX_MS) {
+    throw new Error(
+      `timeoutMs must be between ${ARENA_DECISION_TIMEOUT_MIN_MS} and ${ARENA_DECISION_TIMEOUT_MAX_MS}`,
+    );
+  }
+}
+
+const FROZEN_REVISION_SELECT = `select
+  m.id as model_config_id,
+  r.id as competitor_revision_id,
+  r.provider_connection_id,
+  r.provider_type,
+  r.provider_profile,
+  r.provider_default_output_mode,
+  r.base_url,
+  r.model_id,
+  r.parameters,
+  r.output_mode,
+  r.configuration_hash,
+  jsonb_build_object(
+    'providerConnectionId', r.provider_connection_id,
+    'providerType', r.provider_type,
+    'providerProfile', r.provider_profile,
+    'providerDefaultOutputMode', r.provider_default_output_mode,
+    'baseUrl', r.base_url,
+    'modelId', r.model_id,
+    'parameters', r.parameters,
+    'outputMode', r.output_mode
+  )::text as legacy_identity_text,
+  p.encrypted_api_key
+  from competitor_revisions r
+  join model_configs m on m.id = r.model_config_id
+  join provider_connections p on p.id = r.provider_connection_id`;
+
+function materializeFrozenTarget(
+  row: FrozenRevisionRow,
+  timeoutMs: number,
+  masterKey: Uint8Array,
+): FrozenModelTarget {
+  const currentHash = revisionHash(revisionIdentity(row));
+  const legacyHash = legacyRevisionHash(row.legacy_identity_text);
+  if (row.configuration_hash !== currentHash && row.configuration_hash !== legacyHash) {
+    throw new Error("Competitor revision configuration hash does not match its frozen identity");
+  }
+  const apiKey = row.encrypted_api_key
+    ? decryptJson(
+        encryptedPayloadSchema.parse(row.encrypted_api_key),
+        masterKey,
+        providerAad(row.provider_connection_id),
+      )
+    : undefined;
+  const runtimeConfig: FrozenModelConfig = {
+    provider: row.provider_type,
+    providerProfile: row.provider_profile,
+    providerDefaultOutputMode: row.provider_default_output_mode,
+    outputMode: row.output_mode,
+    model: row.model_id,
+    ...(typeof apiKey === "string" ? { apiKey } : {}),
+    ...(row.base_url ? { baseUrl: row.base_url } : {}),
+    timeoutMs,
+    parameters: row.parameters,
+  };
+  const outputPolicy = inspectOutputPolicy(runtimeConfig);
+  if (!outputPolicy.supported) {
+    throw new Error(outputPolicy.message ?? "Unsupported model output mode");
+  }
+  return {
+    modelConfigId: row.model_config_id,
+    competitorRevisionId: row.competitor_revision_id,
+    configurationHash: row.configuration_hash,
+    effectiveOutputMode: outputPolicy.effectiveMode,
+    runtimeConfig,
+  };
 }
 
 async function createRevision(
@@ -503,6 +630,46 @@ export class ModelConfigService {
     } finally {
       client.release();
     }
+  }
+
+  async freezeCurrentTarget(modelConfigId: string, timeoutMs: number): Promise<FrozenModelTarget> {
+    requireDecisionTimeout(timeoutMs);
+    const result = await this.pool.query<FrozenRevisionRow>(
+      `${FROZEN_REVISION_SELECT}
+        where m.id = $1
+          and m.current_revision_id = r.id
+          and m.enabled = true
+          and m.deleted_at is null
+          and p.deleted_at is null`,
+      [modelConfigId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error("Model configuration not found or disabled");
+    return materializeFrozenTarget(row, timeoutMs, this.masterKey);
+  }
+
+  async runtimeConfigForFrozenRevision(
+    revisionId: string,
+    expectedConfigurationHash: string,
+    expectedEffectiveOutputMode: EffectiveOutputMode,
+    timeoutMs: number,
+  ): Promise<FrozenModelTarget> {
+    requireDecisionTimeout(timeoutMs);
+    const result = await this.pool.query<FrozenRevisionRow>(
+      `${FROZEN_REVISION_SELECT}
+        where r.id = $1`,
+      [revisionId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error("Competitor revision not found");
+    if (row.configuration_hash !== expectedConfigurationHash) {
+      throw new Error("Competitor revision configuration hash no longer matches the frozen target");
+    }
+    const target = materializeFrozenTarget(row, timeoutMs, this.masterKey);
+    if (target.effectiveOutputMode !== expectedEffectiveOutputMode) {
+      throw new Error("Competitor revision output mode no longer matches the frozen target");
+    }
+    return target;
   }
 
   async runtimeConfig(modelConfigId: string): Promise<FrozenModelConfig> {
