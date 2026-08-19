@@ -193,6 +193,17 @@ describePostgres("tournament moment persistence", () => {
       revision: 2,
     });
     expect(afterPrimarySwitch.find((record) => record.facts.id === MOMENT_TWO)?.publication?.isPrimary).toBe(true);
+    await expect(service.editPublication(MOMENT_ONE, {
+      slug: "renamed-first-highlight",
+    }, 2, ADMIN_ID)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "A published moment slug is immutable",
+    });
+    expect(await service.getPublicBySlug("first-highlight")).toMatchObject({
+      slug: "first-highlight",
+      publicationRevision: 2,
+    });
+    expect(await service.getPublicBySlug("renamed-first-highlight")).toBeNull();
     const primaryAudit = await pool!.query<{ metadata: Record<string, unknown> }>(
       `select metadata
          from audit_events

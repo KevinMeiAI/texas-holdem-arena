@@ -211,6 +211,50 @@ describe("moment service", () => {
     });
   });
 
+  it("keeps the first published slug immutable without advancing its revision", async () => {
+    const repository = new FakeMomentRepository();
+    const service = new MomentService(repository);
+    await service.publish(MOMENT_ID, {
+      slug: "stable-highlight",
+      titleEn: "Stable highlight",
+    }, null, ADMIN_ID);
+
+    await expect(service.editPublication(MOMENT_ID, {
+      slug: "renamed-highlight",
+    }, 1, ADMIN_ID)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "A published moment slug is immutable",
+    });
+    expect(repository.record.publication).toMatchObject({
+      slug: "stable-highlight",
+      revision: 1,
+    });
+    expect(repository.audits).toHaveLength(1);
+  });
+
+  it("keeps the same slug when a hidden historical publication returns", async () => {
+    const repository = new FakeMomentRepository();
+    const service = new MomentService(repository);
+    await service.publish(MOMENT_ID, {
+      slug: "returning-highlight",
+      titleEn: "Returning highlight",
+    }, null, ADMIN_ID);
+    await service.hide(MOMENT_ID, 1, ADMIN_ID);
+
+    await expect(service.publish(MOMENT_ID, {
+      slug: "renamed-after-hide",
+    }, 2, ADMIN_ID)).rejects.toThrow("slug is immutable");
+    const republished = await service.publish(MOMENT_ID, {
+      slug: "returning-highlight",
+    }, 2, ADMIN_ID);
+
+    expect(republished.publication).toMatchObject({
+      status: "PUBLISHED",
+      slug: "returning-highlight",
+      revision: 3,
+    });
+  });
+
   it("requires a prior publication before hiding", async () => {
     const service = new MomentService(new FakeMomentRepository());
     await expect(service.hide(MOMENT_ID, null, ADMIN_ID)).rejects.toThrow("previously published");

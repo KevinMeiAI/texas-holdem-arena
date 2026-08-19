@@ -422,6 +422,7 @@ function MomentEditor({
   const { locale, text } = useUiPreferences();
   const { record, draft } = state;
   const publication = record.publication;
+  const slugLocked = publication?.publishedAt != null;
   const hasConflict = state.conflictRecord !== null || state.conflictMissing;
   const publishing = state.intent === "PUBLISH";
   const setDraft = <K extends keyof MomentEditorDraft>(key: K, value: MomentEditorDraft[K]) => {
@@ -466,7 +467,22 @@ function MomentEditor({
         )}
 
         <div className="form-grid">
-          <label className="full"><span>{text("分享链接", "Share URL")}</span><div className="moment-slug-field"><span>/moments/</span><input value={draft.slug} maxLength={120} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" onChange={(event) => setDraft("slug", event.target.value.toLowerCase())} aria-invalid={state.issues.includes("SLUG_REQUIRED") || undefined} /></div></label>
+          <label className="full">
+            <span>{text("分享链接", "Share URL")}</span>
+            <div className={`moment-slug-field${slugLocked ? " is-locked" : ""}`}>
+              <span>/moments/</span>
+              <input
+                value={draft.slug}
+                maxLength={120}
+                pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                readOnly={slugLocked}
+                aria-describedby={slugLocked ? "moment-slug-lock-note" : undefined}
+                onChange={(event) => setDraft("slug", event.target.value.toLowerCase())}
+                aria-invalid={state.issues.includes("SLUG_REQUIRED") || undefined}
+              />
+            </div>
+            {slugLocked && <small id="moment-slug-lock-note" className="moment-slug-lock-note">{text("首次发布后固定", "Fixed after first publish")}</small>}
+          </label>
           <label><span>{text("中文标题", "Chinese title")}</span><input value={draft.titleZh} maxLength={140} onChange={(event) => setDraft("titleZh", event.target.value)} /></label>
           <label><span>{text("英文标题", "English title")}</span><input value={draft.titleEn} maxLength={140} onChange={(event) => setDraft("titleEn", event.target.value)} /></label>
           <label><span>{text("中文摘要", "Chinese summary")}</span><textarea rows={4} value={draft.summaryZh} maxLength={500} onChange={(event) => setDraft("summaryZh", event.target.value)} /></label>

@@ -199,6 +199,14 @@ export class MomentService {
     if ((previous?.revision ?? null) !== expectedRevision) {
       throw new MomentServiceError("CONFLICT", "Moment publication changed; refresh before saving again");
     }
+    if (previous?.publishedAt != null
+      && hasOwn(patch, "slug")
+      && (patch.slug ?? null) !== previous.slug) {
+      throw new MomentServiceError(
+        "CONFLICT",
+        "A published moment slug is immutable",
+      );
+    }
     const normalized = momentPublicationMutationSchema.parse({
       momentId: facts.id,
       status,
