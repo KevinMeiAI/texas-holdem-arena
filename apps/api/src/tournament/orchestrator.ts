@@ -579,6 +579,7 @@ export class TournamentOrchestrator {
     const decisionSummary = decision.response?.decision_summary ?? null;
     const events = [
       publicArenaEvent("MODEL_DECISION_RECORDED", {
+        decisionId: claimed.id,
         playerId: claimed.playerId,
         requestKind: claimed.requestKind,
         usedFallback: decision.usedFallback,

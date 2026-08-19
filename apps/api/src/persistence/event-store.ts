@@ -136,6 +136,22 @@ export interface LoadedSnapshot {
   checksum: string;
 }
 
+export interface LoadedDecisionTurnRequest {
+  decisionId: string;
+  tournamentId: string;
+  tournamentName: string;
+  tournamentStatus: string;
+  handNo: number;
+  playerId: string;
+  expectedAggregateVersion: number;
+  nextExpectedAggregateVersion: number | null;
+  requestKind: "ACTION";
+  decisionStatus: string;
+  turnIndex: number;
+  requestHash: string;
+  request: unknown;
+}
+
 export class EventStoreConcurrencyError extends Error {
   constructor(readonly expectedVersion: number, readonly actualVersion: number) {
     super(`Tournament version conflict: expected ${expectedVersion}, got ${actualVersion}`);
@@ -365,6 +381,74 @@ export class PgEventStore {
         created_at: iso(row.created_at),
       };
     });
+  }
+
+  async loadDecisionTurnRequest(
+    decisionId: string,
+    turnIndex: number,
+  ): Promise<LoadedDecisionTurnRequest | null> {
+    if (!Number.isSafeInteger(turnIndex) || turnIndex < 1) {
+      throw new Error("Decision turn index must be positive");
+    }
+    const result = await this.pool.query<{
+      decision_id: string;
+      tournament_id: string;
+      tournament_name: string;
+      tournament_status: string;
+      hand_no: number;
+      player_id: string;
+      expected_aggregate_version: string;
+      next_expected_aggregate_version: string | null;
+      request_kind: "ACTION";
+      decision_status: string;
+      turn_index: number;
+      request_hash: string;
+      encrypted_request: unknown;
+    }>(
+      `select d.id as decision_id, d.tournament_id, a.name as tournament_name,
+              a.status as tournament_status, d.hand_no, d.player_id,
+              d.expected_aggregate_version::text,
+              (select min(next_d.expected_aggregate_version)::text
+                 from decision_requests next_d
+                where next_d.tournament_id = d.tournament_id
+                  and next_d.expected_aggregate_version > d.expected_aggregate_version)
+                as next_expected_aggregate_version,
+              d.request_kind, d.status as decision_status,
+              t.turn_index, t.request_hash, t.encrypted_request
+         from decision_requests d
+         join tournaments a on a.id = d.tournament_id
+         join decision_turns t on t.decision_id = d.id
+        where d.id = $1 and t.turn_index = $2`,
+      [decisionId, turnIndex],
+    );
+    if (result.rows.length > 1) throw new Error("Decision turn request is not unique");
+    const row = result.rows[0];
+    if (!row) return null;
+    const request = decryptJson(
+      encryptedPayloadSchema.parse(row.encrypted_request),
+      this.masterKey,
+      decisionTurnAad(row.decision_id, row.turn_index, "request"),
+    );
+    if (canonicalHash(request) !== row.request_hash) {
+      throw new Error("Decision request audit hash mismatch");
+    }
+    return {
+      decisionId: row.decision_id,
+      tournamentId: row.tournament_id,
+      tournamentName: row.tournament_name,
+      tournamentStatus: row.tournament_status,
+      handNo: row.hand_no,
+      playerId: row.player_id,
+      expectedAggregateVersion: Number(row.expected_aggregate_version),
+      nextExpectedAggregateVersion: row.next_expected_aggregate_version === null
+        ? null
+        : Number(row.next_expected_aggregate_version),
+      requestKind: row.request_kind,
+      decisionStatus: row.decision_status,
+      turnIndex: row.turn_index,
+      requestHash: row.request_hash,
+      request,
+    };
   }
 
   async createTournament(input: CreateTournamentRecord): Promise<void> {
@@ -650,11 +734,35 @@ export class PgEventStore {
     );
     const row = result.rows[0];
     if (!row) return null;
+    return this.mapSnapshotRow(row);
+  }
+
+  async loadSnapshotAtAggregateVersion(
+    tournamentId: string,
+    aggregateVersion: number,
+  ): Promise<LoadedSnapshot | null> {
+    if (!Number.isSafeInteger(aggregateVersion) || aggregateVersion < 1) {
+      throw new Error("Snapshot aggregate version must be positive");
+    }
+    const result = await this.pool.query<SnapshotRow>(
+      `select tournament_id, event_sequence, aggregate_version,
+              public_state, encrypted_private_state, checksum
+         from state_snapshots
+        where tournament_id = $1 and aggregate_version = $2`,
+      [tournamentId, aggregateVersion],
+    );
+    if (result.rows.length > 1) throw new Error("Snapshot aggregate version is not unique");
+    const row = result.rows[0];
+    if (!row) return null;
+    return this.mapSnapshotRow(row);
+  }
+
+  private mapSnapshotRow(row: SnapshotRow): LoadedSnapshot {
     const eventSequence = Number(row.event_sequence);
     const aggregateVersion = Number(row.aggregate_version);
     const encryptedPrivateState = encryptedPayloadSchema.parse(row.encrypted_private_state);
     const calculated = snapshotChecksum({
-      tournamentId,
+      tournamentId: row.tournament_id,
       eventSequence,
       aggregateVersion,
       publicState: row.public_state,
@@ -662,14 +770,14 @@ export class PgEventStore {
     });
     if (calculated !== row.checksum) throw new Error("Snapshot checksum verification failed");
     return {
-      tournamentId,
+      tournamentId: row.tournament_id,
       eventSequence,
       aggregateVersion,
       publicState: row.public_state,
       privateState: decryptJson(
         encryptedPrivateState,
         this.masterKey,
-        snapshotAad(tournamentId, eventSequence, aggregateVersion),
+        snapshotAad(row.tournament_id, eventSequence, aggregateVersion),
       ),
       checksum: row.checksum,
     };
