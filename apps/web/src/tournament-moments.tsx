@@ -9,6 +9,7 @@ import {
 import {
   localizedMomentCopy,
   momentOutcomeProjection,
+  momentPublicPlayerIds,
   momentPublicFactsProjection,
   publicMomentTagLabel,
   sortMomentPlayersBySeat,
@@ -34,7 +35,7 @@ function MomentPlayers({
   playerBrands: Readonly<Record<string, ProviderBrand | null>>;
 }) {
   const { text } = useUiPreferences();
-  const featured = sortMomentPlayersBySeat(moment.facts.featuredPlayerIds, players);
+  const featured = sortMomentPlayersBySeat(momentPublicPlayerIds(moment, false), players);
   if (featured.length === 0) return null;
   return (
     <div className="moment-card-players" aria-label={text("本手选手", "Players in this hand")}>

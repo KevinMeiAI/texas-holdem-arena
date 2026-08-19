@@ -63,13 +63,23 @@ function insideMomentWindow(
 
 export class MomentServiceError extends Error {
   constructor(
-    readonly code: "NOT_FOUND" | "CONFLICT",
+    readonly code: "NOT_FOUND" | "CONFLICT" | "UNSAFE_SUSPENSE_COVER",
     message: string,
   ) {
     super(message);
     this.name = "MomentServiceError";
   }
 }
+
+export interface MomentSuspenseCoverValidationInput {
+  tournamentId: string;
+  handNo: number;
+  coverSequence: number;
+}
+
+export type MomentSuspenseCoverValidator = (
+  input: MomentSuspenseCoverValidationInput,
+) => boolean | Promise<boolean>;
 
 function hasOwn<K extends keyof MomentEditorialPatch>(
   patch: MomentEditorialPatch,
@@ -79,7 +89,10 @@ function hasOwn<K extends keyof MomentEditorialPatch>(
 }
 
 export class MomentService {
-  constructor(private readonly repository: MomentRepository) {}
+  constructor(
+    private readonly repository: MomentRepository,
+    private readonly validateSuspenseCover: MomentSuspenseCoverValidator,
+  ) {}
 
   async rebuild(input: MomentDetectionInput, adminUserId: string): Promise<TournamentMomentFacts[]> {
     const moments = detectTournamentMoments(input);
@@ -259,6 +272,19 @@ export class MomentService {
       throw new MomentServiceError(
         "CONFLICT",
         "A published moment requires a slug, a localized title, a cover, and a playback window",
+      );
+    }
+    if (status === "PUBLISHED"
+      && normalized.spoilerMode === "SUSPENSE"
+      && normalized.coverSequence !== null
+      && !(await this.validateSuspenseCover({
+        tournamentId: facts.tournamentId,
+        handNo: facts.handNo,
+        coverSequence: normalized.coverSequence,
+      }))) {
+      throw new MomentServiceError(
+        "UNSAFE_SUSPENSE_COVER",
+        "The selected suspense cover reveals the hand result",
       );
     }
     try {

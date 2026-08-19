@@ -7,6 +7,7 @@ import {
   type BroadcastViewPlayer,
 } from "../broadcast-view.js";
 import { BROADCAST_EQUITY_VERSION } from "../broadcast-equity.js";
+import { MOMENT_DETECTOR_VERSION } from "../../../../../packages/contracts/src/moments.js";
 
 const TOURNAMENT_ID = "00000000-0000-4000-8000-000000000091";
 
@@ -151,6 +152,7 @@ describe("moment detector", () => {
       recommendationRank: 1,
       startSequence: 1,
       focusSequence: 12,
+      detectorVersion: MOMENT_DETECTOR_VERSION,
       endSequence: 19,
       winnerPlayerIds: ["b"],
       eliminatedPlayerIds: ["a"],
@@ -172,6 +174,31 @@ describe("moment detector", () => {
       "LONG_TANK",
     ]));
     expect(first[0]?.source.eventCount).toBe(19);
+  });
+
+  it("does not use a river equity reversal as the default suspense cover", () => {
+    const frames = finalAllInFrames().map((item) => {
+      if (item.sequence !== 12) return item;
+      return {
+        ...item,
+        players: [
+          { ...item.players[0]!, equity: 0.80, outrightWinProbability: 0.80 },
+          { ...item.players[1]!, equity: 0.20, outrightWinProbability: 0.20 },
+        ],
+      };
+    });
+    const detected = detectTournamentMoments({
+      tournamentId: TOURNAMENT_ID,
+      tournamentStatus: "COMPLETED",
+      events: finalAllInEvents(),
+      broadcastFrames: frames,
+    });
+
+    expect(detected[0]?.equityTransitions).toContainEqual(expect.objectContaining({
+      fromSequence: 12,
+      toSequence: 13,
+    }));
+    expect(detected[0]?.focusSequence).toBe(12);
   });
 
   it("does not call a fold-driven contender change an equity reversal", () => {

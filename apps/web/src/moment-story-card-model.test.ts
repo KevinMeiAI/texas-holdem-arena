@@ -163,7 +163,7 @@ function coverFrame(): ArenaBroadcast {
 }
 
 describe("moment story card model", () => {
-  it("keeps suspense cards causal, outcome-free, and limited to three featured seats", () => {
+  it("keeps suspense cards causal, outcome-free, and limited to three public contenders", () => {
     const model = buildMomentStoryCardModel({
       moment: moment(),
       state,
@@ -178,10 +178,10 @@ describe("moment story card model", () => {
     expect(model.board).toEqual(["As", "Kh", "Qd"]);
     expect(model.potChips).toBe(1_500);
     expect(model.potBigBlinds).toBe(15);
-    expect(model.featuredPlayers.map(({ playerId }) => playerId)).toEqual(["delta", "beta", "epsilon"]);
+    expect(model.featuredPlayers.map(({ playerId }) => playerId)).toEqual(["delta", "beta", "gamma"]);
     expect(model.featuredPlayers.map(({ position }) => position)).toEqual(["SB", "BB", null]);
     expect(model.featuredPlayers[0]?.providerBrand).toBe("deepseek");
-    expect(model.additionalFeaturedCount).toBe(2);
+    expect(model.additionalFeaturedCount).toBe(1);
     expect(model.outcome).toBeNull();
 
     const serialized = JSON.stringify(model);
@@ -190,6 +190,31 @@ describe("moment story card model", () => {
     expect(serialized).not.toContain("Jc");
     expect(serialized).not.toContain("Ts");
     expect(serialized).not.toContain("5000");
+  });
+
+  it("does not identify a winner-only featured list before suspense playback", () => {
+    const suspense = moment({
+      facts: {
+        ...moment().facts,
+        participantPlayerIds: ["alpha", "beta", "gamma"],
+        featuredPlayerIds: ["alpha"],
+        winnerPlayerIds: ["alpha"],
+      },
+    });
+    const model = buildMomentStoryCardModel({
+      moment: suspense,
+      state,
+      coverFrame: coverFrame(),
+      playerBrands: {},
+      locale: "en",
+    });
+
+    expect(model.featuredPlayers.map(({ playerId }) => playerId)).toEqual([
+      "beta",
+      "gamma",
+      "alpha",
+    ]);
+    expect(model.outcome).toBeNull();
   });
 
   it("does not fall back to terminal stacks, board, or pot without a suspense cover", () => {
@@ -236,6 +261,10 @@ describe("moment story card model", () => {
     expect(model.board).toEqual(["As", "Kh", "Qd", "Jc", "Ts"]);
     expect(model.potChips).toBe(5_000);
     expect(model.potBigBlinds).toBe(50);
+    expect(model.street).toBe("HAND_COMPLETE");
+    expect(model.featuredPlayers.every((player) => (
+      player.equityPercent === null && player.folded === null && player.allIn === null
+    ))).toBe(true);
     expect(model.outcome?.winners).toEqual([
       { playerId: "delta", displayName: "DELTA" },
       { playerId: "alpha", displayName: "ALPHA" },

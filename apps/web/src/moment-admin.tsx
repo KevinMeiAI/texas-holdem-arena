@@ -82,7 +82,7 @@ function issueLabel(issue: MomentDraftIssue, locale: UiLocale): string {
   return uiText(locale, labels[issue][0], labels[issue][1]);
 }
 
-function mutationError(reason: unknown, locale: UiLocale): string {
+export function momentMutationError(reason: unknown, locale: UiLocale): string {
   if (!(reason instanceof ApiError)) {
     return reason instanceof Error
       ? reason.message
@@ -93,6 +93,13 @@ function mutationError(reason: unknown, locale: UiLocale): string {
   }
   if (reason.code === "tournament_not_completed") {
     return uiText(locale, "赛事尚未结束，暂时不能检测精彩瞬间", "Moments can be detected only after the tournament is complete");
+  }
+  if (reason.code === "moment_suspense_cover_unsafe") {
+    return uiText(
+      locale,
+      "这个封面已经透露牌局结果，请选择河牌发出或摊牌前的事件帧",
+      "This cover reveals the result. Choose a frame before the river completes or showdown begins.",
+    );
   }
   return locale === "zh-CN"
     ? uiText(locale, "操作未能完成，请重新读取后再试", "The operation could not be completed")
@@ -161,7 +168,7 @@ export function MomentAdminPage({ csrfToken }: { csrfToken: string }) {
         `Detection complete · ${result.generatedCount} candidates`,
       ));
     } catch (reason) {
-      setPageError(mutationError(reason, locale));
+      setPageError(momentMutationError(reason, locale));
     } finally {
       setBusyAction(null);
     }
@@ -186,9 +193,9 @@ export function MomentAdminPage({ csrfToken }: { csrfToken: string }) {
         });
         return;
       }
-      setEditor({ ...current, error: mutationError(reason, locale) });
+      setEditor({ ...current, error: momentMutationError(reason, locale) });
     } catch (refreshReason) {
-      setEditor({ ...current, error: mutationError(refreshReason, locale) });
+      setEditor({ ...current, error: momentMutationError(refreshReason, locale) });
     }
   };
 
@@ -223,7 +230,7 @@ export function MomentAdminPage({ csrfToken }: { csrfToken: string }) {
       if (reason instanceof ApiError && reason.code === "moment_publication_conflict") {
         await refreshAfterConflict(current, reason);
       } else {
-        setEditor({ ...current, error: mutationError(reason, locale) });
+        setEditor({ ...current, error: momentMutationError(reason, locale) });
       }
     } finally {
       setBusyAction(null);
@@ -250,7 +257,7 @@ export function MomentAdminPage({ csrfToken }: { csrfToken: string }) {
         setEditor(current);
         await refreshAfterConflict(current, reason);
       } else {
-        setPageError(mutationError(reason, locale));
+        setPageError(momentMutationError(reason, locale));
       }
     } finally {
       setBusyAction(null);

@@ -16,6 +16,7 @@ import {
   localizedMomentCopy,
   momentOutcomeProjection,
   momentPublicFactsProjection,
+  momentPublicPlayerIds,
   momentReplayData,
   momentReplayKey,
   publicMomentTagLabel,
@@ -188,7 +189,7 @@ export function MomentPage() {
   const outcome = momentOutcomeProjection(moment, state.players, replayEnded);
   const displayFrame = replayPlayer.active ? replayPlayer.frame : response.coverFrame;
   const publicFacts = momentPublicFactsProjection(moment, displayFrame, replayEnded);
-  const waitingForFrame = replayPlayer.active && replayPlayer.frame === null;
+  const waitingForFrame = replayPlayer.active && !replayEnded && replayPlayer.frame === null;
   const displayedEvents = replayPlayer.active ? replayPlayer.visibleEvents : [];
   const idleEliminatedPlayerIds = new Set(response.initialEliminatedPlayerIds);
   const displayedEliminatedPlayerIds = replayPlayer.active
@@ -254,7 +255,7 @@ export function MomentPage() {
           <h1 ref={headingRef} tabIndex={-1}>{copy.title}</h1>
           {copy.summary && <p>{copy.summary}</p>}
           <MomentPlayerLine
-            playerIds={moment.facts.featuredPlayerIds}
+            playerIds={momentPublicPlayerIds(moment, replayEnded)}
             players={state.players}
             playerBrands={playerBrands}
             label={text("本手选手", "Players in this hand")}

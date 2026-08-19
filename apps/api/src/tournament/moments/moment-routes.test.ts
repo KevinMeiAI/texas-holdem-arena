@@ -2,6 +2,7 @@ import fastifyCookie from "@fastify/cookie";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  MOMENT_DETECTOR_VERSION,
   publicMomentDtoSchema,
   tournamentMomentFactsSchema,
   type PublicMomentDto,
@@ -20,7 +21,7 @@ import {
   momentReplayWindow,
   registerMomentRoutes,
 } from "./moment-routes.js";
-import type { MomentService } from "./moment-service.js";
+import { MomentServiceError, type MomentService } from "./moment-service.js";
 
 const TOURNAMENT_ID = "00000000-0000-4000-8000-000000000001";
 const MOMENT_ID = "00000000-0000-5000-8000-000000000001";
@@ -41,7 +42,7 @@ function facts() {
     focusSequence: 23,
     endSequence: 30,
     factsVersion: "arena-moment-facts-v1",
-    detectorVersion: "arena-moment-detector-v1",
+    detectorVersion: MOMENT_DETECTOR_VERSION,
     scoringVersion: "arena-moment-scoring-v1",
     broadcastViewVersion: BROADCAST_VIEW_VERSION,
     equityVersion: BROADCAST_EQUITY_VERSION,
@@ -229,6 +230,33 @@ describe("moment route boundaries", () => {
     expect(rebuild).toHaveBeenCalledWith(expect.any(Object), ADMIN_ID);
   });
 
+  it("maps an unsafe suspense cover to its dedicated 409 response", async () => {
+    const publish = vi.fn(async () => {
+      throw new MomentServiceError(
+        "UNSAFE_SUSPENSE_COVER",
+        "The selected suspense cover reveals the hand result",
+      );
+    });
+    const { app } = await appWith({ moments: { publish } });
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/admin/moments/${MOMENT_ID}/publish`,
+      headers: adminHeaders,
+      payload: {
+        expectedRevision: null,
+        slug: "unsafe-cover",
+        titleEn: "Unsafe cover",
+        spoilerMode: "SUSPENSE",
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: "moment_suspense_cover_unsafe",
+      message: "The selected suspense cover reveals the hand result",
+    });
+  });
+
   it("keeps an unpublished slug indistinguishable from a missing one", async () => {
     const { app } = await appWith({ moments: { getPublicBySlug: vi.fn(async () => null) } });
     const detail = await app.inject({ method: "GET", url: "/api/public/moments/draft-hand" });
@@ -304,5 +332,25 @@ describe("moment replay window", () => {
 
     expect(window.initialFrame).toBeNull();
     expect(window.coverFrame?.sequence).toBe(22);
+  });
+
+  it("never fills a suspense cover with a future frame", () => {
+    const replay: ArenaBroadcastReplayState = {
+      state: { tournamentId: TOURNAMENT_ID, status: "COMPLETED" },
+      timeline: [frame(22)],
+      events: [],
+      playerBrands: {},
+    };
+    const moment = publicMomentDtoSchema.parse({
+      ...publicMoment(),
+      coverSequence: 21,
+      playbackStartSequence: 21,
+      playbackEndSequence: 25,
+    });
+
+    const window = momentReplayWindow(replay, moment);
+
+    expect(window.initialFrame).toBeNull();
+    expect(window.coverFrame).toBeNull();
   });
 });

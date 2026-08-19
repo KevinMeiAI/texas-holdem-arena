@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool } from "pg";
 import {
+  MOMENT_DETECTOR_VERSION,
   tournamentMomentFactsSchema,
   type TournamentMomentFacts,
 } from "../../packages/contracts/src/moments.js";
@@ -29,6 +30,7 @@ const MOMENT_FIVE = "00000000-0000-5000-8000-000000000115";
 const MOMENT_SIX = "00000000-0000-5000-8000-000000000116";
 const MOMENT_SEVEN = "00000000-0000-5000-8000-000000000117";
 const UNKNOWN_ADMIN_ID = "00000000-0000-4000-8000-000000000199";
+const acceptSuspenseCover = () => true;
 
 let testSchema: IsolatedPostgresSchema | null = null;
 let pool: Pool | null = null;
@@ -44,7 +46,7 @@ function facts(id: string, handNo: number, score: number): TournamentMomentFacts
     focusSequence: startSequence + 3,
     endSequence: startSequence + 9,
     factsVersion: "arena-moment-facts-v1",
-    detectorVersion: "arena-moment-detector-v1",
+    detectorVersion: MOMENT_DETECTOR_VERSION,
     scoringVersion: "arena-moment-scoring-v1",
     broadcastViewVersion: "arena-broadcast-view-v1",
     equityVersion: "arena-broadcast-equity-v1",
@@ -140,7 +142,7 @@ describePostgres("tournament moment persistence", () => {
 
   it("keeps editorial publications while superseding stale candidates and enforcing one primary", async () => {
     const repository = new PgMomentRepository(pool!);
-    const service = new MomentService(repository);
+    const service = new MomentService(repository, acceptSuspenseCover);
     const one = facts(MOMENT_ONE, 1, 64);
     const two = facts(MOMENT_TWO, 2, 65);
     const three = facts(MOMENT_THREE, 3, 66);
@@ -375,7 +377,7 @@ describePostgres("tournament moment persistence", () => {
 
   it("audits the displaced primary when an existing publication becomes primary through editing", async () => {
     const repository = new PgMomentRepository(pool!);
-    const service = new MomentService(repository);
+    const service = new MomentService(repository, acceptSuspenseCover);
     const primary = facts(MOMENT_SIX, 6, 61);
     const challenger = facts(MOMENT_SEVEN, 7, 60);
     await repository.upsertDetectedMoments(

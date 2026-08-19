@@ -1,28 +1,16 @@
-import type {
-  MomentTag,
-  PublicMomentDto,
-} from "../../../packages/contracts/src/moments";
+import type { PublicMomentDto } from "../../../packages/contracts/src/moments";
 import type { ProviderBrand } from "./provider-brand";
-import { localizedMomentCopy, momentTagLabel } from "./moment-presentation";
+import {
+  localizedMomentCopy,
+  momentPublicPlayerIds,
+  publicMomentTagLabel,
+} from "./moment-presentation";
 import type { ArenaBroadcast, ArenaBroadcastPlayer, ArenaState } from "./types";
 import type { UiLocale } from "./ui-preferences";
 
 export const MOMENT_STORY_CARD_SIZE = Object.freeze({ width: 1_200, height: 675 });
 
 const PUBLIC_MOMENT_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const SUSPENSE_RESULT_TAGS: ReadonlySet<MomentTag> = new Set([
-  "FINAL_HAND",
-  "ELIMINATION",
-  "MULTI_ELIMINATION",
-  "HEADS_UP_REACHED",
-  "LEAD_CHANGE",
-  "SHORT_STACK_DOUBLE",
-  "SPLIT_POT",
-  "MULTIWAY_SHOWDOWN",
-  "EQUITY_REVERSAL",
-  "ALL_IN_UNDERDOG_WIN",
-  "RARE_MADE_HAND",
-]);
 
 export interface MomentStoryCardPlayer {
   playerId: string;
@@ -103,13 +91,6 @@ function tablePosition(
   return null;
 }
 
-function suspenseTagLabel(moment: PublicMomentDto, locale: UiLocale): string {
-  if (SUSPENSE_RESULT_TAGS.has(moment.primaryTag)) {
-    return locale === "zh-CN" ? "关键牌局" : "Key hand";
-  }
-  return momentTagLabel(moment.primaryTag, locale);
-}
-
 function featuredPlayers(
   moment: PublicMomentDto,
   state: ArenaState,
@@ -117,16 +98,20 @@ function featuredPlayers(
   playerBrands: Readonly<Record<string, ProviderBrand | null>>,
   revealResult: boolean,
 ): { players: MomentStoryCardPlayer[]; additionalCount: number } {
-  const featuredIds = new Set(unique(moment.facts.featuredPlayerIds));
+  const publicIds = new Set(momentPublicPlayerIds(moment, revealResult));
   const ordered = state.players
-    .filter((player) => featuredIds.has(player.id))
+    .filter((player) => publicIds.has(player.id))
     .sort((left, right) => left.seat - right.seat || left.id.localeCompare(right.id));
   const broadcastByPlayer = new Map(
     coverFrame?.players.map((player) => [player.playerId, player]) ?? [],
   );
+  const causalContenders = !revealResult && coverFrame
+    ? ordered.filter((player) => broadcastByPlayer.get(player.id)?.folded !== true)
+    : ordered;
+  const displayed = causalContenders.length > 0 ? causalContenders : ordered;
 
   return {
-    players: ordered.slice(0, 3).map((player) => {
+    players: displayed.slice(0, 3).map((player) => {
       const broadcast = broadcastByPlayer.get(player.id);
       const resultStack = revealResult ? finiteOrNull(moment.facts.endingStacks[player.id]) : null;
       return {
@@ -137,12 +122,12 @@ function featuredPlayers(
         position: tablePosition(player.seat, coverFrame?.positions ?? null),
         holeCards: [...(broadcast?.holeCards ?? [])].slice(0, 2),
         stack: resultStack ?? finiteOrNull(broadcast?.stack),
-        equityPercent: equityPercent(broadcast),
-        folded: broadcast?.folded ?? null,
-        allIn: broadcast?.allIn ?? null,
+        equityPercent: revealResult ? null : equityPercent(broadcast),
+        folded: revealResult ? null : broadcast?.folded ?? null,
+        allIn: revealResult ? null : broadcast?.allIn ?? null,
       };
     }),
-    additionalCount: Math.max(0, ordered.length - 3),
+    additionalCount: Math.max(0, displayed.length - 3),
   };
 }
 
@@ -191,10 +176,8 @@ export function buildMomentStoryCardModel({
     handLabel: `H${String(moment.handNo).padStart(3, "0")}`,
     title: copy.title,
     summary: copy.summary,
-    tagLabel: revealResult
-      ? momentTagLabel(moment.primaryTag, locale)
-      : suspenseTagLabel(moment, locale),
-    street: coverFrame?.street ?? null,
+    tagLabel: publicMomentTagLabel(moment, locale, revealResult),
+    street: revealResult ? "HAND_COMPLETE" : coverFrame?.street ?? null,
     board: revealResult ? [...moment.facts.board] : [...(coverFrame?.board ?? [])],
     potChips,
     potBigBlinds: revealResult

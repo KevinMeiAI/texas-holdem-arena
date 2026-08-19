@@ -53,7 +53,11 @@ async function sendMomentMutationError(
 ) {
   if (error instanceof MomentServiceError) {
     return reply.code(error.code === "NOT_FOUND" ? 404 : 409).send({
-      error: error.code === "NOT_FOUND" ? "moment_not_found" : "moment_publication_conflict",
+      error: error.code === "NOT_FOUND"
+        ? "moment_not_found"
+        : error.code === "UNSAFE_SUSPENSE_COVER"
+          ? "moment_suspense_cover_unsafe"
+          : "moment_publication_conflict",
       message: error.message,
     });
   }
@@ -67,18 +71,17 @@ async function sendMomentMutationError(
   return reply.code(500).send({ error: "moment_publication_failed" });
 }
 
-function nearestFrame(
+function frameAtOrBeforeWithinMoment(
   replay: ArenaBroadcastReplayState,
   moment: PublicMomentDto,
   sequence: number,
   latestSequence: number,
 ): BroadcastView | null {
-  const frames = replay.timeline.filter((frame) => (
-    frame.handNo === moment.handNo && frame.sequence <= latestSequence
-  ));
-  return frames.filter((frame) => frame.sequence <= sequence).at(-1)
-    ?? frames.find((frame) => frame.sequence >= sequence)
-    ?? null;
+  return replay.timeline.filter((frame) => (
+    frame.handNo === moment.handNo
+    && frame.sequence <= sequence
+    && frame.sequence <= latestSequence
+  )).at(-1) ?? null;
 }
 
 function frameAtOrBefore(
@@ -106,7 +109,15 @@ export function momentReplayWindow(
     // frame could reveal an action, board card, or settlement before playback
     // reaches its authoritative sequence.
     initialFrame: frameAtOrBefore(replay, moment, start),
-    coverFrame: nearestFrame(replay, moment, moment.coverSequence, moment.facts.endSequence),
+    // A suspense cover is causal too. If the requested sequence has no frame
+    // at or before it, render the neutral stage instead of borrowing the next
+    // action, board card, or settlement from the future.
+    coverFrame: frameAtOrBeforeWithinMoment(
+      replay,
+      moment,
+      moment.coverSequence,
+      moment.facts.endSequence,
+    ),
     initialEliminatedPlayerIds: [...new Set(replay.events.flatMap((event) => (
       event.sequence < start && event.type === "PLAYER_ELIMINATED" && event.actorId
         ? [event.actorId]

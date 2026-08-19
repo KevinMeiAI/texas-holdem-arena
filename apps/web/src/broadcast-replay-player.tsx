@@ -186,7 +186,8 @@ function replaySnapshot(
   const sequence = state.stepIndex >= steps.length
     ? playbackEndSequence ?? Number.POSITIVE_INFINITY
     : steps[state.stepIndex] ?? 0;
-  const frame = active && sequence < terminalSequence
+  const keepWindowTerminalFrame = playbackEndSequence !== null;
+  const frame = active && (sequence < terminalSequence || keepWindowTerminalFrame)
     ? broadcastFrameAtSequence(lookupTimeline, sequence)
     : null;
   const settlement = active && state.status !== "ended"

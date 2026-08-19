@@ -21,6 +21,7 @@ import {
   MomentService,
   PgMomentRepository,
   registerMomentRoutes,
+  suspenseCoverSafety,
 } from "./tournament/moments/index.js";
 
 export interface BuiltApp {
@@ -84,8 +85,22 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
       const systemPrompts = new SystemPromptVersionService(pool, masterKey);
       await systemPrompts.syncCatalog();
       consistency = new ConsistencyTestService(pool, models, masterKey);
-      arena = new ArenaService(pool, masterKey, models);
-      const moments = new MomentService(new PgMomentRepository(pool));
+      const arenaService = new ArenaService(pool, masterKey, models);
+      arena = arenaService;
+      const moments = new MomentService(new PgMomentRepository(pool), async ({
+        tournamentId,
+        handNo,
+        coverSequence,
+      }) => {
+        const replay = await arenaService.broadcastReplayState(tournamentId);
+        if (!replay) throw new Error(`Cannot validate moment cover for missing tournament: ${tournamentId}`);
+        return suspenseCoverSafety({
+          handNo,
+          sequence: coverSequence,
+          frames: replay.timeline,
+          events: replay.events,
+        }).safe;
+      });
       await registerAuthRoutes(app, authContext);
       await registerAdminModelRoutes(app, {
         ...authContext,

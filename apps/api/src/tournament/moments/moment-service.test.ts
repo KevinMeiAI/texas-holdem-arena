@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  MOMENT_DETECTOR_VERSION,
   tournamentMomentFactsSchema,
   type AdminMomentRecord,
   type MomentPublicationMutation,
@@ -11,6 +12,7 @@ import { MomentService } from "./moment-service.js";
 const MOMENT_ID = "00000000-0000-5000-8000-000000000001";
 const TOURNAMENT_ID = "00000000-0000-4000-8000-000000000001";
 const ADMIN_ID = "00000000-0000-4000-8000-000000000002";
+const acceptSuspenseCover = () => true;
 
 function facts(): TournamentMomentFacts {
   return tournamentMomentFactsSchema.parse({
@@ -21,7 +23,7 @@ function facts(): TournamentMomentFacts {
     focusSequence: 105,
     endSequence: 110,
     factsVersion: "arena-moment-facts-v1",
-    detectorVersion: "arena-moment-detector-v1",
+    detectorVersion: MOMENT_DETECTOR_VERSION,
     scoringVersion: "arena-moment-scoring-v1",
     broadcastViewVersion: "arena-broadcast-view-v1",
     equityVersion: "arena-broadcast-equity-v1",
@@ -134,7 +136,7 @@ class FakeMomentRepository implements MomentRepository {
 describe("moment service", () => {
   it("keeps drafts out of public DTOs and publishes a complete localized record", async () => {
     const repository = new FakeMomentRepository();
-    const service = new MomentService(repository);
+    const service = new MomentService(repository, acceptSuspenseCover);
     await service.editPublication(MOMENT_ID, {
       titleZh: "河牌逆转",
     }, null, ADMIN_ID);
@@ -181,15 +183,52 @@ describe("moment service", () => {
   });
 
   it("never lets editorial playback escape the authoritative hand window", async () => {
-    const service = new MomentService(new FakeMomentRepository());
+    const service = new MomentService(new FakeMomentRepository(), acceptSuspenseCover);
     await expect(service.editPublication(MOMENT_ID, {
       coverSequence: 111,
     }, null, ADMIN_ID)).rejects.toThrow("inside the authoritative event window");
   });
 
+  it("blocks an unsafe suspense cover before persistence with a dedicated conflict", async () => {
+    const repository = new FakeMomentRepository();
+    const validateCover = vi.fn(async () => false);
+    const service = new MomentService(repository, validateCover);
+
+    await expect(service.publish(MOMENT_ID, {
+      slug: "spoiling-cover",
+      titleEn: "Spoiling cover",
+      coverSequence: 109,
+    }, null, ADMIN_ID)).rejects.toMatchObject({
+      code: "UNSAFE_SUSPENSE_COVER",
+      message: "The selected suspense cover reveals the hand result",
+    });
+    expect(validateCover).toHaveBeenCalledWith({
+      tournamentId: TOURNAMENT_ID,
+      handNo: 12,
+      coverSequence: 109,
+    });
+    expect(repository.record.publication).toBeNull();
+    expect(repository.audits).toEqual([]);
+  });
+
+  it("does not apply suspense-cover validation to an explicit result card", async () => {
+    const repository = new FakeMomentRepository();
+    const validateCover = vi.fn(async () => false);
+    const service = new MomentService(repository, validateCover);
+
+    await service.publish(MOMENT_ID, {
+      slug: "result-cover",
+      titleEn: "Result cover",
+      spoilerMode: "RESULT",
+    }, null, ADMIN_ID);
+
+    expect(validateCover).not.toHaveBeenCalled();
+    expect(repository.record.publication?.status).toBe("PUBLISHED");
+  });
+
   it("preserves omitted editorial settings and honors explicit null", async () => {
     const repository = new FakeMomentRepository();
-    const service = new MomentService(repository);
+    const service = new MomentService(repository, acceptSuspenseCover);
     await service.publish(MOMENT_ID, {
       slug: "final-hand-h12",
       titleEn: "The final hand",
@@ -213,7 +252,7 @@ describe("moment service", () => {
 
   it("keeps the first published slug immutable without advancing its revision", async () => {
     const repository = new FakeMomentRepository();
-    const service = new MomentService(repository);
+    const service = new MomentService(repository, acceptSuspenseCover);
     await service.publish(MOMENT_ID, {
       slug: "stable-highlight",
       titleEn: "Stable highlight",
@@ -234,7 +273,7 @@ describe("moment service", () => {
 
   it("keeps the same slug when a hidden historical publication returns", async () => {
     const repository = new FakeMomentRepository();
-    const service = new MomentService(repository);
+    const service = new MomentService(repository, acceptSuspenseCover);
     await service.publish(MOMENT_ID, {
       slug: "returning-highlight",
       titleEn: "Returning highlight",
@@ -256,13 +295,13 @@ describe("moment service", () => {
   });
 
   it("requires a prior publication before hiding", async () => {
-    const service = new MomentService(new FakeMomentRepository());
+    const service = new MomentService(new FakeMomentRepository(), acceptSuspenseCover);
     await expect(service.hide(MOMENT_ID, null, ADMIN_ID)).rejects.toThrow("previously published");
   });
 
   it("never lets a draft displace the public primary and clears primary when hidden", async () => {
     const repository = new FakeMomentRepository();
-    const service = new MomentService(repository);
+    const service = new MomentService(repository, acceptSuspenseCover);
     await service.editPublication(MOMENT_ID, { titleEn: "Draft", isPrimary: true }, null, ADMIN_ID);
     expect(repository.record.publication).toMatchObject({ status: "DRAFT", isPrimary: false });
 
@@ -276,7 +315,7 @@ describe("moment service", () => {
   it("does not publish a superseded candidate unless it already owns a historical publication", async () => {
     const repository = new FakeMomentRepository();
     repository.record.supersededAt = "2026-08-20T00:00:00.000Z";
-    const service = new MomentService(repository);
+    const service = new MomentService(repository, acceptSuspenseCover);
     await expect(service.publish(MOMENT_ID, {
       slug: "stale-candidate",
       titleEn: "Stale candidate",
@@ -285,7 +324,7 @@ describe("moment service", () => {
 
   it("rejects a stale editorial revision before it can overwrite newer state", async () => {
     const repository = new FakeMomentRepository();
-    const service = new MomentService(repository);
+    const service = new MomentService(repository, acceptSuspenseCover);
     await service.publish(MOMENT_ID, {
       slug: "revision-guard",
       titleEn: "Revision guard",

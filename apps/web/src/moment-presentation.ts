@@ -35,6 +35,7 @@ const SPOILER_REVEALING_TAGS: ReadonlySet<MomentTag> = new Set([
   "LEAD_CHANGE",
   "SHORT_STACK_DOUBLE",
   "SPLIT_POT",
+  "MULTIWAY_SHOWDOWN",
   "EQUITY_REVERSAL",
   "ALL_IN_UNDERDOG_WIN",
   "RARE_MADE_HAND",
@@ -94,17 +95,15 @@ export function localizedMomentCopy(
   locale: UiLocale,
 ): LocalizedMomentCopy {
   const preferredTitle = locale === "zh-CN" ? moment.titleZh : moment.titleEn;
-  const alternateTitle = locale === "zh-CN" ? moment.titleEn : moment.titleZh;
   const preferredSummary = locale === "zh-CN" ? moment.summaryZh : moment.summaryEn;
-  const alternateSummary = locale === "zh-CN" ? moment.summaryEn : moment.summaryZh;
   const hand = String(moment.handNo).padStart(3, "0");
   const fallbackTitle = locale === "zh-CN"
     ? `第 ${hand} 手 · ${publicMomentTagLabel(moment, locale, false)}`
     : `Hand ${hand} · ${publicMomentTagLabel(moment, locale, false)}`;
 
   return {
-    title: presentText(preferredTitle) ?? presentText(alternateTitle) ?? fallbackTitle,
-    summary: presentText(preferredSummary) ?? presentText(alternateSummary),
+    title: presentText(preferredTitle) ?? fallbackTitle,
+    summary: presentText(preferredSummary),
   };
 }
 
@@ -116,6 +115,16 @@ export function sortMomentPlayersBySeat(
   return players
     .filter((player) => included.has(player.id))
     .sort((left, right) => left.seat - right.seat || left.id.localeCompare(right.id));
+}
+
+export function momentPublicPlayerIds(
+  moment: Pick<PublicMomentDto, "spoilerMode" | "facts">,
+  replayEnded: boolean,
+): string[] {
+  const source = moment.spoilerMode === "SUSPENSE" && !replayEnded
+    ? moment.facts.participantPlayerIds
+    : moment.facts.featuredPlayerIds;
+  return [...new Set(source)];
 }
 
 export function momentOutcomeProjection(

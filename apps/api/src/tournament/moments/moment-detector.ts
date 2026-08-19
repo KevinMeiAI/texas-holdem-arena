@@ -19,6 +19,7 @@ import {
   type BroadcastView,
 } from "../broadcast-view.js";
 import { BROADCAST_EQUITY_VERSION } from "../broadcast-equity.js";
+import { latestSafeSuspenseCoverFrame } from "./moment-cover-safety.js";
 
 export interface MomentSourceEvent {
   sequence: number;
@@ -603,17 +604,18 @@ export function detectTournamentMoments(input: MomentDetectionInput): Tournament
     const source = sourceFingerprint(handEvents);
     const startSequence = handEvents[0]!.sequence;
     const endSequence = handEvents.at(-1)!.sequence;
-    const strongestTransition = [...transitions].sort((left, right) => (
-      right.maxAbsoluteDelta - left.maxAbsoluteDelta || left.toSequence - right.toSequence
-    ))[0];
-    const largestAction = [...actions].sort((left, right) => right.paid - left.paid || left.sequence - right.sequence)[0];
-    const lastAward = handEvents.filter((event) => event.type === "POT_AWARDED").at(-1);
-    const focusSequence = strongestTransition?.toSequence
-      ?? lock?.sequence
-      ?? allInAt
-      ?? largestAction?.sequence
-      ?? lastAward?.sequence
-      ?? endSequence;
+    const safeCoverFrame = latestSafeSuspenseCoverFrame({
+      handNo,
+      startSequence,
+      endSequence,
+      frames,
+      events: handEvents,
+    });
+    // focusSequence is the default editorial cover. It must stay causal and
+    // unresolved; otherwise a suspense card can reveal its own winner before
+    // the audience presses play. A neutral start-event cover is the safe
+    // fallback for malformed historical replays without any usable frame.
+    const focusSequence = safeCoverFrame?.sequence ?? startSequence;
     const finalFrame = [...frames].sort((left, right) => left.sequence - right.sequence).at(-1);
     const featured = orderedUnique([
       ...winners,

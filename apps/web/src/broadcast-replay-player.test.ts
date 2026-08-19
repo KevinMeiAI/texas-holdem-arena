@@ -165,6 +165,37 @@ describe("broadcast replay player", () => {
     expect(buildBroadcastReplaySnapshot(data, playing, false).eliminatedPlayerIds).toEqual(new Set());
   });
 
+  it("keeps the final causal table frame when a moment window includes tournament completion", () => {
+    const terminalEvent = { ...event(31, "TOURNAMENT_COMPLETED"), handNo: null };
+    const data = {
+      timeline: [frame(25), frame(29)],
+      events: [
+        event(29, "HAND_COMPLETED"),
+        terminalEvent,
+      ],
+      window: {
+        startSequence: 20,
+        endSequence: 31,
+        initialFrame: frame(18),
+        initialEliminatedPlayerIds: [],
+      },
+    };
+    const ended: BroadcastReplayState = { status: "ended", stepIndex: 4, rate: 1 };
+    const snapshot = buildBroadcastReplaySnapshot(data, ended, true);
+
+    expect(snapshot.sequence).toBe(31);
+    expect(snapshot.frame?.sequence).toBe(29);
+    expect(snapshot.visibleEvents.at(-1)?.type).toBe("TOURNAMENT_COMPLETED");
+
+    const fullReplaySnapshot = buildBroadcastReplaySnapshot(
+      { timeline: data.timeline, events: data.events },
+      { status: "playing", stepIndex: 2, rate: 1 },
+      true,
+    );
+    expect(fullReplaySnapshot.sequence).toBe(31);
+    expect(fullReplaySnapshot.frame).toBeNull();
+  });
+
   it("rejects invalid or non-causal moment windows", () => {
     const playing: BroadcastReplayState = { status: "playing", stepIndex: 0, rate: 1 };
     const base = { timeline: [frame(25)], events: [] };

@@ -8,6 +8,7 @@ import {
   localizedMomentCopy,
   momentCanonicalUrl,
   momentOutcomeProjection,
+  momentPublicPlayerIds,
   momentPublicFactsProjection,
   momentReplayData,
   momentReplayKey,
@@ -178,7 +179,7 @@ describe("moment presentation", () => {
     }
   });
 
-  it("uses the requested language, then the alternate language, then a factual title", () => {
+  it("uses only the requested language and falls back to a localized factual title", () => {
     const published = moment();
     expect(localizedMomentCopy(published, "zh-CN")).toEqual({
       title: "最后一手",
@@ -191,8 +192,8 @@ describe("moment presentation", () => {
 
     const alternateOnly = moment({ titleEn: null, summaryEn: null });
     expect(localizedMomentCopy(alternateOnly, "en")).toEqual({
-      title: "最后一手",
-      summary: "短码全下后完成逆转。",
+      title: "Hand 007 · Key hand",
+      summary: null,
     });
 
     const factualFallback = moment({
@@ -213,6 +214,22 @@ describe("moment presentation", () => {
     expect(sortMomentPlayersBySeat(["gamma", "missing", "alpha", "gamma", "beta"], players)
       .map((item) => item.id)).toEqual(["beta", "alpha", "gamma"]);
     expect(players.map((item) => item.id)).toEqual(["alpha", "beta", "gamma"]);
+  });
+
+  it("uses causal participants instead of result-derived featured players before suspense ends", () => {
+    const suspense = moment({
+      facts: {
+        ...moment().facts,
+        participantPlayerIds: ["alpha", "beta", "gamma", "alpha"],
+        featuredPlayerIds: ["alpha"],
+        winnerPlayerIds: ["alpha"],
+      },
+    });
+
+    expect(momentPublicPlayerIds(suspense, false)).toEqual(["alpha", "beta", "gamma"]);
+    expect(momentPublicPlayerIds(suspense, true)).toEqual(["alpha"]);
+    expect(momentPublicPlayerIds(moment({ ...suspense, spoilerMode: "RESULT" }), false))
+      .toEqual(["alpha"]);
   });
 
   it("withholds suspense outcomes until playback ends and clones revealed facts", () => {

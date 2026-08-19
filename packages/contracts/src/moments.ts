@@ -4,9 +4,10 @@ import { z } from "zod";
 // newly registered schema or algorithm implementation.
 export const MOMENT_FACTS_V1 = "arena-moment-facts-v1";
 export const MOMENT_DETECTOR_V1 = "arena-moment-detector-v1";
+export const MOMENT_DETECTOR_V2 = "arena-moment-detector-v2";
 export const MOMENT_SCORING_V1 = "arena-moment-scoring-v1";
 export const MOMENT_FACTS_VERSION = MOMENT_FACTS_V1;
-export const MOMENT_DETECTOR_VERSION = MOMENT_DETECTOR_V1;
+export const MOMENT_DETECTOR_VERSION = MOMENT_DETECTOR_V2;
 export const MOMENT_SCORING_VERSION = MOMENT_SCORING_V1;
 
 export const momentTagSchema = z.enum([
