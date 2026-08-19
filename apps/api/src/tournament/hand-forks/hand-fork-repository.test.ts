@@ -819,6 +819,7 @@ describePostgres("hand fork PostgreSQL lifecycle", () => {
       [clientRequestId],
     );
     expect(persistedCounts.rows[0]).toEqual({ forks: "1", targets: "2" });
+    expect(await repository.listRunnableForkIds()).toContain(fork.id);
     await expect(repository.createFork({
       ...forkInput,
       sampleCount: 2,

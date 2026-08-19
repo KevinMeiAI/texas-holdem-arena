@@ -1890,13 +1890,17 @@ export class PgHandForkRepository {
 
   async listRunnableForkIds(): Promise<string[]> {
     const result = await this.pool.query<{ id: string }>(
-      `select distinct f.id
+      `select f.id
          from hand_forks f
-         join hand_fork_targets ft on ft.fork_id = f.id
         where f.status in ('QUEUED', 'RUNNING')
-          and (ft.status = 'QUEUED' or (
-            ft.status = 'RUNNING' and ft.lease_expires_at <= now()
-          ))
+          and exists (
+            select 1
+              from hand_fork_targets ft
+             where ft.fork_id = f.id
+               and (ft.status = 'QUEUED' or (
+                 ft.status = 'RUNNING' and ft.lease_expires_at <= now()
+               ))
+          )
         order by f.created_at, f.id`,
     );
     return result.rows.map((row) => row.id);
