@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import type { ModelConfigService } from "../admin/model-service.js";
-import { ArenaService } from "./arena-service.js";
+import { ArenaService, TournamentMomentInputError } from "./arena-service.js";
 
 describe("arena tournament statistics report", () => {
   it("returns frozen player brands with the calculated statistics", async () => {
@@ -115,5 +115,40 @@ describe("arena tournament statistics report", () => {
       expect.stringContaining("sequence > $2"),
       [tournamentId, 42],
     );
+  });
+
+  it("builds moment input only from a completed tournament replay projection", async () => {
+    const tournamentId = "33333333-3333-4333-8333-333333333333";
+    let state = {
+      tournamentId,
+      status: "RUNNING",
+      completedHands: 0,
+      players: [],
+      hand: null,
+    };
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("from tournaments")) return { rows: [{ public_state: state }] };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const service = new ArenaService(
+      { query } as unknown as Pool,
+      new Uint8Array(32),
+      { revisionDetails: vi.fn(async () => []) } as unknown as ModelConfigService,
+      0,
+    );
+    const projectedEvents = vi.spyOn(service, "projectedEvents").mockResolvedValue([]);
+
+    await expect(service.momentDetectionInput(tournamentId)).rejects.toBeInstanceOf(TournamentMomentInputError);
+    expect(projectedEvents).not.toHaveBeenCalled();
+
+    state = { ...state, status: "COMPLETED", completedHands: 1 };
+    const input = await service.momentDetectionInput(tournamentId);
+    expect(projectedEvents).toHaveBeenCalledWith(tournamentId, "SPECTATOR_REPLAY");
+    expect(input).toMatchObject({
+      tournamentId,
+      tournamentStatus: "COMPLETED",
+      events: [],
+      broadcastFrames: [],
+    });
   });
 });

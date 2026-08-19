@@ -452,19 +452,23 @@ export class BroadcastViewBuilder {
       if (!card) throw new Error(`Broadcast board card ${code} is missing from public events`);
       return card;
     });
-    const equityKey = [
+    const equitySampleCount = options.equitySampleCount ?? 5_000;
+    const equitySeed = [
       state.tournamentId,
       hand.handNo,
       boardCodes.join(""),
       ...dealtPlayers.map((player) => `${player.playerId}:${player.holeCards.map(cardCode).join("")}:${player.folded ? 1 : 0}`),
     ].join("|");
-    let equity = this.#equityCache.get(equityKey);
+    const equityCacheKey = `${equitySeed}|samples:${equitySampleCount}`;
+    let equity = this.#equityCache.get(equityCacheKey);
     if (!equity) {
       equity = calculateBroadcastEquity(dealtPlayers, board, {
-        seed: equityKey,
-        ...(options.equitySampleCount === undefined ? {} : { sampleCount: options.equitySampleCount }),
+        // Preserve the v1 deterministic sample stream; cache isolation is a
+        // storage fix, not a change to the published equity algorithm.
+        seed: equitySeed,
+        sampleCount: equitySampleCount,
       });
-      this.#equityCache.set(equityKey, equity);
+      this.#equityCache.set(equityCacheKey, equity);
       if (this.#equityCache.size > 256) this.#equityCache.delete(this.#equityCache.keys().next().value!);
     }
     const equityByPlayer = new Map(equity.players.map((player) => [player.playerId, player]));

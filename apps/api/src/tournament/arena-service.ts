@@ -1,6 +1,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { projectArenaEvent, type ProjectionRole } from "../../../../packages/contracts/src/visibility.js";
+import {
+  projectArenaEvent,
+  type ProjectedArenaEvent,
+  type ProjectionRole,
+} from "../../../../packages/contracts/src/visibility.js";
 import { deriveSeed, DeterministicRng } from "../../../../packages/fairness/src/rng.js";
 import { createProvider } from "../../../../packages/providers/src/provider-factory.js";
 import { resolveProviderBrand, type ProviderBrand } from "../../../../packages/providers/src/provider-brand.js";
@@ -33,7 +37,8 @@ import {
   type DealSchedule,
 } from "../../../../packages/fairness/src/deal-schedule.js";
 import { decryptJson, encryptJson } from "../security/encryption.js";
-import { BroadcastViewBuilder } from "./broadcast-view.js";
+import { BroadcastViewBuilder, type BroadcastView } from "./broadcast-view.js";
+import type { MomentDetectionInput } from "./moments/moment-detector.js";
 
 export interface CreateArenaTournamentInput {
   name: string;
@@ -90,6 +95,20 @@ interface ActiveArena {
   lastError: string | null;
 }
 
+export interface ArenaBroadcastReplayState {
+  state: unknown;
+  timeline: BroadcastView[];
+  events: ProjectedArenaEvent[];
+  playerBrands: Record<string, ProviderBrand | null>;
+}
+
+export class TournamentMomentInputError extends Error {
+  constructor(readonly tournamentStatus: string) {
+    super("Moments can only be generated after a tournament is completed");
+    this.name = "TournamentMomentInputError";
+  }
+}
+
 const delay = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
 function providerOutputModes(configs: readonly FrozenModelConfig[]): string[] {
@@ -123,7 +142,7 @@ export class ArenaService {
   readonly #statisticsCache = new Map<string, TournamentStatisticsComputation>();
   readonly #statisticsPending = new Map<string, Promise<TournamentStatisticsComputation>>();
   readonly #broadcastViews = new BroadcastViewBuilder();
-  readonly #broadcastReplayCache = new Map<string, { state: unknown; timeline: unknown[]; events: unknown[]; playerBrands: Record<string, ProviderBrand | null> }>();
+  readonly #broadcastReplayCache = new Map<string, ArenaBroadcastReplayState>();
   readonly #playerBrandCache = new Map<string, Record<string, ProviderBrand | null>>();
   readonly #store: PgEventStore;
   readonly #systemPrompts: SystemPromptVersionService;
@@ -499,7 +518,7 @@ export class ArenaService {
     };
   }
 
-  async broadcastReplayState(tournamentId: string): Promise<{ state: unknown; timeline: unknown[]; events: unknown[]; playerBrands: Record<string, ProviderBrand | null> } | null> {
+  async broadcastReplayState(tournamentId: string): Promise<ArenaBroadcastReplayState | null> {
     const cached = this.#broadcastReplayCache.get(tournamentId);
     if (cached) return cached;
     const state = await this.publicState(tournamentId);
@@ -530,6 +549,27 @@ export class ArenaService {
       this.#broadcastReplayCache.delete(this.#broadcastReplayCache.keys().next().value!);
     }
     return replay;
+  }
+
+  async momentDetectionInput(tournamentId: string): Promise<MomentDetectionInput | null> {
+    const state = await this.publicState(tournamentId);
+    const id = (state as { tournamentId?: unknown } | null)?.tournamentId;
+    if (!state || typeof id !== "string") return null;
+    const status = (state as { status?: unknown }).status;
+    if (status !== "COMPLETED") {
+      throw new TournamentMomentInputError(typeof status === "string" ? status : "UNKNOWN");
+    }
+    const events = await this.projectedEvents(id, "SPECTATOR_REPLAY");
+    return {
+      tournamentId: id,
+      tournamentStatus: status,
+      events,
+      broadcastFrames: this.#broadcastViews.buildTimeline(state, events, {
+        allHands: true,
+        includeReplayFrames: true,
+        equitySampleCount: 500,
+      }),
+    };
   }
 
   async listTournaments(): Promise<unknown[]> {

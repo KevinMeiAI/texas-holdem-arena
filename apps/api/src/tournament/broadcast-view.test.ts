@@ -167,4 +167,24 @@ describe("broadcast view", () => {
     expect(replay.filter((frame) => frame.street === "HAND_COMPLETE")).toHaveLength(2);
     expect(replay.at(-1)).toMatchObject({ handNo: 2, street: "HAND_COMPLETE", pot: 0, pots: [] });
   });
+
+  it("keeps equity caches isolated by deterministic sample configuration", () => {
+    const builder = new BroadcastViewBuilder();
+    const state = {
+      tournamentId: "sample-isolation",
+      players: [
+        { id: "hero", seat: 0, stack: 100, folded: false, allIn: false, streetCommitted: 0, totalCommitted: 0 },
+        { id: "villain", seat: 1, stack: 100, folded: false, allIn: false, streetCommitted: 0, totalCommitted: 0 },
+      ],
+      hand: { handNo: 4, phase: "PREFLOP", boards: [[]], currentActorId: "hero" },
+    };
+    const events = [
+      event(1, "HOLE_CARDS_DEALT", { playerId: "hero" }, { cards: [parseCard("As"), parseCard("Ah")] }),
+      event(2, "HOLE_CARDS_DEALT", { playerId: "villain" }, { cards: [parseCard("Ks"), parseCard("Kh")] }),
+    ];
+
+    expect(builder.build(state, events, { equitySampleCount: 7 })?.samples).toBe(7);
+    expect(builder.build(state, events, { equitySampleCount: 11 })?.samples).toBe(11);
+    expect(builder.build(state, events, { equitySampleCount: 7 })?.samples).toBe(7);
+  });
 });

@@ -17,6 +17,11 @@ import type { AppConfig } from "./config.js";
 import { decodeMasterKey } from "./security/encryption.js";
 import { ArenaService } from "./tournament/arena-service.js";
 import { registerTournamentRoutes } from "./tournament/routes.js";
+import {
+  MomentService,
+  PgMomentRepository,
+  registerMomentRoutes,
+} from "./tournament/moments/index.js";
 
 export interface BuiltApp {
   app: FastifyInstance;
@@ -80,6 +85,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
       await systemPrompts.syncCatalog();
       consistency = new ConsistencyTestService(pool, models, masterKey);
       arena = new ArenaService(pool, masterKey, models);
+      const moments = new MomentService(new PgMomentRepository(pool));
       await registerAuthRoutes(app, authContext);
       await registerAdminModelRoutes(app, {
         ...authContext,
@@ -89,6 +95,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
       await registerConsistencyRoutes(app, { ...authContext, pool, consistency });
       await registerSystemPromptRoutes(app, { ...authContext, pool, systemPrompts });
       await registerTournamentRoutes(app, { ...authContext, pool, arena });
+      await registerMomentRoutes(app, { ...authContext, arena, moments });
       await consistency.restorePending();
       await arena.restoreActive();
     }
