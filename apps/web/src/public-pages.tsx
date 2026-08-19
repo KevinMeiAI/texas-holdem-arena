@@ -15,6 +15,7 @@ import { ProviderLogo } from "./provider-logo";
 import type { ProviderBrand } from "./provider-brand";
 import { SelectControl } from "./select-control";
 import { settlementPresentationAtSequence, spectatorTimeline } from "./spectator-event-timeline";
+import { TournamentMoments } from "./tournament-moments";
 import { TournamentStatisticsReport } from "./tournament-statistics";
 import {
   EmptyState,
@@ -593,6 +594,13 @@ export function ReplayPage() {
         <Link className="analysis-back-link" to="/tournaments"><span aria-hidden="true">←</span>{text("返回赛事列表", "Back to events")}</Link>
       </nav>
       <SectionHeading title={state.name} aside={<div><StatusBadge status={state.status} /><p>{text("第", "Hand")} {String(handNo).padStart(3, "0")} {text("手", "")}</p></div>} />
+      {state.status === "COMPLETED" && (
+        <TournamentMoments
+          tournamentId={state.tournamentId}
+          players={state.players}
+          playerBrands={performance.data?.playerBrands ?? {}}
+        />
+      )}
       {state.status === "COMPLETED" && (
         <>
           <section className="stack-history-panel" aria-labelledby="stack-history-heading">

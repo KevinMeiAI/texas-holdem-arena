@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AdminArea } from "./admin-pages";
 import { AppHeader, SiteFooter } from "./components";
+import { MomentPage } from "./moment-page";
 import { LeaderboardPage, LivePage, ReplayPage, TournamentsPage } from "./public-pages";
 
 export function App() {
@@ -14,6 +15,7 @@ export function App() {
         <Route path="/tournaments" element={<TournamentsPage />} />
         <Route path="/tournaments/:id/replay" element={<ReplayPage />} />
         <Route path="/tournaments/:id/replay/:handNo" element={<ReplayPage />} />
+        <Route path="/moments/:slug" element={<MomentPage />} />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
