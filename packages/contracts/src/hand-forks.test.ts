@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createHandForkRequestSchema,
+  handForkEffectiveOutputModeSchema,
   handForkSourceCandidateSchema,
   handForkSourceErrorCodeSchema,
   handForkSourceSummarySchema,
@@ -206,6 +207,20 @@ describe("hand fork contracts", () => {
     };
     expect(() => handForkTrialSchema.parse(trial)).toThrow(/amountTo/);
     expect(() => handForkTrialSchema.parse({ ...trial, action: "call", amountTo: 100 })).toThrow(/amountTo/);
+    expect(handForkTrialSchema.parse({
+      ...trial,
+      outcome: "INFRA_ERROR",
+      action: null,
+      firstTurnValid: null,
+    }).firstTurnValid).toBeNull();
+    expect(() => handForkTrialSchema.parse({ ...trial, action: "call", firstTurnValid: null }))
+      .toThrow(/observed first-turn/i);
+  });
+
+  it("allows only resolved provider output modes for fork targets", () => {
+    expect(handForkEffectiveOutputModeSchema.options).toEqual(["json_schema", "json_object", "prompt"]);
+    expect(() => handForkEffectiveOutputModeSchema.parse("auto")).toThrow();
+    expect(() => handForkEffectiveOutputModeSchema.parse("inherit")).toThrow();
   });
 
   it("exposes only an encrypted-refusal marker and hash", () => {

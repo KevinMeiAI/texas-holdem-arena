@@ -6,6 +6,7 @@ import {
   actionResponseSchema,
   encryptedPayloadSchema,
   handForkAggregateSummarySchema,
+  handForkEffectiveOutputModeSchema,
   handForkLegalActionsSchema,
   handForkProviderUsageSchema,
   handForkStatusSchema,
@@ -19,6 +20,7 @@ import {
   type ActionResponse,
   type CanonicalModelRequest,
   type HandForkAggregateSummary,
+  type HandForkEffectiveOutputMode,
   type HandForkLegalActions,
   type HandForkProviderUsage,
   type HandForkStatus,
@@ -249,7 +251,7 @@ interface HandForkTargetRow {
   model_id: string;
   provider_profile: string;
   model_configuration_hash: string;
-  effective_output_mode: string;
+  effective_output_mode: HandForkEffectiveOutputMode;
   sample_count: number;
   status: HandForkTargetStatus;
   terminal_trials: number;
@@ -272,7 +274,7 @@ interface HandForkTrialRow {
   amount_to: number | null;
   decision_summary: string | null;
   used_fallback: boolean;
-  first_turn_valid: boolean;
+  first_turn_valid: boolean | null;
   history_query_count: number;
   protocol_failures: number;
   infrastructure_failures: number;
@@ -367,7 +369,7 @@ export interface HandForkTargetPersistenceInput {
   modelConfigId: string;
   competitorRevisionId: string;
   modelConfigurationHash: string;
-  effectiveOutputMode: string;
+  effectiveOutputMode: HandForkEffectiveOutputMode;
 }
 
 export interface CreateHandForkPersistenceInput {
@@ -423,7 +425,7 @@ export interface ClaimedHandForkTarget {
   modelConfigId: string;
   competitorRevisionId: string;
   modelConfigurationHash: string;
-  effectiveOutputMode: string;
+  effectiveOutputMode: HandForkEffectiveOutputMode;
   sampleCount: number;
   terminalTrials: number;
   timeoutMs: number;
@@ -491,12 +493,12 @@ export interface CompleteHandForkTrialInput {
   amountTo: number | null;
   decisionSummary: string | null;
   usedFallback: boolean;
-  firstTurnValid: boolean;
+  firstTurnValid: boolean | null;
   historyQueryCount: number;
   protocolFailures: number;
   infrastructureFailures: number;
   callCount: number;
-  totalLatencyMs: number;
+  totalLatencyMs: number | null;
   usage: HandForkProviderUsage | null;
   errorKind: string | null;
   errorMessage: string | null;
@@ -742,7 +744,7 @@ function mapTarget(row: HandForkTargetRow, trials?: HandForkTrial[]): HandForkTa
     modelId: row.model_id,
     providerProfile: row.provider_profile,
     modelConfigurationHash: row.model_configuration_hash,
-    effectiveOutputMode: row.effective_output_mode,
+    effectiveOutputMode: handForkEffectiveOutputModeSchema.parse(row.effective_output_mode),
     sampleCount: row.sample_count,
     status: handForkTargetStatusSchema.parse(row.status),
     terminalTrials: row.terminal_trials,
@@ -784,6 +786,7 @@ export function summarizeHandForkTrials(
   }
   const terminal = trials.filter((trial) => trial.status !== "RUNNING");
   const completed = terminal.filter((trial) => trial.status === "COMPLETED");
+  const firstTurnObserved = completed.filter((trial) => trial.firstTurnValid !== null);
   const modelActions = terminal.filter((trial) => trial.outcome === "MODEL_ACTION" && trial.action !== null);
   const actionDistribution: Record<string, number> = {};
   const sizingValues: Record<string, number[]> = {};
@@ -812,6 +815,7 @@ export function summarizeHandForkTrials(
     terminalCoverage: terminal.length / requestedSamples,
     completedTrials: completed.length,
     reliabilityEligibleTrials: completed.length,
+    firstTurnObservedTrials: firstTurnObserved.length,
     modelActionTrials: modelActions.length,
     actionDistributionTrials: modelActions.length,
     modelActionCoverage: modelActions.length / requestedSamples,
@@ -830,7 +834,9 @@ export function summarizeHandForkTrials(
       min: Math.min(...values),
       max: Math.max(...values),
     }])),
-    firstTurnValidRate: completed.length === 0 ? null : completed.filter((trial) => trial.firstTurnValid).length / completed.length,
+    firstTurnValidRate: firstTurnObserved.length === 0
+      ? null
+      : firstTurnObserved.filter((trial) => trial.firstTurnValid).length / firstTurnObserved.length,
     historyQueryRate: completed.length === 0 ? null : completed.filter((trial) => trial.historyQueryCount > 0).length / completed.length,
     correctionRate: completed.length === 0 ? null : completed.filter((trial) => trial.protocolFailures > 0).length / completed.length,
     latencyObservedTrials: latencies.length,
@@ -916,9 +922,7 @@ export class PgHandForkRepository {
       z.string().uuid().parse(target.modelConfigId);
       z.string().uuid().parse(target.competitorRevisionId);
       assertSha256("modelConfigurationHash", target.modelConfigurationHash);
-      if (target.effectiveOutputMode.length < 1 || target.effectiveOutputMode.length > 80) {
-        throw new Error("effectiveOutputMode must contain 1 to 80 characters");
-      }
+      handForkEffectiveOutputModeSchema.parse(target.effectiveOutputMode);
     });
     const sourcePayload = validateHandForkSourcePayload(input.source.privatePayload);
     if (sourcePayload.baseRequest.requestId !== input.source.decisionId
@@ -1121,7 +1125,7 @@ export class PgHandForkRepository {
         model_config_id: string;
         competitor_revision_id: string;
         model_configuration_hash: string;
-        effective_output_mode: string;
+        effective_output_mode: HandForkEffectiveOutputMode;
         sample_count: number;
         terminal_trials: number;
         lease_expires_at: Date | string;
@@ -1205,7 +1209,7 @@ export class PgHandForkRepository {
         modelConfigId: row.model_config_id,
         competitorRevisionId: row.competitor_revision_id,
         modelConfigurationHash: row.model_configuration_hash,
-        effectiveOutputMode: row.effective_output_mode,
+        effectiveOutputMode: handForkEffectiveOutputModeSchema.parse(row.effective_output_mode),
         sampleCount: row.sample_count,
         terminalTrials: row.terminal_trials,
         timeoutMs: row.timeout_ms,
@@ -1471,6 +1475,9 @@ export class PgHandForkRepository {
     if (input.outcome === "INFRA_ERROR" && (input.action !== null || input.usedFallback)) {
       throw new Error("INFRA_ERROR cannot contain a poker action");
     }
+    if (input.outcome !== "INFRA_ERROR" && input.firstTurnValid === null) {
+      throw new Error("Action outcomes require an observed first-turn validity result");
+    }
     if ((input.action === "bet" || input.action === "raise") !== (input.amountTo !== null)) {
       throw new Error("Only bet and raise use amountTo");
     }
@@ -1483,8 +1490,10 @@ export class PgHandForkRepository {
       protocolFailures: input.protocolFailures,
       infrastructureFailures: input.infrastructureFailures,
       callCount: input.callCount,
-      totalLatencyMs: input.totalLatencyMs,
     })) assertIntegerBetween(name, value, 0, Number.MAX_SAFE_INTEGER);
+    if (input.totalLatencyMs !== null) {
+      assertIntegerBetween("totalLatencyMs", input.totalLatencyMs, 0, Number.MAX_SAFE_INTEGER);
+    }
     const usage = input.usage === null ? null : handForkProviderUsageSchema.parse(input.usage);
     const privateResult = checkedTrialResult(input.privateResult);
     const expectedResultStatus = input.outcome === "INFRA_ERROR" ? "PAUSED_INFRA" : "ACTION";

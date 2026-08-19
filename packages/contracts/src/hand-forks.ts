@@ -37,6 +37,9 @@ export type HandForkTrialOutcome = z.infer<typeof handForkTrialOutcomeSchema>;
 export const handForkTurnOutcomeSchema = z.enum(["SUCCESS", "PROTOCOL_ERROR", "INFRA_ERROR"]);
 export type HandForkTurnOutcome = z.infer<typeof handForkTurnOutcomeSchema>;
 
+export const handForkEffectiveOutputModeSchema = z.enum(["json_schema", "json_object", "prompt"]);
+export type HandForkEffectiveOutputMode = z.infer<typeof handForkEffectiveOutputModeSchema>;
+
 export const handForkSourceErrorCodeSchema = z.enum([
   "SOURCE_NOT_FOUND",
   "TOURNAMENT_NOT_COMPLETED",
@@ -237,7 +240,7 @@ export const handForkTrialSchema = z.object({
   amountTo: z.number().int().positive().nullable(),
   decisionSummary: z.string().max(300).nullable(),
   usedFallback: z.boolean(),
-  firstTurnValid: z.boolean(),
+  firstTurnValid: z.boolean().nullable(),
   historyQueryCount: z.number().int().nonnegative(),
   protocolFailures: z.number().int().nonnegative(),
   infrastructureFailures: z.number().int().nonnegative(),
@@ -280,6 +283,14 @@ export const handForkTrialSchema = z.object({
   if ((trial.outcome === "PROTOCOL_FALLBACK") !== trial.usedFallback) {
     context.addIssue({ code: "custom", path: ["usedFallback"], message: "usedFallback must identify only protocol fallback" });
   }
+  if ((trial.outcome === "MODEL_ACTION" || trial.outcome === "PROTOCOL_FALLBACK")
+    && trial.firstTurnValid === null) {
+    context.addIssue({
+      code: "custom",
+      path: ["firstTurnValid"],
+      message: "Action outcomes require an observed first-turn validity result",
+    });
+  }
 });
 export type HandForkTrial = z.infer<typeof handForkTrialSchema>;
 
@@ -296,6 +307,7 @@ export const handForkTargetSummarySchema = z.object({
   terminalCoverage: z.number().min(0).max(1),
   completedTrials: z.number().int().nonnegative(),
   reliabilityEligibleTrials: z.number().int().nonnegative(),
+  firstTurnObservedTrials: z.number().int().nonnegative(),
   modelActionTrials: z.number().int().nonnegative(),
   actionDistributionTrials: z.number().int().nonnegative(),
   modelActionCoverage: z.number().min(0).max(1),
@@ -328,6 +340,9 @@ export const handForkTargetSummarySchema = z.object({
   }
   if (summary.reliabilityEligibleTrials !== summary.completedTrials) {
     issue("reliabilityEligibleTrials", "Reliability rates use completedTrials as their denominator");
+  }
+  if (summary.firstTurnObservedTrials > summary.reliabilityEligibleTrials) {
+    issue("firstTurnObservedTrials", "First-turn observations cannot exceed reliabilityEligibleTrials");
   }
   if (summary.actionDistributionTrials !== summary.modelActionTrials) {
     issue("actionDistributionTrials", "Action distributions use only model actions");
@@ -375,8 +390,11 @@ export const handForkTargetSummarySchema = z.object({
   if ((summary.tokenObservedTrials === 0) !== (summary.totalTokens === null)) {
     issue("totalTokens", "Token totals require a non-zero token denominator");
   }
-  for (const [name, rate] of [["firstTurnValidRate", summary.firstTurnValidRate],
-    ["historyQueryRate", summary.historyQueryRate], ["correctionRate", summary.correctionRate]] as const) {
+  if ((summary.firstTurnObservedTrials === 0) !== (summary.firstTurnValidRate === null)) {
+    issue("firstTurnValidRate", "firstTurnValidRate requires firstTurnObservedTrials");
+  }
+  for (const [name, rate] of [["historyQueryRate", summary.historyQueryRate],
+    ["correctionRate", summary.correctionRate]] as const) {
     if ((summary.reliabilityEligibleTrials === 0) !== (rate === null)) {
       issue(name, `${name} requires reliabilityEligibleTrials`);
     }
@@ -394,7 +412,7 @@ export const handForkTargetSchema = z.object({
   modelId: z.string().min(1).max(300),
   providerProfile: z.string().min(1).max(120),
   modelConfigurationHash: sha256Schema,
-  effectiveOutputMode: z.string().min(1).max(80),
+  effectiveOutputMode: handForkEffectiveOutputModeSchema,
   sampleCount: z.number().int().min(1).max(20),
   status: handForkTargetStatusSchema,
   terminalTrials: z.number().int().nonnegative(),

@@ -40,12 +40,14 @@ function trial(
     amountTo: action === "raise" ? 800 : null,
     decisionSummary: outcome === "MODEL_ACTION" ? "Public decision summary" : null,
     usedFallback: outcome === "PROTOCOL_FALLBACK",
-    firstTurnValid: outcome === "MODEL_ACTION",
+    firstTurnValid: outcome === "INFRA_ERROR" || outcome === "CANCELLED"
+      ? null
+      : outcome === "MODEL_ACTION",
     historyQueryCount: sampleIndex % 3 === 0 ? 1 : 0,
     protocolFailures: outcome === "PROTOCOL_FALLBACK" ? 2 : 0,
     infrastructureFailures: outcome === "INFRA_ERROR" ? 3 : 0,
     callCount: outcome === "INFRA_ERROR" ? 3 : 1,
-    totalLatencyMs: outcome === "CANCELLED" ? null : sampleIndex * 100,
+    totalLatencyMs: outcome === "CANCELLED" || outcome === "INFRA_ERROR" ? null : sampleIndex * 100,
     usage: outcome === "CANCELLED" ? null : {
       inputTokens: 100,
       outputTokens: 20,
@@ -80,13 +82,35 @@ describe("hand fork summaries", () => {
     expect(summary.modelActionTrials).toBe(10);
     expect(summary.actionDistributionTrials).toBe(10);
     expect(summary.reliabilityEligibleTrials).toBe(12);
+    expect(summary.firstTurnObservedTrials).toBe(11);
     expect(summary.terminalTrials).toBe(12);
     expect(summary.terminalCoverage).toBe(1);
     expect(summary.pairwiseComparisonPairs).toBe(45);
-    expect(summary.firstTurnValidRate).toBeCloseTo(10 / 12);
-    expect(summary.latencyObservedTrials).toBe(12);
+    expect(summary.firstTurnValidRate).toBeCloseTo(10 / 11);
+    expect(summary.latencyObservedTrials).toBe(11);
     expect(summary.tokenObservedTrials).toBe(12);
     expect(summary.totalTokens).toBe(12 * 120);
+  });
+
+  it("excludes unobserved infrastructure failures from first-turn validity", () => {
+    const unobserved = summarizeHandForkTrials(2, [
+      trial(1, "INFRA_ERROR", null),
+      trial(2, "INFRA_ERROR", null),
+    ]);
+    expect(unobserved).toMatchObject({
+      reliabilityEligibleTrials: 2,
+      firstTurnObservedTrials: 0,
+      firstTurnValidRate: null,
+    });
+
+    const partiallyObserved = summarizeHandForkTrials(2, [
+      trial(1, "INFRA_ERROR", null),
+      trial(2, "INFRA_ERROR", null, { firstTurnValid: false }),
+    ]);
+    expect(partiallyObserved).toMatchObject({
+      firstTurnObservedTrials: 1,
+      firstTurnValidRate: 0,
+    });
   });
 
   it("reports bet and raise sizing without mixing engine-computed actions", () => {
@@ -478,6 +502,96 @@ describe("hand fork persistence fencing", () => {
     expect(updateSql).toContain("ft.lease_token = $22");
     expect(updateSql).toContain("ft.lease_expires_at > now()");
   });
+
+  it("persists an infrastructure-only completion without invented first-turn or latency observations", async () => {
+    let updateParameters: unknown[] = [];
+    const query = vi.fn(async (sql: string, parameters?: unknown[]) => {
+      if (sql === "begin" || sql === "commit" || sql === "rollback") return { rows: [], rowCount: null };
+      if (sql.includes("update hand_fork_trials tr")) {
+        updateParameters = parameters ?? [];
+        return {
+          rows: [{
+            id: UUID_TRIAL,
+            fork_id: UUID_FORK,
+            target_id: UUID_TARGET,
+            sample_index: 1,
+            status: "COMPLETED",
+            outcome: "INFRA_ERROR",
+            action: null,
+            amount_to: null,
+            decision_summary: null,
+            used_fallback: false,
+            first_turn_valid: null,
+            history_query_count: 0,
+            protocol_failures: 0,
+            infrastructure_failures: 1,
+            call_count: 1,
+            total_latency_ms: null,
+            usage: null,
+            visible_input_hash: "a".repeat(64),
+            error_kind: "TIMEOUT",
+            error_message: "Timed out",
+            completion_hash: parameters?.[17],
+            created_at: "2026-08-20T00:00:00.000Z",
+            completed_at: "2026-08-20T00:00:01.000Z",
+          }],
+          rowCount: 1,
+        };
+      }
+      if (sql.includes("update hand_fork_targets")) return { rows: [], rowCount: 1 };
+      throw new Error(`Unexpected SQL: ${sql}`);
+    });
+    const repository = new PgHandForkRepository({
+      connect: vi.fn(async () => ({ query, release: vi.fn() } as unknown as PoolClient)),
+    } as unknown as Pool, Buffer.alloc(32, 12));
+    const completed = await repository.completeTrial({
+      forkId: UUID_FORK,
+      targetId: UUID_TARGET,
+      trialId: UUID_TRIAL,
+      workerId: "worker-a",
+      leaseToken: UUID_LEASE,
+      outcome: "INFRA_ERROR",
+      action: null,
+      amountTo: null,
+      decisionSummary: null,
+      usedFallback: false,
+      firstTurnValid: null,
+      historyQueryCount: 0,
+      protocolFailures: 0,
+      infrastructureFailures: 1,
+      callCount: 1,
+      totalLatencyMs: null,
+      usage: null,
+      errorKind: "TIMEOUT",
+      errorMessage: "Timed out",
+      privateResult: {
+        version: "hand-fork-trial-result-v1",
+        requestId: UUID_TRIAL,
+        status: "PAUSED_INFRA",
+        action: null,
+        response: null,
+        usedFallback: false,
+        protocolFailures: 0,
+        historyResults: [],
+        calls: [{
+          attempt: 1,
+          outcome: "INFRA_ERROR",
+          errorKind: "TIMEOUT",
+          latencyMs: null,
+          usage: null,
+        }],
+        error: { kind: "TIMEOUT", message: "Timed out" },
+      },
+    });
+
+    expect(completed).toMatchObject({
+      outcome: "INFRA_ERROR",
+      firstTurnValid: null,
+      totalLatencyMs: null,
+    });
+    expect(updateParameters[6]).toBeNull();
+    expect(updateParameters[11]).toBeNull();
+  });
 });
 
 const postgresUrl = process.env.TEST_DATABASE_URL;
@@ -677,6 +791,10 @@ describePostgres("hand fork PostgreSQL lifecycle", () => {
     };
     const fork = await repository.createFork(forkInput);
     expect(fork.targets).toHaveLength(2);
+    await expect(pool.query(
+      "update hand_fork_targets set effective_output_mode = 'auto' where id = $1",
+      [fork.targets[0]!.id],
+    )).rejects.toThrow(/effective_output_mode/i);
 
     for (const tamper of [
       {
@@ -741,7 +859,7 @@ describePostgres("hand fork PostgreSQL lifecycle", () => {
       sampleIndex: 1,
       visibleInputHash: canonicalHash(visibleState),
     });
-    expect(trialRecord?.status).toBe("RUNNING");
+    expect(trialRecord).toMatchObject({ status: "RUNNING", firstTurnValid: null });
 
     const refusalMarker = `REFUSAL-${randomUUID()}`;
     const request = {
