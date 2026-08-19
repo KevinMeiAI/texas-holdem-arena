@@ -15,13 +15,13 @@ import { cardCode, createDeck } from "../../../../packages/domain/src/cards.js";
 import { type TournamentConfig, type TournamentState, type TournamentTransition } from "../../../../packages/domain/src/tournament.js";
 import { deriveSeed, DeterministicRng, seedCommitment } from "../../../../packages/fairness/src/rng.js";
 import { scheduledHandSeed, type DealSchedule } from "../../../../packages/fairness/src/deal-schedule.js";
-import { canonicalJson } from "../../../../packages/fairness/src/canonical-json.js";
 import type { FrozenModelConfig, ModelProvider } from "../../../../packages/providers/src/provider.js";
 import {
   ARENA_DECISION_TIMEOUT_MAX_MS,
   ARENA_DECISION_TIMEOUT_MIN_MS,
   ARENA_DECISION_TIMEOUT_MS,
 } from "../model-runtime.js";
+import { providerRuntimeConfigHash } from "../model-config-audit.js";
 import {
   type AppendEventsInput,
   type PendingDecisionRequest,
@@ -118,11 +118,6 @@ function decisionLeaseTiming(decisionTimeoutMs: number): { leaseMs: number; rene
 
 function jsonSafe<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function modelConfigHash(config: FrozenModelConfig): string {
-  const { apiKey: _secret, ...auditable } = config;
-  return createHash("sha256").update(canonicalJson(auditable)).digest("hex");
 }
 
 function publicState(runtime: OrchestratorRuntime): unknown {
@@ -308,7 +303,7 @@ export class TournamentOrchestrator {
         outputSchemaVersion: effectiveOutputSchema.version,
         outputSchemaHash: effectiveOutputSchema.sha256,
         modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
-          .map(([playerId, config]) => [playerId, modelConfigHash(config)])),
+          .map(([playerId, config]) => [playerId, providerRuntimeConfigHash(config)])),
         decisionTimeoutMs,
         decisionConfig,
         managedByArena: setup.managedByArena === true,
@@ -337,7 +332,7 @@ export class TournamentOrchestrator {
         rulesetVersion: setup.rulesetVersion,
         eventClass: setup.eventClass ?? "RATED",
         modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
-          .map(([playerId, config]) => [playerId, modelConfigHash(config)])),
+          .map(([playerId, config]) => [playerId, providerRuntimeConfigHash(config)])),
       }),
       publicArenaEvent("RANDOMNESS_COMMITTED", { commitment: runtime.seedCommitment }),
     ], {});
@@ -499,7 +494,7 @@ export class TournamentOrchestrator {
     const resumeState = await this.#store.loadDecisionResumeState<DecisionResumeState>(claimed.id);
     const frozenModelConfig = runtime.frozenModelConfigByPlayer?.[claimed.playerId];
     const providerConfigHash = frozenModelConfig
-      ? modelConfigHash(frozenModelConfig)
+      ? providerRuntimeConfigHash(frozenModelConfig)
       : createHash("sha256").update(`legacy-provider:${providerId}`).digest("hex");
     let leaseRenewalFailure: unknown = null;
     let leaseRenewal = Promise.resolve();
