@@ -14,8 +14,15 @@ import { SystemPromptVersionService } from "./admin/system-prompt-service.js";
 import { AuthService } from "./auth/auth-service.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import type { AppConfig } from "./config.js";
+import { PgEventStore } from "./persistence/event-store.js";
 import { decodeMasterKey } from "./security/encryption.js";
 import { ArenaService } from "./tournament/arena-service.js";
+import { HistoryQueryService } from "./tournament/history-query-service.js";
+import { PgHandForkRepository } from "./tournament/hand-forks/hand-fork-repository.js";
+import { registerHandForkRoutes } from "./tournament/hand-forks/hand-fork-routes.js";
+import { HandForkService } from "./tournament/hand-forks/hand-fork-service.js";
+import { handForkSourceResolver } from "./tournament/hand-forks/hand-fork-source.js";
+import { pgHandForkSourceCatalog } from "./tournament/hand-forks/hand-fork-source-catalog.js";
 import { registerTournamentRoutes } from "./tournament/routes.js";
 import {
   MomentService,
@@ -75,6 +82,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
   const masterKey = config.masterKeyBase64 ? decodeMasterKey(config.masterKeyBase64) : null;
   let arena: ArenaService | null = null;
   let consistency: ConsistencyTestService | null = null;
+  let handForks: HandForkService | null = null;
   if (pool) {
     await runMigrations(pool);
     const auth = new AuthService(pool);
@@ -87,6 +95,16 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
       consistency = new ConsistencyTestService(pool, models, masterKey);
       const arenaService = new ArenaService(pool, masterKey, models);
       arena = arenaService;
+      const forkSourceResolver = handForkSourceResolver(new PgEventStore(pool, masterKey));
+      const forkService = new HandForkService({
+        repository: new PgHandForkRepository(pool, masterKey),
+        sourceResolver: forkSourceResolver,
+        models,
+        history: new HistoryQueryService(pool),
+        onWorkerError: (error) => app.log.error({ err: error }, "hand fork worker failed"),
+      });
+      handForks = forkService;
+      const forkCatalog = pgHandForkSourceCatalog(pool, forkSourceResolver);
       const moments = new MomentService(new PgMomentRepository(pool), async ({
         tournamentId,
         handNo,
@@ -110,8 +128,15 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
       await registerConsistencyRoutes(app, { ...authContext, pool, consistency });
       await registerSystemPromptRoutes(app, { ...authContext, pool, systemPrompts });
       await registerTournamentRoutes(app, { ...authContext, pool, arena });
+      await registerHandForkRoutes(app, {
+        ...authContext,
+        pool,
+        catalog: forkCatalog,
+        handForks: forkService,
+      });
       await registerMomentRoutes(app, { ...authContext, arena, moments });
       await consistency.restorePending();
+      await forkService.restorePending();
       await arena.restoreActive();
     }
   }
@@ -166,6 +191,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
 
   app.addHook("onClose", async () => {
     await consistency?.shutdown();
+    await handForks?.shutdown();
     await arena?.shutdown();
     await pool?.end();
   });

@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../../apps/api/src/app.js";
 import { runMigrations } from "../../db/migrate.js";
 import {
@@ -411,6 +412,74 @@ describePostgres("administrator auth and model configuration API", () => {
       const replayEvents = replay.json<{ events: { type: string; privatePayload?: unknown }[] }>().events;
       expect(replayEvents.filter((event) => event.type === "HOLE_CARDS_DEALT"))
         .toEqual(expect.arrayContaining([expect.objectContaining({ privatePayload: expect.any(Object) })]));
+
+      const forkSourcesResponse = await app.inject({
+        method: "GET",
+        url: `/api/admin/tournaments/${tournamentId}/hands/${hands[0]!.handNo}/hand-fork-sources`,
+        headers: { cookie },
+      });
+      expect(forkSourcesResponse.statusCode).toBe(200);
+      const forkSource = forkSourcesResponse.json<{
+        sources: Array<{
+          availability: "AVAILABLE" | "UNAVAILABLE";
+          decisionId: string;
+          source?: { handNo: number; holeCards: string[] };
+        }>;
+      }>().sources.find((source) => source.availability === "AVAILABLE");
+      expect(forkSource).toMatchObject({
+        availability: "AVAILABLE",
+        source: { handNo: hands[0]!.handNo, holeCards: expect.any(Array) },
+      });
+
+      const handForkBody = {
+        clientRequestId: randomUUID(),
+        sourceDecisionId: forkSource!.decisionId,
+        modelConfigIds: [modelId, secondModelId],
+        sampleCount: 2,
+        timeoutMs: 30_000,
+        maxParallelTargets: 2,
+      };
+      const handForkResponse = await app.inject({
+        method: "POST",
+        url: "/api/admin/hand-forks",
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+        payload: handForkBody,
+      });
+      expect(handForkResponse.statusCode).toBe(202);
+      const handForkId = handForkResponse.json<{ handFork: { id: string } }>().handFork.id;
+      const duplicateHandForkResponse = await app.inject({
+        method: "POST",
+        url: "/api/admin/hand-forks",
+        headers: { cookie, "x-arena-csrf": loginBody.csrfToken },
+        payload: handForkBody,
+      });
+      expect(duplicateHandForkResponse.statusCode).toBe(202);
+      expect(duplicateHandForkResponse.json()).toMatchObject({ handFork: { id: handForkId } });
+
+      let completedHandFork: {
+        status: string;
+        summary: { requestedTrials: number; modelActionTrials: number } | null;
+        targets: Array<{ status: string; terminalTrials: number; sampleCount: number }>;
+      } | null = null;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const handFork = await app.inject({
+          method: "GET",
+          url: `/api/admin/hand-forks/${handForkId}`,
+          headers: { cookie },
+        });
+        expect(handFork.statusCode).toBe(200);
+        completedHandFork = handFork.json<{ handFork: typeof completedHandFork }>().handFork;
+        if (completedHandFork?.status === "COMPLETED") break;
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      }
+      expect(completedHandFork).toMatchObject({
+        status: "COMPLETED",
+        summary: { requestedTrials: 4, modelActionTrials: 4 },
+        targets: [
+          { status: "COMPLETED", terminalTrials: 2, sampleCount: 2 },
+          { status: "COMPLETED", terminalTrials: 2, sampleCount: 2 },
+        ],
+      });
 
       const leaderboard = await app.inject({ method: "GET", url: "/api/public/leaderboard" });
       const leaderboardEntries = leaderboard.json<{

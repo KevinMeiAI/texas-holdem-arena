@@ -16,7 +16,7 @@
     "db:migrate": "tsx db/migrate.ts",
     "start": "node dist-server/apps/api/src/index.js",
     "test": "vitest run",
-    "test:postgres": "vitest run tests/integration",
+    "test:postgres": "vitest run tests/integration apps/api/src/tournament/hand-forks/hand-fork-repository.test.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "typecheck": "tsc -p apps/api/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit"
