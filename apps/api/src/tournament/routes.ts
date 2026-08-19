@@ -22,6 +22,7 @@ export const createTournamentSchema = z.object({
     (ids) => new Set(ids).size === ids.length,
     "Model configurations must be unique",
   ),
+  eventClass: z.enum(["RATED", "EXHIBITION"]).default("RATED"),
   initialStack: z.number().int().min(100).max(10_000_000).default(20_000),
   handsPerLevel: z.number().int().min(1).max(1_000).default(10),
   decisionTimeoutMs: z.number().int()

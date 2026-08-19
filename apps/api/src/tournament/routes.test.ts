@@ -18,6 +18,7 @@ describe("create tournament timeout", () => {
   it("defaults to the Arena timeout and accepts a tournament-specific value", () => {
     expect(createTournamentSchema.parse(validTournament)).toMatchObject({
       decisionTimeoutMs: ARENA_DECISION_TIMEOUT_MS,
+      eventClass: "RATED",
       interfaceTrack: "native",
       historyMode: "query_only",
     });
@@ -37,6 +38,13 @@ describe("create tournament timeout", () => {
       ...validTournament,
       systemPromptVersionId: "33333333-3333-4333-8333-333333333333",
     }).systemPromptVersionId).toBe("33333333-3333-4333-8333-333333333333");
+  });
+
+  it("keeps exhibition events out of the rated record", () => {
+    expect(createTournamentSchema.parse({
+      ...validTournament,
+      eventClass: "EXHIBITION",
+    }).eventClass).toBe("EXHIBITION");
   });
 
   it("rejects values outside the supported 30 to 600 second range", () => {

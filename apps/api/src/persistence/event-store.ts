@@ -57,6 +57,7 @@ export interface CreateTournamentRecord {
   id: string;
   name: string;
   rulesetVersion: string;
+  eventClass?: "RATED" | "EXHIBITION";
   configuration: unknown;
   promptHash?: string;
   protocolBundleId?: string;
@@ -371,8 +372,9 @@ export class PgEventStore {
       `insert into tournaments
         (id, name, status, ruleset_version, prompt_hash, configuration,
          protocol_bundle_id, benchmark_track_id, benchmark_cohort_id,
-         system_prompt_version_id, benchmark_series_id, benchmark_rotation)
-       values ($1, $2, 'DRAFT', $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11)`,
+         system_prompt_version_id, benchmark_series_id, benchmark_rotation,
+         event_class)
+       values ($1, $2, 'DRAFT', $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)`,
       [
         input.id,
         input.name,
@@ -385,6 +387,7 @@ export class PgEventStore {
         input.systemPromptVersionId ?? null,
         input.benchmarkSeriesId ?? null,
         input.benchmarkRotation ?? null,
+        input.eventClass ?? "RATED",
       ],
     );
   }

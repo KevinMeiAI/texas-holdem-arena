@@ -28,6 +28,7 @@ export interface ArenaState {
   tournamentId: string;
   name: string;
   rulesetVersion: string;
+  eventClass: "RATED" | "EXHIBITION";
   protocolBundleId?: string;
   benchmarkTrackId?: string;
   benchmarkCohortId?: string;
@@ -132,6 +133,7 @@ export interface TournamentSummary {
   name: string;
   status: ArenaState["status"];
   rulesetVersion: string;
+  eventClass: "RATED" | "EXHIBITION";
   promptHash: string | null;
   protocolBundleId?: string;
   systemPromptVersionId?: string | null;
@@ -149,6 +151,7 @@ export interface BenchmarkSeriesSummary {
   id: string;
   name: string;
   status: "READY" | "RUNNING" | "COMPLETED" | "CANCELLED";
+  eventClass: "RATED" | "EXHIBITION";
   protocolBundleId: string;
   rulesetVersion: string;
   benchmarkTrackId: string;
@@ -269,6 +272,9 @@ export interface ProviderConnection {
 
 export interface ModelConfig {
   id: string;
+  competitorFamilyId: string;
+  competitorFamilyDisplayName: string;
+  revisionDisplayName: string;
   revisionId: string;
   revisionNumber: number;
   configurationHash: string;

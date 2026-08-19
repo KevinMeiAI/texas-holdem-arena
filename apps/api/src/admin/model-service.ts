@@ -29,6 +29,9 @@ interface ProviderRow {
 interface ModelRow {
   id: string;
   display_name: string;
+  competitor_family_id: string;
+  family_display_name: string;
+  revision_display_name: string;
   provider_connection_id: string;
   provider_label: string;
   provider_type: ProviderKind;
@@ -123,6 +126,9 @@ function publicModel(row: ModelRow) {
     revisionNumber: row.revision_number,
     configurationHash: row.configuration_hash,
     displayName: row.display_name,
+    competitorFamilyId: row.competitor_family_id,
+    competitorFamilyDisplayName: row.family_display_name,
+    revisionDisplayName: row.revision_display_name,
     providerConnectionId: row.provider_connection_id,
     providerLabel: row.provider_label,
     providerType: row.provider_type,
@@ -167,8 +173,11 @@ async function createRevision(
     parameters: Record<string, unknown>;
     output_mode: ModelOutputMode;
     provider_connection_id: string;
+    competitor_family_id: string;
+    display_name: string;
   }>(
-    `select p.*, m.model_id, m.parameters, m.output_mode, m.provider_connection_id
+    `select p.*, m.model_id, m.parameters, m.output_mode, m.provider_connection_id,
+            m.competitor_family_id, m.display_name
        from model_configs m join provider_connections p on p.id = m.provider_connection_id
       where m.id = $1 and m.deleted_at is null and p.deleted_at is null`,
     [modelConfigId],
@@ -202,9 +211,9 @@ async function createRevision(
     `insert into competitor_revisions
       (id, model_config_id, revision_number, provider_connection_id, provider_type,
        provider_profile, provider_default_output_mode, base_url, model_id, parameters,
-       output_mode, configuration_hash)
+       output_mode, configuration_hash, competitor_family_id, competitor_display_name)
      select $2, $1, coalesce(max(revision_number), 0) + 1, $3, $4, $5, $6, $7, $8,
-            $9::jsonb, $10, $11
+            $9::jsonb, $10, $11, $12, $13
        from competitor_revisions where model_config_id = $1`,
     [
       modelConfigId,
@@ -218,6 +227,8 @@ async function createRevision(
       JSON.stringify(identity.parameters),
       identity.outputMode,
       configurationHash,
+      row.competitor_family_id,
+      row.display_name,
     ],
   );
   await client.query(
@@ -227,9 +238,12 @@ async function createRevision(
 }
 
 const MODEL_SELECT = `select m.*, p.label as provider_label, p.provider_type,
-  p.provider_profile, p.default_output_mode, p.base_url, r.revision_number, r.configuration_hash
+  p.provider_profile, p.default_output_mode, p.base_url, r.revision_number, r.configuration_hash,
+  r.competitor_display_name as revision_display_name,
+  f.display_name as family_display_name
   from model_configs m join provider_connections p on p.id = m.provider_connection_id
-  join competitor_revisions r on r.id = m.current_revision_id`;
+  join competitor_revisions r on r.id = m.current_revision_id
+  join competitor_families f on f.id = m.competitor_family_id`;
 
 export class ModelConfigService {
   constructor(private readonly pool: Pool, private readonly masterKey: Uint8Array) {}
@@ -367,9 +381,15 @@ export class ModelConfigService {
       await client.query("begin");
       await requireActiveProvider(client, input.providerConnectionId);
       await client.query(
+        `insert into competitor_families (id, display_name)
+         values ($1, $2)`,
+        [id, input.displayName],
+      );
+      await client.query(
         `insert into model_configs
-          (id, display_name, provider_connection_id, model_id, parameters, output_mode, current_revision_id)
-         values ($1, $2, $3, $4, $5::jsonb, $6, $1)`,
+          (id, display_name, competitor_family_id, provider_connection_id, model_id,
+           parameters, output_mode, current_revision_id)
+         values ($1, $2, $1, $3, $4, $5::jsonb, $6, $1)`,
         [id, input.displayName, input.providerConnectionId, input.modelId, JSON.stringify(input.parameters), input.outputMode],
       );
       await createRevision(client, id, id);
@@ -450,13 +470,39 @@ export class ModelConfigService {
   }
 
   async deleteModel(id: string): Promise<boolean> {
-    const result = await this.pool.query(
-      `update model_configs
-          set enabled = false, deleted_at = now(), updated_at = now()
-        where id = $1 and deleted_at is null`,
-      [id],
-    );
-    return result.rowCount === 1;
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      const result = await client.query<{ competitor_family_id: string }>(
+        `update model_configs
+            set enabled = false, deleted_at = now(), updated_at = now()
+          where id = $1 and deleted_at is null
+          returning competitor_family_id`,
+        [id],
+      );
+      const familyId = result.rows[0]?.competitor_family_id;
+      if (familyId) {
+        await client.query(
+          `update competitor_families f
+              set status = 'RETIRED', updated_at = now()
+            where f.id = $1
+              and not exists (
+                select 1 from model_configs m
+                 where m.competitor_family_id = f.id
+                   and m.deleted_at is null
+                   and m.enabled = true
+              )`,
+          [familyId],
+        );
+      }
+      await client.query("commit");
+      return Boolean(familyId);
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async runtimeConfig(modelConfigId: string): Promise<FrozenModelConfig> {
@@ -542,10 +588,13 @@ export class ModelConfigService {
               r.provider_default_output_mode as default_output_mode,
               r.base_url,
               r.model_id, r.parameters, r.output_mode, r.revision_number,
-              r.configuration_hash
+              r.configuration_hash,
+              r.competitor_display_name as revision_display_name,
+              f.display_name as family_display_name
          from competitor_revisions r
          join model_configs m on m.id = r.model_config_id
          join provider_connections p on p.id = r.provider_connection_id
+         join competitor_families f on f.id = r.competitor_family_id
         where r.id = any($1::uuid[])
         order by array_position($1::uuid[], r.id)`,
       [revisionIds],

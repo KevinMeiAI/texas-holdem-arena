@@ -38,6 +38,7 @@ import { BroadcastViewBuilder } from "./broadcast-view.js";
 export interface CreateArenaTournamentInput {
   name: string;
   modelConfigIds: string[];
+  eventClass?: "RATED" | "EXHIBITION" | undefined;
   initialStack: number;
   handsPerLevel: number;
   decisionTimeoutMs: number;
@@ -55,6 +56,7 @@ interface BenchmarkSeriesRow {
   id: string;
   name: string;
   status: "READY" | "RUNNING" | "COMPLETED" | "CANCELLED";
+  event_class: "RATED" | "EXHIBITION";
   competitor_revision_ids: string[];
   competitor_labels: Record<string, string>;
   tournament_configuration: CreateArenaTournamentInput;
@@ -234,6 +236,7 @@ export class ArenaService {
       tournamentId,
       name: input.name,
       rulesetVersion,
+      eventClass: input.eventClass ?? "RATED",
       protocolBundleId,
       benchmarkTrack: track,
       effectiveSystemPrompt: selectedPrompt.prompt,
@@ -320,6 +323,7 @@ export class ArenaService {
     const configuration: CreateArenaTournamentInput = {
       name: input.name,
       modelConfigIds: [...input.modelConfigIds],
+      eventClass: input.eventClass ?? "RATED",
       initialStack: input.initialStack,
       handsPerLevel: input.handsPerLevel,
       decisionTimeoutMs: input.decisionTimeoutMs,
@@ -330,16 +334,17 @@ export class ArenaService {
     };
     await this.pool.query(
       `insert into benchmark_series
-        (id, name, status, protocol_bundle_id, ruleset_version, benchmark_track_id,
+        (id, name, status, event_class, protocol_bundle_id, ruleset_version, benchmark_track_id,
          benchmark_cohort_id, benchmark_track, competitor_revision_ids, competitor_labels,
          tournament_configuration, deal_schedule_id, deal_schedule_version,
          deal_schedule_commitment, encrypted_deal_schedule, rotation_policy_version,
          rotation_count, system_prompt_version_id)
-       values ($1, $2, 'READY', $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb,
-               $10::jsonb, $11, $12, $13, $14::jsonb, $15, $16, $17)`,
+       values ($1, $2, 'READY', $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb,
+               $11::jsonb, $12, $13, $14, $15::jsonb, $16, $17, $18)`,
       [
         seriesId,
         input.name,
+        input.eventClass ?? "RATED",
         protocolBundleId,
         rulesetVersion,
         track.id,
@@ -371,6 +376,7 @@ export class ArenaService {
       id: string;
       name: string;
       status: BenchmarkSeriesRow["status"];
+      event_class: "RATED" | "EXHIBITION";
       protocol_bundle_id: string;
       ruleset_version: string;
       benchmark_track_id: string;
@@ -388,7 +394,7 @@ export class ArenaService {
       created_at: Date;
       updated_at: Date;
     }>(
-      `select id, name, status, protocol_bundle_id, ruleset_version,
+      `select id, name, status, event_class, protocol_bundle_id, ruleset_version,
               benchmark_track_id, benchmark_cohort_id, competitor_labels,
               deal_schedule_id,
               deal_schedule_version, deal_schedule_commitment, rotation_policy_version,
@@ -407,6 +413,7 @@ export class ArenaService {
       id: row.id,
       name: row.name,
       status: row.status,
+      eventClass: row.event_class,
       protocolBundleId: row.protocol_bundle_id,
       rulesetVersion: row.ruleset_version,
       benchmarkTrackId: row.benchmark_track_id,
@@ -537,6 +544,7 @@ export class ArenaService {
       protocol_bundle_id: string;
       benchmark_track_id: string;
       benchmark_cohort_id: string;
+      event_class: "RATED" | "EXHIBITION";
       system_prompt_version_id: string | null;
       benchmark_series_id: string | null;
       benchmark_rotation: number | null;
@@ -544,7 +552,7 @@ export class ArenaService {
       updated_at: Date;
     }>(
       `select id, name, status, ruleset_version, prompt_hash, champion_player_id,
-              protocol_bundle_id, benchmark_track_id, benchmark_cohort_id,
+              protocol_bundle_id, benchmark_track_id, benchmark_cohort_id, event_class,
               system_prompt_version_id,
               benchmark_series_id, benchmark_rotation,
               public_state, created_at, updated_at
@@ -559,6 +567,7 @@ export class ArenaService {
       protocolBundleId: row.protocol_bundle_id,
       benchmarkTrackId: row.benchmark_track_id,
       benchmarkCohortId: row.benchmark_cohort_id,
+      eventClass: row.event_class,
       systemPromptVersionId: row.system_prompt_version_id,
       benchmarkSeriesId: row.benchmark_series_id,
       benchmarkRotation: row.benchmark_rotation,
@@ -602,7 +611,9 @@ export class ArenaService {
       created_at: Date;
       benchmark_cohort_id: string;
     }>(`select id, public_state, created_at, benchmark_cohort_id
-          from tournaments where status = 'COMPLETED' order by created_at`);
+          from tournaments
+         where status = 'COMPLETED' and event_class = 'RATED'
+         order by created_at`);
     // The public board is always a single comparable cohort. Until the UI
     // exposes a cohort selector, use the cohort of the most recently completed
     // tournament and never merge incompatible historical protocols into it.
@@ -923,6 +934,7 @@ export class ArenaService {
           tournamentId,
           name: `${series.name} · ${rotation + 1}/${series.rotation_count}`,
           rulesetVersion: series.ruleset_version,
+          eventClass: series.event_class,
           protocolBundleId: series.protocol_bundle_id,
           benchmarkTrack: series.benchmark_track,
           effectiveSystemPrompt: selectedPrompt.prompt,

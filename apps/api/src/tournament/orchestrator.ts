@@ -46,6 +46,7 @@ export interface ArenaTournamentSetup {
   tournamentId?: string;
   name: string;
   rulesetVersion: string;
+  eventClass?: "RATED" | "EXHIBITION";
   protocolBundleId?: string;
   benchmarkTrack?: BenchmarkTrackIdentity;
   effectiveSystemPrompt?: ReturnType<typeof buildEffectiveSystemPrompt>;
@@ -68,6 +69,7 @@ export interface OrchestratorRuntime {
   tournamentId: string;
   name: string;
   rulesetVersion: string;
+  eventClass?: "RATED" | "EXHIBITION";
   protocolBundle: DecisionProtocolBundleDefinition;
   benchmarkTrack?: BenchmarkTrackIdentity;
   systemPromptVersionId?: string;
@@ -129,6 +131,7 @@ function publicState(runtime: OrchestratorRuntime): unknown {
     tournamentId: runtime.tournamentId,
     name: runtime.name,
     rulesetVersion: runtime.rulesetVersion,
+    eventClass: runtime.eventClass ?? "RATED",
     protocolBundleId: runtime.protocolBundle.id,
     benchmarkTrackId: runtime.benchmarkTrack?.id ?? "legacy/native-unclassified",
     benchmarkCohortId: runtime.benchmarkTrack?.cohortId ?? "legacy/native-unclassified",
@@ -250,6 +253,7 @@ export class TournamentOrchestrator {
       tournamentId,
       name: setup.name,
       rulesetVersion: setup.rulesetVersion,
+      eventClass: setup.eventClass ?? "RATED",
       protocolBundle,
       ...(setup.benchmarkTrack ? { benchmarkTrack: jsonSafe(setup.benchmarkTrack) } : {}),
       ...(setup.systemPromptVersionId ? { systemPromptVersionId: setup.systemPromptVersionId } : {}),
@@ -308,7 +312,9 @@ export class TournamentOrchestrator {
         decisionTimeoutMs,
         decisionConfig,
         managedByArena: setup.managedByArena === true,
+        eventClass: setup.eventClass ?? "RATED",
       },
+      eventClass: setup.eventClass ?? "RATED",
       promptHash: effectivePrompt.sha256,
       protocolBundleId: protocolBundle.id,
       benchmarkTrackId: setup.benchmarkTrack?.id ?? "legacy/native-unclassified",
@@ -329,6 +335,7 @@ export class TournamentOrchestrator {
         decisionTimeoutMs,
         decisionConfig,
         rulesetVersion: setup.rulesetVersion,
+        eventClass: setup.eventClass ?? "RATED",
         modelConfigHashes: Object.fromEntries(Object.entries(setup.frozenModelConfigByPlayer ?? {})
           .map(([playerId, config]) => [playerId, modelConfigHash(config)])),
       }),
