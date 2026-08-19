@@ -6,7 +6,6 @@ import type {
 import { ModelProtocolError, type ProtocolErrorCode } from "../../../../packages/contracts/src/model-protocol.js";
 import type { ActionCommand } from "../../../../packages/domain/src/betting.js";
 import {
-  ProviderCallError,
   type ModelProvider,
   type ProviderDecision,
   type ProviderErrorKind,
@@ -38,6 +37,7 @@ export interface DecisionRunnerInput {
   resumeState?: DecisionResumeState | null;
   saveResumeState?: (state: DecisionResumeState) => Promise<void>;
   auditTurn?: (turn: DecisionTurnAudit) => Promise<void>;
+  checkpointTurn?: (checkpoint: DecisionTurnCheckpoint) => Promise<void>;
 }
 
 export interface CallAudit {
@@ -54,6 +54,28 @@ export interface DecisionResumeState {
   correction: string | null;
   calls: CallAudit[];
   pendingHistoryQuery?: HistoryQuery | null;
+  pendingOutput?: DecisionPendingOutput | null;
+  pendingInfrastructureFailure?: DecisionPendingInfrastructureFailure | null;
+  infrastructureAttempts?: number;
+}
+
+export interface DecisionPendingOutput {
+  turnIndex: number;
+  parsed: ProviderDecision["parsed"];
+  rawText: string;
+  latencyMs: number;
+  usage: ProviderDecision["usage"];
+  providerRequestId: string | null;
+  transportAudit?: ProviderDecision["transportAudit"];
+}
+
+export interface DecisionPendingInfrastructureFailure {
+  turnIndex: number;
+  errorKind: ProviderErrorKind;
+  message: string;
+  retryable: boolean;
+  exhausted: boolean;
+  retryDelayMs: number;
 }
 
 export interface DecisionTurnAudit {
@@ -69,6 +91,11 @@ export interface DecisionTurnAudit {
     providerRequestId: string | null;
     transportAudit?: ProviderDecision["transportAudit"];
   };
+}
+
+export interface DecisionTurnCheckpoint {
+  turn: DecisionTurnAudit;
+  resumeState: DecisionResumeState;
 }
 
 export type DecisionRunnerResult =
@@ -158,15 +185,92 @@ export async function runModelDecision(
   let protocolFailures = input.resumeState?.protocolFailures ?? 0;
   let correction: string | null = input.resumeState?.correction ?? null;
   let pendingHistoryQuery: HistoryQuery | null = input.resumeState?.pendingHistoryQuery ?? null;
-  const saveResumeState = async () => input.saveResumeState?.({
+  let pendingOutput: DecisionPendingOutput | null = input.resumeState?.pendingOutput ?? null;
+  let pendingInfrastructureFailure: DecisionPendingInfrastructureFailure | null =
+    input.resumeState?.pendingInfrastructureFailure ?? null;
+  let infrastructureAttempts = input.resumeState?.infrastructureAttempts ?? 0;
+  if (!Number.isSafeInteger(infrastructureAttempts) || infrastructureAttempts < 0) {
+    throw new Error("Decision resume infrastructureAttempts must be a non-negative integer");
+  }
+  if (pendingOutput && pendingInfrastructureFailure) {
+    throw new Error("Decision resume state cannot contain two pending provider outcomes");
+  }
+  if (pendingOutput && pendingHistoryQuery) {
+    throw new Error("Decision resume state cannot contain pending output and history simultaneously");
+  }
+  const assertPendingTurn = (
+    turnIndex: number,
+    expectedOutcome: CallAudit["outcome"],
+  ): void => {
+    const call = calls[turnIndex - 1];
+    if (!call || call.attempt !== turnIndex || call.outcome !== expectedOutcome) {
+      throw new Error("Decision resume pending outcome does not match its call audit");
+    }
+  };
+  if (pendingOutput) assertPendingTurn(pendingOutput.turnIndex, "SUCCESS");
+  if (pendingInfrastructureFailure) {
+    assertPendingTurn(pendingInfrastructureFailure.turnIndex, "INFRA_ERROR");
+  }
+  const currentResumeState = (): DecisionResumeState => ({
     historyResults: [...historyResults],
     protocolFailures,
     correction,
     calls: [...calls],
     pendingHistoryQuery,
+    pendingOutput,
+    pendingInfrastructureFailure,
+    infrastructureAttempts,
   });
+  const saveResumeState = async () => input.saveResumeState?.(currentResumeState());
+  const checkpointTurn = async (turn: DecisionTurnAudit): Promise<void> => {
+    const resumeState = currentResumeState();
+    if (input.checkpointTurn) {
+      await input.checkpointTurn({ turn, resumeState });
+      return;
+    }
+    await input.auditTurn?.(turn);
+    await input.saveResumeState?.(resumeState);
+  };
 
   while (true) {
+    if (protocolFailures > 1
+      && !pendingOutput
+      && !pendingHistoryQuery
+      && !pendingInfrastructureFailure) {
+      if (!input.fallbackAction) throw new Error("Poker fallback action is not configured");
+      return {
+        status: "ACTION",
+        action: input.fallbackAction(),
+        response: null,
+        usedFallback: true,
+        protocolFailures,
+        historyResults,
+        calls,
+      };
+    }
+
+    if (pendingInfrastructureFailure) {
+      const failure = pendingInfrastructureFailure;
+      if (failure.exhausted || !failure.retryable) {
+        if (!input.checkpointTurn) {
+          pendingInfrastructureFailure = null;
+          infrastructureAttempts = 0;
+          await saveResumeState();
+        }
+        return {
+          status: "PAUSED_INFRA",
+          errorKind: failure.errorKind,
+          message: failure.message,
+          protocolFailures,
+          historyResults,
+          calls,
+        };
+      }
+      pendingInfrastructureFailure = null;
+      await saveResumeState();
+      if (failure.retryDelayMs > 0) await wait(failure.retryDelayMs);
+    }
+
     if (pendingHistoryQuery) {
       try {
         if (!input.executeHistoryQuery) throw new Error("History queries are not available");
@@ -206,10 +310,11 @@ export async function runModelDecision(
         };
       }
     }
-    let decision: ProviderDecision | null = null;
-    for (let infrastructureAttempt = 1; infrastructureAttempt <= config.maxInfrastructureAttempts; infrastructureAttempt += 1) {
+
+    if (!pendingOutput) {
       const turnRequest = withFeedback(input.request, historyResults, correction, budget);
       let providerError: unknown = null;
+      let decision: ProviderDecision | null = null;
       try {
         decision = await input.provider.decide(turnRequest);
       } catch (error) {
@@ -224,7 +329,18 @@ export async function runModelDecision(
           usage: decision.usage,
         };
         calls.push(call);
-        await input.auditTurn?.({
+        infrastructureAttempts = 0;
+        pendingInfrastructureFailure = null;
+        pendingOutput = {
+          turnIndex: call.attempt,
+          parsed: decision.parsed,
+          rawText: decision.rawText,
+          latencyMs: decision.latencyMs,
+          usage: decision.usage,
+          providerRequestId: decision.providerRequestId,
+          ...(decision.transportAudit ? { transportAudit: decision.transportAudit } : {}),
+        };
+        await checkpointTurn({
           turnIndex: call.attempt,
           request: turnRequest,
           outcome: call.outcome,
@@ -238,42 +354,45 @@ export async function runModelDecision(
             ...(decision.transportAudit ? { transportAudit: decision.transportAudit } : {}),
           },
         });
-        await saveResumeState();
-        break;
-      }
-      const classified = input.provider.classifyError(providerError);
-      const call: CallAudit = classified.kind === "INVALID_RESPONSE" ? {
-        attempt: calls.length + 1,
-        outcome: "PROTOCOL_ERROR",
-        errorKind: classified.kind,
-        latencyMs: null,
-        usage: null,
-      } : {
-        attempt: calls.length + 1,
-        outcome: "INFRA_ERROR",
-        errorKind: classified.kind,
-        latencyMs: null,
-        usage: null,
-      };
-      calls.push(call);
-      await input.auditTurn?.({
-        turnIndex: call.attempt,
-        request: turnRequest,
-        outcome: call.outcome,
-        errorKind: call.errorKind,
-        latencyMs: null,
-        usage: null,
-        ...(classified.rawResponseText ? {
-          response: {
-            rawText: classified.rawResponseText,
-            providerRequestId: null,
-          },
-        } : {}),
-      });
-      if (classified.kind === "INVALID_RESPONSE") {
-        if (input.request.parserPolicy === "arena-parser-strict-v1") {
-          correction = classified.message.match(/^[A-Z][A-Z_]+$/)?.[0] ?? "INVALID_JSON";
+      } else {
+        const classified = input.provider.classifyError(providerError);
+        const call: CallAudit = classified.kind === "INVALID_RESPONSE" ? {
+          attempt: calls.length + 1,
+          outcome: "PROTOCOL_ERROR",
+          errorKind: classified.kind,
+          latencyMs: null,
+          usage: null,
+        } : {
+          attempt: calls.length + 1,
+          outcome: "INFRA_ERROR",
+          errorKind: classified.kind,
+          latencyMs: null,
+          usage: null,
+        };
+        calls.push(call);
+        const turn: DecisionTurnAudit = {
+          turnIndex: call.attempt,
+          request: turnRequest,
+          outcome: call.outcome,
+          errorKind: call.errorKind,
+          latencyMs: null,
+          usage: null,
+          ...(classified.rawResponseText !== undefined ? {
+            response: {
+              rawText: classified.rawResponseText,
+              providerRequestId: null,
+            },
+          } : {}),
+        };
+        if (classified.kind === "INVALID_RESPONSE") {
+          pendingOutput = null;
+          pendingInfrastructureFailure = null;
+          infrastructureAttempts = 0;
           protocolFailures += 1;
+          correction = input.request.parserPolicy === "arena-parser-strict-v1"
+            ? classified.message.match(/^[A-Z][A-Z_]+$/)?.[0] ?? "INVALID_JSON"
+            : classified.message;
+          await checkpointTurn(turn);
           if (protocolFailures > 1) {
             if (!input.fallbackAction) throw new Error("Poker fallback action is not configured");
             return {
@@ -286,63 +405,43 @@ export async function runModelDecision(
               calls,
             };
           }
-        } else {
-          correction = classified.message;
+          continue;
         }
-        await saveResumeState();
-        break;
-      }
-      await saveResumeState();
-      if (!classified.retryable || infrastructureAttempt === config.maxInfrastructureAttempts) {
-        return {
-          status: "PAUSED_INFRA",
+        infrastructureAttempts += 1;
+        const exhausted = !classified.retryable
+          || infrastructureAttempts >= config.maxInfrastructureAttempts;
+        pendingInfrastructureFailure = {
+          turnIndex: call.attempt,
           errorKind: classified.kind,
           message: classified.message,
-          protocolFailures,
-          historyResults,
-          calls,
+          retryable: classified.retryable,
+          exhausted,
+          retryDelayMs: exhausted
+            ? 0
+            : config.infrastructureRetryDelaysMs[infrastructureAttempts - 1] ?? 0,
         };
+        await checkpointTurn(turn);
+        continue;
       }
-      const retryDelayMs = config.infrastructureRetryDelaysMs[infrastructureAttempt - 1] ?? 0;
-      if (retryDelayMs > 0) await wait(retryDelayMs);
     }
 
+    const decision: ProviderDecision = {
+      parsed: pendingOutput.parsed,
+      rawText: pendingOutput.rawText,
+      usage: pendingOutput.usage,
+      latencyMs: pendingOutput.latencyMs,
+      providerRequestId: pendingOutput.providerRequestId,
+      ...(pendingOutput.transportAudit ? { transportAudit: pendingOutput.transportAudit } : {}),
+    };
     try {
-      if (!decision) {
-        if (input.request.parserPolicy === "arena-parser-strict-v1") continue;
-        throw new ProviderCallError("INVALID_RESPONSE", correction ?? "Invalid model response", false);
-      }
       if (decision.parsed.type === "history_query") {
         if (!input.executeHistoryQuery) throw new Error("History queries are not available");
         if (budget.state.maxQueries === 0) {
           throw new ModelProtocolError("HISTORY_QUERY_INVALID", "History queries are disabled for this track");
         }
         pendingHistoryQuery = decision.parsed.query;
+        pendingOutput = null;
         await saveResumeState();
-        try {
-          const records = await input.executeHistoryQuery(pendingHistoryQuery);
-          historyResults.push(input.historyProtocolVersion === "arena-history-v2"
-            ? budget.consumeBounded(pendingHistoryQuery, records)
-            : budget.consume(pendingHistoryQuery, records));
-          pendingHistoryQuery = null;
-          correction = null;
-          await saveResumeState();
-        } catch (error) {
-          if (error instanceof ModelProtocolError) {
-            pendingHistoryQuery = null;
-            throw error;
-          }
-          if (input.historyProtocolVersion !== "arena-history-v2") throw error;
-          await saveResumeState();
-          return {
-            status: "PAUSED_INFRA",
-            errorKind: "SERVER",
-            message: "Arena history service is unavailable",
-            protocolFailures,
-            historyResults,
-            calls,
-          };
-        }
         continue;
       }
       if (decision.parsed.type !== "action" || !input.validateAction) {
@@ -358,10 +457,12 @@ export async function runModelDecision(
         calls,
       };
     } catch (error) {
+      pendingOutput = null;
+      infrastructureAttempts = 0;
       protocolFailures += 1;
+      correction = correctionCode(error);
+      await saveResumeState();
       if (protocolFailures <= 1) {
-        correction = correctionCode(error);
-        await saveResumeState();
         continue;
       }
       if (!input.fallbackAction) throw new Error("Poker fallback action is not configured");
