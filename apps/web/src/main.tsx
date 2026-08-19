@@ -11,6 +11,7 @@ import "@fontsource/manrope/latin-400.css";
 import "@fontsource/manrope/latin-500.css";
 import "@fontsource/manrope/latin-600.css";
 import "./styles.css";
+import "./hand-fork-admin.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing #root element");
