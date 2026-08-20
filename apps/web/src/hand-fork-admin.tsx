@@ -30,6 +30,7 @@ import {
   isHandForkActive,
   parseHandForkCreateAttempts,
 } from "./hand-fork-admin-model";
+import { DecisionBranchPublicationPanel } from "./decision-branch-admin";
 import { ProviderLogo } from "./provider-logo";
 import { SelectControl } from "./select-control";
 import type { ModelConfig, TournamentSummary } from "./types";
@@ -163,11 +164,11 @@ function turnOutcomeLabel(outcome: NonNullable<HandForkTrial["turns"]>[number]["
 function errorMessage(error: unknown, locale: UiLocale): string {
   if (!(error instanceof Error)) return uiText(locale, "操作失败", "Operation failed");
   const labels: Record<string, [string, string]> = {
-    hand_fork_target_unavailable: ["所选模型配置不可用于分叉测试", "A selected model configuration is unavailable"],
+    hand_fork_target_unavailable: ["所选模型配置不可用于决策复测", "A selected model configuration is unavailable"],
     hand_fork_conflict: ["实验状态已变化，请刷新后重试", "The run changed state; refresh and retry"],
     hand_fork_source_unavailable: ["该决策点已无法安全复现", "This decision point can no longer be reproduced safely"],
     source_decision_not_found: ["找不到该决策点", "Decision point not found"],
-    hand_fork_failed: ["手牌分叉服务暂时不可用", "Hand fork service is temporarily unavailable"],
+    hand_fork_failed: ["决策复测服务暂时不可用", "Decision rerun service is temporarily unavailable"],
   };
   const label = labels[error instanceof ApiError ? error.code : error.message];
   return label ? uiText(locale, ...label) : error.message;
@@ -248,7 +249,7 @@ function ModelPicker({ models, selected, onToggle }: {
 
 function ForkHistory({ forks, onSelect }: { forks: AdminHandFork[]; onSelect: (id: string) => void }) {
   const { locale, text } = useUiPreferences();
-  if (forks.length === 0) return <p className="hand-fork-history-empty">{text("还没有分叉实验", "No hand forks yet")}</p>;
+  if (forks.length === 0) return <p className="hand-fork-history-empty">{text("还没有决策复测", "No decision reruns yet")}</p>;
   return <div className="hand-fork-history">
     {forks.slice(0, 12).map((fork) => {
       const progress = handForkProgress(fork);
@@ -404,14 +405,14 @@ function HandForkSetup({ csrfToken, onOpenFork }: { csrfToken: string; onOpenFor
 
   const loading = tournaments.loading || models.loading || forks.loading;
   const resourceError = tournaments.error || models.error || forks.error;
-  if (loading) return <LoadingBlock label={text("正在读取手牌分叉配置", "Loading hand fork configuration")} />;
+  if (loading) return <LoadingBlock label={text("正在读取决策复测配置", "Loading decision rerun configuration")} />;
   if (resourceError) return <ErrorBlock message={resourceError} onRetry={() => void Promise.all([tournaments.refresh(), models.refresh(), forks.refresh()])} />;
-  if (completedTournaments.length === 0) return <div className="hand-fork-admin-page"><div className="admin-heading"><div><h1>{text("手牌分叉", "Hand forks")}</h1></div></div><EmptyState title={text("还没有可复测的赛事", "No eligible tournaments")} body={text("完成一场赛事后即可复现其中的模型决策。", "Complete a tournament to replay its model decisions.")} /></div>;
+  if (completedTournaments.length === 0) return <div className="hand-fork-admin-page"><div className="admin-heading"><div><h1>{text("决策复测", "Decision reruns")}</h1></div></div><EmptyState title={text("还没有可复测的赛事", "No eligible tournaments")} body={text("完成一场赛事后即可复现其中的模型决策。", "Complete a tournament to rerun its model decisions.")} /></div>;
 
   const totalCalls = selectedModels.length * sampleCount;
   const unavailableCount = (sources.data?.sources.length ?? 0) - availableSources.length;
   return <div className="hand-fork-admin-page">
-    <div className="admin-heading"><div><h1>{text("手牌分叉", "Hand forks")}</h1></div></div>
+    <div className="admin-heading"><div><h1>{text("决策复测", "Decision reruns")}</h1></div></div>
     <form className="hand-fork-setup" onSubmit={submit}>
       <section className="hand-fork-source-index">
         <header><span>01</span><h2>{text("决策点", "Decision point")}</h2></header>
@@ -420,7 +421,7 @@ function HandForkSetup({ csrfToken, onOpenFork }: { csrfToken: string; onOpenFor
           <label><span>{text("手牌", "Hand")}</span><SelectControl value={handNo > 0 ? String(handNo) : ""} onChange={updateHand} disabled={!selectedTournament} options={selectedTournament ? Array.from({ length: selectedTournament.publicState.completedHands }, (_, index) => selectedTournament.publicState.completedHands - index).map((number) => ({ value: String(number), label: `H${String(number).padStart(3, "0")}` })) : []} /></label>
           <label className="wide"><span>{text("模型行动", "Model decision")}</span><SelectControl value={selectedSource?.decisionId ?? ""} onChange={(value) => setSearchParams((current) => setQueryValues(current, { decisionId: value }))} disabled={sources.loading || availableSources.length === 0} options={availableSources.map((source) => ({ value: source.decisionId, label: decisionLabel(source.source, locale) }))} /></label>
         </div>
-        {sources.loading ? <LoadingBlock label={text("正在核验决策点", "Auditing decision points")} /> : sources.error ? <ErrorBlock message={sources.error} onRetry={() => void sources.refresh()} /> : selectedSource ? <SourceSnapshot source={selectedSource.source} integrityHash={selectedSource.sourceIntegrity.visibleInputHash} /> : <EmptyState title={text("本手没有可复测的决策", "No reproducible decision in this hand")} body={text("仅完整留存请求审计的成功决策可用于分叉。", "Only successful decisions with a complete request audit are eligible.")} />}
+        {sources.loading ? <LoadingBlock label={text("正在核验决策点", "Auditing decision points")} /> : sources.error ? <ErrorBlock message={sources.error} onRetry={() => void sources.refresh()} /> : selectedSource ? <SourceSnapshot source={selectedSource.source} integrityHash={selectedSource.sourceIntegrity.visibleInputHash} /> : <EmptyState title={text("本手没有可复测的决策", "No reproducible decision in this hand")} body={text("仅完整留存请求审计的成功决策可用于复测。", "Only successful decisions with a complete request audit are eligible for reruns.")} />}
         {unavailableCount > 0 && <p className="hand-fork-source-audit">{text(`${availableSources.length} 个可用 · ${unavailableCount} 个未通过审计`, `${availableSources.length} available · ${unavailableCount} excluded by audit`)}</p>}
       </section>
 
@@ -517,7 +518,7 @@ function TargetComparison({ targets, onOpenTarget }: { targets: HandForkTarget[]
     <header><h2 id="hand-fork-comparison-heading">{text("模型对比", "Model comparison")}</h2></header>
     <div className="hand-fork-comparison-scroll">
       <table>
-        <caption className="visually-hidden">{text("手牌分叉模型指标对比", "Hand fork model metric comparison")}</caption>
+        <caption className="visually-hidden">{text("决策复测模型指标对比", "Decision rerun model metric comparison")}</caption>
         <thead><tr>
           <th scope="col" aria-sort={ariaSort("model")}>{heading("model", "模型", "Model")}</th>
           <th scope="col">{text("行动分布", "Action distribution")}</th>
@@ -638,10 +639,10 @@ function HandForkResult({ fork, csrfToken, onBack, onRefresh, refreshError }: {
   return <div className="hand-fork-admin-page hand-fork-result-page">
     <header className="hand-fork-result-header">
       <button type="button" onClick={onBack}>← {text("全部实验", "All runs")}</button>
-      <div><span>{fork.source.tournamentName} · H{String(fork.source.handNo).padStart(3, "0")}</span><h1>{text("手牌分叉", "Hand fork")}</h1><small>{fork.targets.length} {text("个模型", "models")} × {fork.sampleCount} · {Math.round(fork.timeoutMs / 1_000)}s · {fork.maxParallelTargets} {text("路并行", "parallel")}</small></div>
+      <div><span>{fork.source.tournamentName} · H{String(fork.source.handNo).padStart(3, "0")}</span><h1>{text("决策复测", "Decision rerun")}</h1><small>{fork.targets.length} {text("个模型", "models")} × {fork.sampleCount} · {Math.round(fork.timeoutMs / 1_000)}s · {fork.maxParallelTargets} {text("路并行", "parallel")}</small></div>
       <strong className={`hand-fork-status is-${fork.status.toLowerCase()}`}><i />{forkStatusLabel(fork.status, locale)}</strong>
     </header>
-    <div className="hand-fork-progress" role="progressbar" aria-label={text("分叉实验进度", "Hand fork progress")} aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.terminal}><i style={{ width: `${progress.ratio * 100}%` }} /><span>{progress.terminal} / {progress.total}</span></div>
+    <div className="hand-fork-progress" role="progressbar" aria-label={text("决策复测进度", "Decision rerun progress")} aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.terminal}><i style={{ width: `${progress.ratio * 100}%` }} /><span>{progress.terminal} / {progress.total}</span></div>
     {refreshError && <div className="notice" role="status">{text("实时刷新暂时失败，正在自动重试。", "Live refresh failed temporarily. Retrying automatically.")}</div>}
     {fork.errorMessage && <div className="notice error">{fork.errorMessage}</div>}
     {error && <p className="form-error" role="alert">{error}</p>}
@@ -663,6 +664,7 @@ function HandForkResult({ fork, csrfToken, onBack, onRefresh, refreshError }: {
       <strong>{target.terminalTrials}/{target.sampleCount}</strong>
     </button>)}</div>
     <TargetComparison targets={fork.targets} onOpenTarget={openTarget} />
+    <DecisionBranchPublicationPanel fork={fork} csrfToken={csrfToken} />
     <div id="hand-fork-trials"><TrialExplorer targets={fork.targets} selectedTargetId={selectedTargetId} onSelectTarget={setSelectedTargetId} /></div>
     <footer className="hand-fork-audit-footer">
       <span>{text("可见输入", "Visible input")} <code>{fork.sourceIntegrity.visibleInputHash.slice(0, 12)}</code></span>
@@ -681,7 +683,7 @@ function HandForkResultLoader({ id, csrfToken, onBack }: { id: string; csrfToken
     const timer = window.setTimeout(() => void detail.refresh(), detail.error ? 4_000 : 1_200);
     return () => window.clearTimeout(timer);
   }, [detail.data, detail.error, detail.refresh]);
-  if (detail.loading || !detail.data && !detail.error) return <LoadingBlock label={text("正在读取分叉实验", "Loading hand fork")} />;
+  if (detail.loading || !detail.data && !detail.error) return <LoadingBlock label={text("正在读取决策复测", "Loading decision rerun")} />;
   if (!detail.data) return <div className="hand-fork-admin-page"><button className="hand-fork-back-button" type="button" onClick={onBack}>← {text("全部实验", "All runs")}</button><ErrorBlock message={detail.error ?? text("实验不存在", "Run not found")} onRetry={() => void detail.refresh()} /></div>;
   return <HandForkResult fork={detail.data.handFork} csrfToken={csrfToken} onBack={onBack} onRefresh={detail.refresh} refreshError={detail.error} />;
 }

@@ -39,7 +39,7 @@ export function AdminArea() {
           <NavLink to="/admin/models">{text("模型与 API", "Models & API")}</NavLink>
           <NavLink to="/admin/prompts">{text("提示词版本", "Prompt versions")}</NavLink>
           <NavLink to="/admin/consistency">{text("一致性检测", "Consistency")}</NavLink>
-          <NavLink to="/admin/hand-forks">{text("手牌分叉", "Hand forks")}</NavLink>
+          <NavLink to="/admin/hand-forks">{text("决策复测", "Decision reruns")}</NavLink>
           <NavLink to="/admin/moments">{text("精彩瞬间", "Moments")}</NavLink>
           <NavLink to="/admin/tournaments/new">{text("创建赛事", "Create")}</NavLink>
           <Link to="/tournaments">{text("赛事档案", "Archive")}</Link>
