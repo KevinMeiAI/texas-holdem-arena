@@ -17,6 +17,7 @@
     "start": "node dist-server/apps/api/src/index.js",
     "test": "vitest run",
     "test:social-card-worker": "npm run build:api && node scripts/smoke-moment-social-card-worker.mjs",
+    "test:decision-branch-social-card-worker": "npm run build:api && node scripts/smoke-decision-branch-social-card-worker.mjs",
     "test:postgres": "vitest run tests/integration apps/api/src/tournament/hand-forks/hand-fork-repository.test.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

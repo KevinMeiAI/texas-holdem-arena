@@ -10,3 +10,4 @@ export * from "./moment-social-card.js";
 export * from "./hand-forks.js";
 export * from "./competitors.js";
 export * from "./decision-branches.js";
+export * from "./decision-branch-social-card.js";

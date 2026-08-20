@@ -62,6 +62,8 @@ describe("Decision Branch social metadata", () => {
       canonicalUrl: "https://arena.example.com:8443/branches/river-mix?lang=en",
       alternateZhUrl: "https://arena.example.com:8443/branches/river-mix",
       alternateEnUrl: "https://arena.example.com:8443/branches/river-mix?lang=en",
+      imageUrl: "https://arena.example.com:8443/api/public/decision-branches/river-mix/social-card/v1/r3/en.png",
+      imageAlt: "River decision branch share card",
     });
 
     const fallback = buildDecisionBranchSocialMetadata(publicBranch({
@@ -70,8 +72,18 @@ describe("Decision Branch social metadata", () => {
       summaryZh: null,
       summaryEn: null,
     }), "zh", "https://arena.example.com");
-    expect(fallback.title).toBe("第 12 手 · 决策分叉");
+    expect(fallback.title).toBe("第 012 手 · 决策分叉");
     expect(fallback.description).toBe("查看第 12 手同一德扑决策点的模型复测结果。");
+
+    const noCrossLanguageFallback = buildDecisionBranchSocialMetadata(publicBranch({
+      titleZh: "只有中文标题",
+      titleEn: null,
+      summaryZh: "只有中文摘要",
+      summaryEn: null,
+    }), "en", "https://arena.example.com");
+    expect(noCrossLanguageFallback.title).toBe("Hand 012 · Decision branch");
+    expect(noCrossLanguageFallback.description)
+      .toBe("Compare repeated model decisions at the same poker spot from hand 12.");
   });
 
   it("escapes editorial text and treats replacement tokens as plain copy", () => {
@@ -116,7 +128,8 @@ describe("Decision Branch page route", () => {
       expect(response.body).toContain('<html lang="en">');
       expect(response.body).toContain('<meta property="og:title" content="River decision branch"');
       expect(response.body).toContain('href="https://arena.example.com/branches/river-mix?lang=en"');
-      expect(response.body).toContain('<meta name="twitter:card" content="summary"');
+      expect(response.body).toContain('<meta name="twitter:card" content="summary_large_image"');
+      expect(response.body).toContain('<meta property="og:image" content="https://arena.example.com/api/public/decision-branches/river-mix/social-card/v1/r3/en.png"');
       expect(response.body).not.toContain("attacker.example");
       expect(response.body).toContain("/assets/current.js");
 

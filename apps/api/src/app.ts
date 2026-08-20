@@ -24,6 +24,7 @@ import { PgDecisionBranchRepository } from "./tournament/decision-branches/decis
 import { registerDecisionBranchPageRoutes } from "./tournament/decision-branches/decision-branch-page-route.js";
 import { registerDecisionBranchRoutes } from "./tournament/decision-branches/decision-branch-routes.js";
 import { DecisionBranchService } from "./tournament/decision-branches/decision-branch-service.js";
+import { registerDecisionBranchSocialCardRoutes } from "./tournament/decision-branches/decision-branch-social-card-route.js";
 import { PgDecisionBranchSourceReader } from "./tournament/decision-branches/decision-branch-source.js";
 import { HistoryQueryService } from "./tournament/history-query-service.js";
 import { PgHandForkRepository } from "./tournament/hand-forks/hand-fork-repository.js";
@@ -168,6 +169,9 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
       });
       await registerDecisionBranchRoutes(app, {
         ...authContext,
+        decisionBranches: decisionBranchService,
+      });
+      await registerDecisionBranchSocialCardRoutes(app, {
         decisionBranches: decisionBranchService,
       });
       await registerMomentRoutes(app, { ...authContext, arena, moments: momentService });

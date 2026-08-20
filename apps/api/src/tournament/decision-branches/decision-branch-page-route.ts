@@ -1,7 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { PublicDecisionBranchDto } from "../../../../../packages/contracts/src/index.js";
+import {
+  DECISION_BRANCH_SOCIAL_CARD_URL_VERSION,
+  type PublicDecisionBranchDto,
+} from "../../../../../packages/contracts/src/index.js";
 
 export type DecisionBranchPageLocale = "zh" | "en";
 
@@ -22,6 +25,8 @@ export interface DecisionBranchSocialMetadata {
   canonicalUrl: string;
   alternateZhUrl: string;
   alternateEnUrl: string;
+  imageUrl: string;
+  imageAlt: string;
   publishedAt: string;
 }
 
@@ -75,25 +80,31 @@ function localizedDecisionBranchUrl(
   return url.href;
 }
 
+export function decisionBranchSocialCardPath(
+  branch: Pick<PublicDecisionBranchDto, "slug" | "publicationRevision">,
+  locale: DecisionBranchPageLocale,
+): string {
+  return `/api/public/decision-branches/${branch.slug}/social-card/${DECISION_BRANCH_SOCIAL_CARD_URL_VERSION}/r${branch.publicationRevision}/${locale}.png`;
+}
+
 export function buildDecisionBranchSocialMetadata(
   branch: PublicDecisionBranchDto,
   locale: DecisionBranchPageLocale,
   publicOrigin: string,
 ): DecisionBranchSocialMetadata {
-  const otherTitle = locale === "zh" ? branch.titleEn : branch.titleZh;
   const selectedTitle = locale === "zh" ? branch.titleZh : branch.titleEn;
-  const otherSummary = locale === "zh" ? branch.summaryEn : branch.summaryZh;
   const selectedSummary = locale === "zh" ? branch.summaryZh : branch.summaryEn;
   const handNo = branch.snapshot.source.handNo;
+  const displayHandNo = String(handNo).padStart(3, "0");
   const titleFallback = locale === "zh"
-    ? `第 ${handNo} 手 · 决策分叉`
-    : `Hand ${handNo} · Decision branch`;
+    ? `第 ${displayHandNo} 手 · 决策分叉`
+    : `Hand ${displayHandNo} · Decision branch`;
   const descriptionFallback = locale === "zh"
     ? `查看第 ${handNo} 手同一德扑决策点的模型复测结果。`
     : `Compare repeated model decisions at the same poker spot from hand ${handNo}.`;
-  const title = normalizedCopy(selectedTitle ?? otherTitle, titleFallback, 90, locale);
+  const title = normalizedCopy(selectedTitle, titleFallback, 90, locale);
   const description = normalizedCopy(
-    selectedSummary ?? otherSummary,
+    selectedSummary,
     descriptionFallback,
     220,
     locale,
@@ -106,6 +117,8 @@ export function buildDecisionBranchSocialMetadata(
     canonicalUrl,
     alternateZhUrl: localizedDecisionBranchUrl(publicOrigin, branch.slug, "zh"),
     alternateEnUrl: localizedDecisionBranchUrl(publicOrigin, branch.slug, "en"),
+    imageUrl: new URL(decisionBranchSocialCardPath(branch, locale), publicOrigin).href,
+    imageAlt: locale === "zh" ? `${title} 分享卡片` : `${title} share card`,
     publishedAt: branch.publishedAt,
   };
 }
@@ -133,10 +146,17 @@ export function injectDecisionBranchSocialMetadata(
     <meta property="og:description" content="${escaped.description}" />
     <meta property="og:url" content="${escaped.canonicalUrl}" />
     <meta property="og:locale" content="${metadata.locale === "zh" ? "zh_CN" : "en_US"}" />
+    <meta property="og:image" content="${escaped.imageUrl}" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="675" />
+    <meta property="og:image:alt" content="${escaped.imageAlt}" />
     <meta property="article:published_time" content="${escaped.publishedAt}" />
-    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${escaped.title}" />
     <meta name="twitter:description" content="${escaped.description}" />
+    <meta name="twitter:image" content="${escaped.imageUrl}" />
+    <meta name="twitter:image:alt" content="${escaped.imageAlt}" />
     <!-- arena:dynamic-social:end -->`;
 
   return template
