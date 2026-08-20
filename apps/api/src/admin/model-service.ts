@@ -567,6 +567,14 @@ export class ModelConfigService {
         await client.query("rollback");
         return null;
       }
+      if (input.displayName !== undefined) {
+        await client.query(
+          `update competitor_families
+              set display_name = $2, updated_at = now()
+            where id = $1`,
+          [result.rows[0].competitor_family_id, input.displayName],
+        );
+      }
       if (identityChanged) await createRevision(client, id, randomUUID());
       await client.query("commit");
       return this.getModel(id);

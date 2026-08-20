@@ -620,6 +620,8 @@ export interface CompletedTournamentStatistics {
 }
 
 export interface CompetitiveLeaderboardEntry {
+  competitorId: string;
+  revisionIds: string[];
   modelId: string;
   displayName: string;
   providerBrand: ProviderBrand | null;
@@ -635,6 +637,8 @@ export interface CompetitiveLeaderboardEntry {
 }
 
 export interface ReliabilityLeaderboardEntry {
+  competitorId: string;
+  revisionIds: string[];
   modelId: string;
   displayName: string;
   providerBrand: ProviderBrand | null;
@@ -649,6 +653,8 @@ export interface ReliabilityLeaderboardEntry {
 }
 
 export interface EfficiencyLeaderboardEntry {
+  competitorId: string;
+  revisionIds: string[];
   modelId: string;
   displayName: string;
   providerBrand: ProviderBrand | null;
@@ -663,6 +669,8 @@ export interface EfficiencyLeaderboardEntry {
 }
 
 export interface StyleProfileEntry {
+  competitorId: string;
+  revisionIds: string[];
   modelId: string;
   displayName: string;
   providerBrand: ProviderBrand | null;
@@ -676,6 +684,7 @@ export interface StyleProfileEntry {
 }
 
 export interface ArenaLeaderboards {
+  benchmarkCohortId: string | null;
   competition: CompetitiveLeaderboardEntry[];
   reliability: ReliabilityLeaderboardEntry[];
   efficiency: EfficiencyLeaderboardEntry[];
@@ -689,8 +698,11 @@ export interface ArenaLeaderboards {
 }
 
 interface AggregateEntry {
+  competitorId: string;
+  revisionIds: Set<string>;
   modelId: string;
   displayName: string;
+  providerBrand: ProviderBrand | null;
   rating: number;
   points: number;
   tournaments: number;
@@ -736,10 +748,26 @@ function tournamentPoints(fieldSize: number, finishingPosition: number): number 
   return POINTS_BY_FIELD[fieldSize]?.[finishingPosition - 1] ?? 0;
 }
 
-function aggregateEntry(modelId: string, displayName: string): AggregateEntry {
+export interface CompetitorLeaderboardIdentity {
+  competitorFamilyId: string;
+  displayName: string;
+  providerBrand: ProviderBrand | null;
+}
+
+function aggregateEntry(
+  competitorId: string,
+  revisionId: string,
+  displayName: string,
+  providerBrand: ProviderBrand | null,
+): AggregateEntry {
   return {
-    modelId,
+    competitorId,
+    revisionIds: new Set([revisionId]),
+    // Compatibility field: this remains a competitor revision ID and advances
+    // to the latest revision observed in the selected cohort.
+    modelId: revisionId,
     displayName,
+    providerBrand,
     rating: 1500,
     points: 0,
     tournaments: 0,
@@ -780,25 +808,46 @@ function styleProfile(vpip: number, pfr: number): StyleProfileEntry["profile"] {
 
 export function buildArenaLeaderboards(
   records: readonly CompletedTournamentStatistics[],
-  providerBrands: Readonly<Record<string, ProviderBrand | null>> = {},
+  competitorIdentities: Readonly<Record<string, CompetitorLeaderboardIdentity>> = {},
+  benchmarkCohortId: string | null = null,
 ): ArenaLeaderboards {
   const entries = new Map<string, AggregateEntry>();
   const chronological = [...records].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   for (const record of chronological) {
     for (const player of record.statistics.players) {
-      const existing = entries.get(player.playerId);
-      if (existing) existing.displayName = player.displayName;
-      else entries.set(player.playerId, aggregateEntry(player.playerId, player.displayName));
+      const identity = competitorIdentities[player.playerId];
+      const competitorFamilyId = identity?.competitorFamilyId ?? player.playerId;
+      const displayName = identity?.displayName ?? player.displayName;
+      const providerBrand = identity?.providerBrand ?? null;
+      const existing = entries.get(competitorFamilyId);
+      if (existing) {
+        existing.modelId = player.playerId;
+        existing.revisionIds.add(player.playerId);
+        existing.displayName = displayName;
+        existing.providerBrand = providerBrand;
+      } else {
+        entries.set(
+          competitorFamilyId,
+          aggregateEntry(competitorFamilyId, player.playerId, displayName, providerBrand),
+        );
+      }
     }
     const field = record.statistics.players.filter((player) => player.finishingPosition !== null);
-    const priorRatings = new Map(field.map((player) => [player.playerId, entries.get(player.playerId)!.rating]));
+    const competitorId = (playerId: string) => (
+      competitorIdentities[playerId]?.competitorFamilyId ?? playerId
+    );
+    const priorRatings = new Map(field.map((player) => {
+      const id = competitorId(player.playerId);
+      return [id, entries.get(id)!.rating] as const;
+    }));
     const deltas = new Map<string, number>();
     for (const player of field) {
+      const playerCompetitorId = competitorId(player.playerId);
       let comparisonTotal = 0;
       for (const opponent of field) {
         if (opponent.playerId === player.playerId) continue;
-        const playerRating = priorRatings.get(player.playerId) ?? 1500;
-        const opponentRating = priorRatings.get(opponent.playerId) ?? 1500;
+        const playerRating = priorRatings.get(playerCompetitorId) ?? 1500;
+        const opponentRating = priorRatings.get(competitorId(opponent.playerId)) ?? 1500;
         const expected = 1 / (1 + 10 ** ((opponentRating - playerRating) / 400));
         const actual = player.finishingPosition === opponent.finishingPosition
           ? 0.5
@@ -807,11 +856,12 @@ export function buildArenaLeaderboards(
             : 0;
         comparisonTotal += actual - expected;
       }
-      deltas.set(player.playerId, field.length > 1 ? 32 * comparisonTotal / (field.length - 1) : 0);
+      deltas.set(playerCompetitorId, field.length > 1 ? 32 * comparisonTotal / (field.length - 1) : 0);
     }
     for (const player of field) {
-      const entry = entries.get(player.playerId)!;
-      entry.rating += deltas.get(player.playerId) ?? 0;
+      const id = competitorId(player.playerId);
+      const entry = entries.get(id)!;
+      entry.rating += deltas.get(id) ?? 0;
       entry.tournaments += 1;
       entry.finishTotal += player.finishingPosition ?? 0;
       entry.points += tournamentPoints(field.length, player.finishingPosition ?? field.length);
@@ -845,9 +895,11 @@ export function buildArenaLeaderboards(
   }
 
   const competition = [...entries.values()].map((entry): CompetitiveLeaderboardEntry => ({
+    competitorId: entry.competitorId,
+    revisionIds: [...entry.revisionIds],
     modelId: entry.modelId,
     displayName: entry.displayName,
-    providerBrand: providerBrands[entry.modelId] ?? null,
+    providerBrand: entry.providerBrand,
     rating: Math.round(entry.rating),
     points: Math.round(entry.points * 10) / 10,
     tournaments: entry.tournaments,
@@ -861,9 +913,11 @@ export function buildArenaLeaderboards(
     right.rating - left.rating || right.points - left.points || left.averageFinish - right.averageFinish
   ));
   const reliability = [...entries.values()].map((entry): ReliabilityLeaderboardEntry => ({
+    competitorId: entry.competitorId,
+    revisionIds: [...entry.revisionIds],
     modelId: entry.modelId,
     displayName: entry.displayName,
-    providerBrand: providerBrands[entry.modelId] ?? null,
+    providerBrand: entry.providerBrand,
     decisions: entry.decisions,
     validDecisionRate: nullableRate(entry.validDecisions, entry.decisions),
     firstPassRate: nullableRate(entry.firstPassDecisions, entry.decisions),
@@ -878,9 +932,11 @@ export function buildArenaLeaderboards(
     || right.decisions - left.decisions
   ));
   const efficiency = [...entries.values()].map((entry): EfficiencyLeaderboardEntry => ({
+    competitorId: entry.competitorId,
+    revisionIds: [...entry.revisionIds],
     modelId: entry.modelId,
     displayName: entry.displayName,
-    providerBrand: providerBrands[entry.modelId] ?? null,
+    providerBrand: entry.providerBrand,
     decisions: entry.decisions,
     providerCalls: entry.providerCalls,
     averageLatencyMs: mean(entry.latencySamplesMs),
@@ -897,9 +953,11 @@ export function buildArenaLeaderboards(
     const vpipRate = rate(entry.vpipHands, entry.handsPlayed);
     const pfrRate = rate(entry.pfrHands, entry.handsPlayed);
     return {
+      competitorId: entry.competitorId,
+      revisionIds: [...entry.revisionIds],
       modelId: entry.modelId,
       displayName: entry.displayName,
-      providerBrand: providerBrands[entry.modelId] ?? null,
+      providerBrand: entry.providerBrand,
       handsPlayed: entry.handsPlayed,
       vpipRate,
       pfrRate,
@@ -909,10 +967,11 @@ export function buildArenaLeaderboards(
       sampleWarning: entry.handsPlayed < 200,
     };
   }).sort((left, right) => {
-    const rank = new Map(competition.map((entry, index) => [entry.modelId, index]));
-    return (rank.get(left.modelId) ?? Number.MAX_SAFE_INTEGER) - (rank.get(right.modelId) ?? Number.MAX_SAFE_INTEGER);
+    const rank = new Map(competition.map((entry, index) => [entry.competitorId, index]));
+    return (rank.get(left.competitorId) ?? Number.MAX_SAFE_INTEGER) - (rank.get(right.competitorId) ?? Number.MAX_SAFE_INTEGER);
   });
   return {
+    benchmarkCohortId,
     competition,
     reliability,
     efficiency,

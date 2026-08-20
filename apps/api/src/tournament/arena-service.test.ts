@@ -1,7 +1,25 @@
 import type { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import type { ModelConfigService } from "../admin/model-service.js";
-import { ArenaService, TournamentMomentInputError } from "./arena-service.js";
+import {
+  ArenaService,
+  assertDistinctCompetitorFamilies,
+  TournamentMomentInputError,
+} from "./arena-service.js";
+
+describe("arena competitor seats", () => {
+  it("rejects two runtime configurations that represent the same competitor", () => {
+    expect(() => assertDistinctCompetitorFamilies([
+      { competitorFamilyId: "family-a", displayName: "Alpha high" },
+      { competitorFamilyId: "family-a", displayName: "Alpha low" },
+    ])).toThrow("A competitor can occupy only one seat");
+
+    expect(() => assertDistinctCompetitorFamilies([
+      { competitorFamilyId: "family-a", displayName: "Alpha" },
+      { competitorFamilyId: "family-b", displayName: "Beta" },
+    ])).not.toThrow();
+  });
+});
 
 describe("arena tournament statistics report", () => {
   it("returns frozen player brands with the calculated statistics", async () => {

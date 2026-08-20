@@ -114,7 +114,11 @@ describe("tournament statistics", () => {
       createdAt: "2026-08-10T00:00:00.000Z",
       statistics: result.statistics,
       internals: result.internals,
-    }], { a: "deepseek", b: "claude" });
+    }], {
+      a: { competitorFamilyId: "a", displayName: "Alpha", providerBrand: "deepseek" },
+      b: { competitorFamilyId: "b", displayName: "Beta", providerBrand: "claude" },
+      c: { competitorFamilyId: "c", displayName: "Gamma", providerBrand: null },
+    });
 
     expect(boards.competition[0]).toMatchObject({ modelId: "a", providerBrand: "deepseek", rating: 1516, points: 10, championships: 1 });
     expect(boards.competition.at(-1)?.modelId).toBe("b");
@@ -126,6 +130,44 @@ describe("tournament statistics", () => {
     expect(boards.styles.find((entry) => entry.modelId === "a")?.profile).toBe("松凶");
     expect(boards.styles.find((entry) => entry.modelId === "a")?.providerBrand).toBe("deepseek");
     expect(boards.methodology.separation).toContain("never alter");
+  });
+
+  it("keeps one competitive identity across immutable model revisions", () => {
+    const first = calculateTournamentStatistics(state, events);
+    const secondStatistics = {
+      ...first.statistics,
+      players: first.statistics.players.map((player) => (
+        player.playerId === "a"
+          ? { ...player, playerId: "a-v2", displayName: "Alpha v2" }
+          : player
+      )),
+    };
+    const secondInternals = {
+      ...first.internals,
+      "a-v2": first.internals.a!,
+    };
+    const boards = buildArenaLeaderboards([
+      { createdAt: "2026-08-10T00:00:00.000Z", statistics: first.statistics, internals: first.internals },
+      { createdAt: "2026-08-11T00:00:00.000Z", statistics: secondStatistics, internals: secondInternals },
+    ], {
+      a: { competitorFamilyId: "family-alpha", displayName: "Alpha", providerBrand: "deepseek" },
+      "a-v2": { competitorFamilyId: "family-alpha", displayName: "Alpha Prime", providerBrand: "deepseek" },
+      b: { competitorFamilyId: "family-beta", displayName: "Beta", providerBrand: "claude" },
+      c: { competitorFamilyId: "family-gamma", displayName: "Gamma", providerBrand: null },
+    }, "cohort-current");
+
+    const alpha = boards.competition.find((entry) => entry.competitorId === "family-alpha");
+    expect(alpha).toMatchObject({
+      modelId: "a-v2",
+      revisionIds: ["a", "a-v2"],
+      displayName: "Alpha Prime",
+      tournaments: 2,
+      championships: 2,
+      providerBrand: "deepseek",
+    });
+    expect(boards.competition.filter((entry) => entry.competitorId === "family-alpha"))
+      .toHaveLength(1);
+    expect(boards.benchmarkCohortId).toBe("cohort-current");
   });
 
   it("uses the latest frozen display name for a persistent model identity", () => {

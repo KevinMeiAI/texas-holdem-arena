@@ -143,6 +143,35 @@ describe("model configuration credentials", () => {
   });
 });
 
+describe("model competitor identity", () => {
+  it("keeps the public competitor name in sync with the editable model label", async () => {
+    const familyId = "44444444-4444-4444-8444-444444444444";
+    const query = vi.fn(async (sql: string) => {
+      if (sql === "begin" || sql === "commit") return { rows: [], rowCount: null };
+      if (sql.includes("update model_configs")) {
+        return { rows: [{ competitor_family_id: familyId }], rowCount: 1 };
+      }
+      if (sql.includes("update competitor_families")) return { rows: [], rowCount: 1 };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const release = vi.fn();
+    const service = new ModelConfigService({
+      connect: vi.fn(async () => ({ query, release } as unknown as PoolClient)),
+    } as unknown as Pool, MASTER_KEY);
+    vi.spyOn(service, "getModel").mockResolvedValue({ id: MODEL_CONFIG_ID } as never);
+
+    await service.updateModel(MODEL_CONFIG_ID, { displayName: "Alpha Prime" });
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("update competitor_families"),
+      [familyId, "Alpha Prime"],
+    );
+    expect(query.mock.calls.findIndex(([sql]) => String(sql).includes("update competitor_families")))
+      .toBeLessThan(query.mock.calls.findIndex(([sql]) => sql === "commit"));
+    expect(release).toHaveBeenCalledOnce();
+  });
+});
+
 describe("model target freezing", () => {
   it("freezes the active current revision with one authoritative read and a timeout override", async () => {
     const encryptedApiKey = encryptJson(

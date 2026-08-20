@@ -188,6 +188,8 @@ export interface SystemPromptVersion {
 }
 
 export interface LeaderboardEntry {
+  competitorId: string;
+  revisionIds: string[];
   modelId: string;
   displayName: string;
   providerBrand: ProviderBrand | null;
@@ -203,6 +205,8 @@ export interface LeaderboardEntry {
 }
 
 export interface ReliabilityLeaderboardEntry {
+  competitorId: string;
+  revisionIds: string[];
   modelId: string;
   displayName: string;
   providerBrand: ProviderBrand | null;
@@ -217,6 +221,8 @@ export interface ReliabilityLeaderboardEntry {
 }
 
 export interface EfficiencyLeaderboardEntry {
+  competitorId: string;
+  revisionIds: string[];
   modelId: string;
   displayName: string;
   providerBrand: ProviderBrand | null;
@@ -231,6 +237,8 @@ export interface EfficiencyLeaderboardEntry {
 }
 
 export interface StyleProfileEntry {
+  competitorId: string;
+  revisionIds: string[];
   modelId: string;
   displayName: string;
   providerBrand: ProviderBrand | null;
@@ -244,6 +252,7 @@ export interface StyleProfileEntry {
 }
 
 export interface LeaderboardResponse {
+  benchmarkCohortId: string | null;
   leaderboard: LeaderboardEntry[];
   competition: LeaderboardEntry[];
   reliability: ReliabilityLeaderboardEntry[];

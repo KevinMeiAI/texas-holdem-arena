@@ -137,6 +137,21 @@ function desiredStatusAfterAwait(record: ActiveArena): ActiveArena["desiredStatu
   return record.desiredStatus;
 }
 
+export function assertDistinctCompetitorFamilies(
+  models: readonly { competitorFamilyId: string; displayName: string }[],
+): void {
+  const firstModelByFamily = new Map<string, string>();
+  for (const model of models) {
+    const first = firstModelByFamily.get(model.competitorFamilyId);
+    if (first) {
+      throw new Error(
+        `A competitor can occupy only one seat: ${first} and ${model.displayName} share the same identity`,
+      );
+    }
+    firstModelByFamily.set(model.competitorFamilyId, model.displayName);
+  }
+}
+
 export class ArenaService {
   readonly #records = new Map<string, ActiveArena>();
   readonly #statisticsCache = new Map<string, TournamentStatisticsComputation>();
@@ -218,6 +233,7 @@ export class ArenaService {
       if (!model) throw new Error(`Model configuration not found: ${id}`);
       return model;
     }));
+    assertDistinctCompetitorFamilies(models);
     const interfaceTrack = input.interfaceTrack ?? "native";
     const historyMode = input.historyMode ?? "query_only";
     const selectedPrompt = await this.#systemPrompts.resolve(input.systemPromptVersionId);
@@ -307,6 +323,7 @@ export class ArenaService {
       if (!model) throw new Error(`Model configuration not found: ${id}`);
       return model;
     }));
+    assertDistinctCompetitorFamilies(revisions);
     const rotationCount = revisions.length;
     if (input.rotations !== undefined && input.rotations !== rotationCount) {
       throw new Error(`A balanced benchmark series requires exactly ${rotationCount} rotations`);
@@ -672,17 +689,21 @@ export class ArenaService {
       record.statistics.players.map((player) => player.playerId)
     )))];
     const revisions = await this.models.revisionDetails(revisionIds);
-    const providerBrands: Record<string, ProviderBrand | null> = Object.fromEntries(revisions.map((model) => [
-      model.revisionId,
-      resolveProviderBrand({
+    const competitorIdentities = Object.fromEntries(revisions.map((model) => {
+      const providerBrand = resolveProviderBrand({
         providerProfile: model.providerProfile,
         providerType: model.providerType,
         label: model.providerLabel,
         baseUrl: model.providerBaseUrl,
         modelId: model.modelId,
-      }),
-    ]));
-    return buildArenaLeaderboards(completedRecords, providerBrands);
+      });
+      return [model.revisionId, {
+        competitorFamilyId: model.competitorFamilyId,
+        displayName: model.competitorFamilyDisplayName,
+        providerBrand,
+      }] as const;
+    }));
+    return buildArenaLeaderboards(completedRecords, competitorIdentities, selectedCohortId);
   }
 
   async fairness(tournamentId: string): Promise<unknown> {
