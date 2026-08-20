@@ -3946,7 +3946,7 @@ span.hand-nav {
 .moment-grid {
   margin-top: var(--space-lg);
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
   gap: var(--space-sm);
 }
 
@@ -4073,8 +4073,9 @@ span.hand-nav {
 .moment-facts > div {
   min-width: 0;
   padding-top: var(--space-2xs);
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: start;
   gap: var(--space-sm);
   border-top: var(--rule-hair) solid var(--color-rule-2);
 }
@@ -4087,6 +4088,7 @@ span.hand-nav {
 
 .moment-facts dt {
   color: var(--color-muted);
+  white-space: nowrap;
 }
 
 .moment-facts dd {
@@ -4097,6 +4099,15 @@ span.hand-nav {
   text-align: end;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.moment-fact-players dd {
+  overflow: visible;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  text-align: start;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .moment-facts dd small {
@@ -5794,10 +5805,6 @@ textarea[aria-invalid="true"] {
 
   .admin-metrics {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .moment-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .model-picker {

@@ -359,7 +359,7 @@ export function MomentAdminPage({ csrfToken }: { csrfToken: string }) {
                         </div>
                         <dl className="moment-facts">
                           <div><dt>{text("底池", "Pot")}</dt><dd>{formatChips(facts.potChips)} <small>· {facts.potBigBlinds.toFixed(1)} BB</small></dd></div>
-                          <div><dt>{text("选手", "Players")}</dt><dd title={participantNames}>{participantNames}</dd></div>
+                          <div className="moment-fact-players"><dt>{text("选手", "Players")}</dt><dd>{participantNames}</dd></div>
                           <div><dt>{text("事件区间", "Event window")}</dt><dd>{facts.startSequence}—{facts.endSequence}</dd></div>
                         </dl>
                         {publication?.summaryZh || publication?.summaryEn ? (
