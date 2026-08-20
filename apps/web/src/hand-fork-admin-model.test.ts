@@ -6,6 +6,7 @@ import {
   completedHandForkTournaments,
   handForkProgress,
   handForkCreateAttempt,
+  handForkSourceAuditExclusions,
   isHandForkActive,
   parseHandForkCreateAttempts,
 } from "./hand-fork-admin-model";
@@ -39,10 +40,16 @@ describe("hand fork admin presentation model", () => {
 
   it("exposes only audited sources and orders action counts consistently", () => {
     const sources = [
-      { availability: "UNAVAILABLE", decisionId: "one" },
+      { availability: "UNAVAILABLE", decisionId: "one", reasonCode: "LEGAL_CONTRACT_MISMATCH" },
       { availability: "AVAILABLE", decisionId: "two" },
+      { availability: "UNAVAILABLE", decisionId: "three", reasonCode: "SOURCE_SNAPSHOT_MISSING" },
+      { availability: "UNAVAILABLE", decisionId: "four", reasonCode: "LEGAL_CONTRACT_MISMATCH" },
     ] as never;
     expect(availableHandForkSources(sources).map((source) => source.decisionId)).toEqual(["two"]);
+    expect(handForkSourceAuditExclusions(sources)).toEqual([
+      { reasonCode: "LEGAL_CONTRACT_MISMATCH", count: 2 },
+      { reasonCode: "SOURCE_SNAPSHOT_MISSING", count: 1 },
+    ]);
 
     const summary = {
       actionDistribution: { raise: 2, fold: 1, call: 3 },

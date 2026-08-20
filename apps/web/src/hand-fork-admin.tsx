@@ -25,7 +25,9 @@ import {
   completedHandForkTournaments,
   handForkCreateAttempt,
   handForkCreateFingerprint,
+  handForkSourceAuditExclusions,
   type HandForkCreateAttempt,
+  type HandForkSourceAuditExclusion,
   handForkProgress,
   isHandForkActive,
   parseHandForkCreateAttempts,
@@ -118,6 +120,42 @@ function legalActionsLabel(source: HandForkSourceSummary, locale: UiLocale): str
   }).join(" / ");
 }
 
+function sourceAuditReasonLabel(
+  reasonCode: HandForkSourceAuditExclusion["reasonCode"],
+  locale: UiLocale,
+): string {
+  const labels: Record<HandForkSourceAuditExclusion["reasonCode"], [string, string]> = {
+    SOURCE_NOT_FOUND: ["来源不存在", "source missing"],
+    TOURNAMENT_NOT_COMPLETED: ["赛事未结束", "tournament incomplete"],
+    HAND_NOT_COMPLETED: ["手牌未结束", "hand incomplete"],
+    DECISION_NOT_SUCCEEDED: ["原调用未成功", "source call unsuccessful"],
+    DECISION_AUDIT_INCOMPLETE: ["调用审计不完整", "request audit incomplete"],
+    SOURCE_SNAPSHOT_MISSING: ["决策快照缺失", "decision snapshot missing"],
+    SOURCE_CHAIN_MISMATCH: ["事件链不一致", "event chain mismatch"],
+    VISIBLE_INPUT_MISMATCH: ["可见输入不一致", "visible input mismatch"],
+    LEGAL_CONTRACT_MISMATCH: ["合法动作记录与规则状态不一致", "legal-action record differs from rules state"],
+    SOURCE_PROTOCOL_UNSUPPORTED: ["历史协议不兼容", "historical protocol unsupported"],
+  };
+  return uiText(locale, ...labels[reasonCode]);
+}
+
+function sourceAuditSummary(
+  availableCount: number,
+  exclusions: readonly HandForkSourceAuditExclusion[],
+  locale: UiLocale,
+): string {
+  const excludedCount = exclusions.reduce((sum, exclusion) => sum + exclusion.count, 0);
+  const countLabel = uiText(
+    locale,
+    `${availableCount} 个可复测 · ${excludedCount} 个已排除`,
+    `${availableCount} reproducible · ${excludedCount} excluded`,
+  );
+  const reasons = exclusions.map((exclusion) => (
+    `${sourceAuditReasonLabel(exclusion.reasonCode, locale)}${exclusion.count > 1 ? ` ×${exclusion.count}` : ""}`
+  )).join(uiText(locale, "、", ", "));
+  return `${countLabel} — ${reasons}`;
+}
+
 function forkStatusLabel(status: AdminHandFork["status"], locale: UiLocale): string {
   const labels: Record<AdminHandFork["status"], [string, string]> = {
     QUEUED: ["排队中", "Queued"],
@@ -201,7 +239,7 @@ function SourceSnapshot({ source, integrityHash }: { source: HandForkSourceSumma
     <dl>
       <div><dt>{text("位置", "Position")}</dt><dd>{source.heroPosition}</dd></div>
       <div><dt>{text("原决策", "Original")}</dt><dd>{actionLabel(source.originalAction, locale)}{source.originalAmountTo === null ? "" : ` ${formatChips(source.originalAmountTo)}`}{source.originalUsedFallback && <small className="hand-fork-fallback-badge">{text("规则兜底", "Fallback")}</small>}</dd></div>
-      <div><dt>{text("合法动作", "Legal actions")}</dt><dd>{legalActionsLabel(source, locale)}</dd></div>
+      <div><dt>{text("当时可选", "Available choices")}</dt><dd>{legalActionsLabel(source, locale)}</dd></div>
       <div><dt>{text("行动序号", "Event sequence")}</dt><dd>#{source.actionEventSequence}</dd></div>
     </dl>
     {source.originalDecisionSummary && <blockquote>{source.originalDecisionSummary}</blockquote>}
@@ -286,6 +324,10 @@ function HandForkSetup({ csrfToken, onOpenFork }: { csrfToken: string; onOpenFor
   );
   const availableSources = useMemo(
     () => availableHandForkSources(sources.data?.sources ?? []),
+    [sources.data?.sources],
+  );
+  const sourceAuditExclusions = useMemo(
+    () => handForkSourceAuditExclusions(sources.data?.sources ?? []),
     [sources.data?.sources],
   );
   const decisionId = searchParams.get("decisionId") ?? "";
@@ -410,7 +452,6 @@ function HandForkSetup({ csrfToken, onOpenFork }: { csrfToken: string; onOpenFor
   if (completedTournaments.length === 0) return <div className="hand-fork-admin-page"><div className="admin-heading"><div><h1>{text("决策复测", "Decision reruns")}</h1></div></div><EmptyState title={text("还没有可复测的赛事", "No eligible tournaments")} body={text("完成一场赛事后即可复现其中的模型决策。", "Complete a tournament to rerun its model decisions.")} /></div>;
 
   const totalCalls = selectedModels.length * sampleCount;
-  const unavailableCount = (sources.data?.sources.length ?? 0) - availableSources.length;
   return <div className="hand-fork-admin-page">
     <div className="admin-heading"><div><h1>{text("决策复测", "Decision reruns")}</h1></div></div>
     <form className="hand-fork-setup" onSubmit={submit}>
@@ -419,10 +460,10 @@ function HandForkSetup({ csrfToken, onOpenFork }: { csrfToken: string; onOpenFor
         <div className="hand-fork-source-fields">
           <label><span>{text("已结束赛事", "Completed tournament")}</span><SelectControl value={selectedTournament?.id ?? ""} onChange={updateTournament} options={completedTournaments.map((tournament) => ({ value: tournament.id, label: tournament.name }))} /></label>
           <label><span>{text("手牌", "Hand")}</span><SelectControl value={handNo > 0 ? String(handNo) : ""} onChange={updateHand} disabled={!selectedTournament} options={selectedTournament ? Array.from({ length: selectedTournament.publicState.completedHands }, (_, index) => selectedTournament.publicState.completedHands - index).map((number) => ({ value: String(number), label: `H${String(number).padStart(3, "0")}` })) : []} /></label>
-          <label className="wide"><span>{text("模型行动", "Model decision")}</span><SelectControl value={selectedSource?.decisionId ?? ""} onChange={(value) => setSearchParams((current) => setQueryValues(current, { decisionId: value }))} disabled={sources.loading || availableSources.length === 0} options={availableSources.map((source) => ({ value: source.decisionId, label: decisionLabel(source.source, locale) }))} /></label>
+          <label className="wide"><span>{text("历史决策点", "Recorded decision")}</span><SelectControl value={selectedSource?.decisionId ?? ""} onChange={(value) => setSearchParams((current) => setQueryValues(current, { decisionId: value }))} disabled={sources.loading || availableSources.length === 0} options={availableSources.map((source) => ({ value: source.decisionId, label: decisionLabel(source.source, locale) }))} /></label>
         </div>
         {sources.loading ? <LoadingBlock label={text("正在核验决策点", "Auditing decision points")} /> : sources.error ? <ErrorBlock message={sources.error} onRetry={() => void sources.refresh()} /> : selectedSource ? <SourceSnapshot source={selectedSource.source} integrityHash={selectedSource.sourceIntegrity.visibleInputHash} /> : <EmptyState title={text("本手没有可复测的决策", "No reproducible decision in this hand")} body={text("仅完整留存请求审计的成功决策可用于复测。", "Only successful decisions with a complete request audit are eligible for reruns.")} />}
-        {unavailableCount > 0 && <p className="hand-fork-source-audit">{text(`${availableSources.length} 个可用 · ${unavailableCount} 个未通过审计`, `${availableSources.length} available · ${unavailableCount} excluded by audit`)}</p>}
+        {sourceAuditExclusions.length > 0 && <p className="hand-fork-source-audit">{sourceAuditSummary(availableSources.length, sourceAuditExclusions, locale)}</p>}
       </section>
 
       <ModelPicker models={enabledModels} selected={selectedModels} onToggle={toggleModel} />

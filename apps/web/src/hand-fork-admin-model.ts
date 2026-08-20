@@ -2,6 +2,7 @@ import type {
   AdminHandFork,
   CreateHandForkRequest,
   HandForkSourceCandidate,
+  HandForkSourceErrorCode,
   HandForkTargetSummary,
 } from "../../../packages/contracts/src/hand-forks";
 import type { TournamentSummary } from "./types";
@@ -83,6 +84,22 @@ export function availableHandForkSources(sources: readonly HandForkSourceCandida
   return sources.filter((source): source is Extract<HandForkSourceCandidate, { availability: "AVAILABLE" }> => (
     source.availability === "AVAILABLE"
   ));
+}
+
+export interface HandForkSourceAuditExclusion {
+  reasonCode: HandForkSourceErrorCode;
+  count: number;
+}
+
+export function handForkSourceAuditExclusions(
+  sources: readonly HandForkSourceCandidate[],
+): HandForkSourceAuditExclusion[] {
+  const counts = new Map<HandForkSourceErrorCode, number>();
+  for (const source of sources) {
+    if (source.availability !== "UNAVAILABLE") continue;
+    counts.set(source.reasonCode, (counts.get(source.reasonCode) ?? 0) + 1);
+  }
+  return [...counts].map(([reasonCode, count]) => ({ reasonCode, count }));
 }
 
 export function actionDistributionEntries(summary: HandForkTargetSummary): [string, number][] {
