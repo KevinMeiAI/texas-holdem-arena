@@ -32,6 +32,7 @@ import {
   StatusBadge,
 } from "./components";
 import { decisionForkHref, isForkableDecisionTurn } from "./decision-fork-link";
+import { DecisionBranchDiscovery } from "./decision-branch-discovery";
 import type {
   ArenaEvent,
   ArenaBroadcast,
@@ -577,6 +578,9 @@ export function ReplayPage() {
   const stackHistory = useApiResource<{ points: StackHistoryPoint[] }>(id ? `/api/public/tournaments/${id}/stack-history` : null);
   const performance = useApiResource<TournamentStatisticsResponse>(id ? `/api/public/tournaments/${id}/statistics` : null);
   const handNo = Number(routeHandNo ?? hands.data?.hands.at(-1)?.handNo ?? 0);
+  const decisionBranchDiscoveryPath = id && handNo > 0
+    ? `/api/public/tournaments/${encodeURIComponent(id)}/decision-branches?handNo=${handNo}&limit=4`
+    : null;
   const replay = useApiResource<{
     events: ArenaEvent[];
     decisions: DecisionAuditTurn[];
@@ -631,6 +635,10 @@ export function ReplayPage() {
         </>
       )}
       <HandSelector hands={hands.data?.hands ?? []} activeHand={handNo} tournamentId={id} />
+      <DecisionBranchDiscovery
+        apiPath={decisionBranchDiscoveryPath}
+        title={text("这一手的决策分叉", "Decision branches from this hand")}
+      />
       {replay.loading ? <LoadingBlock /> : replay.error ? <ErrorBlock message={replay.error} /> : (
         <div className={`replay-grid${eventsCollapsed ? " events-collapsed" : ""}`}>
           <section className="replay-stage">

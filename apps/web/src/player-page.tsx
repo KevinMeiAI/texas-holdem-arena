@@ -17,6 +17,7 @@ import {
   profileResultScopeLabel,
 } from "./player-profile-model";
 import { PlayerStoryCard } from "./player-story-card";
+import { DecisionBranchDiscovery } from "./decision-branch-discovery";
 import { localizedMomentCopy, publicMomentTagLabel } from "./moment-presentation";
 import { copyShareLink, downloadShareCard } from "./moment-share";
 import { ProviderLogo } from "./provider-logo";
@@ -303,6 +304,13 @@ export function PlayerPage() {
           </div>
         )}
       </section>
+
+      <DecisionBranchDiscovery
+        apiPath={`/api/public/competitors/${encodeURIComponent(normalizedId)}/decision-branches?limit=4`}
+        eyebrow={text("相关决策", "Related decisions")}
+        title={text("决策档案", "Decision branches")}
+        showRelatedRoles
+      />
 
       {profile.featuredMoments.length > 0 && (
         <section className="player-section player-moments-section">

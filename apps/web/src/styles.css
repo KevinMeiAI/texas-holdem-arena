@@ -2143,6 +2143,9 @@ span.hand-nav {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   border: var(--rule-hair) solid var(--color-rule);
+}
+
+.hand-selector-bar + .replay-grid {
   border-top: 0;
 }
 
@@ -7948,8 +7951,11 @@ textarea[aria-invalid="true"] {
   gap: var(--space-xs);
   color: var(--color-muted);
   border: var(--rule-hair) solid var(--color-rule);
-  border-top: 0;
   font-size: var(--text-xs);
+}
+
+.moment-stage + .moment-footer-link {
+  border-top: 0;
 }
 
 .moment-footer-link a {

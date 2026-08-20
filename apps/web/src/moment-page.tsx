@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useApiResource } from "./api";
 import { useBroadcastReplayPlayer } from "./broadcast-replay-player";
+import { DecisionBranchDiscovery } from "./decision-branch-discovery";
 import {
   ErrorBlock,
   EventTape,
@@ -377,6 +378,11 @@ export function MomentPage() {
           </div>
         </aside>
       </div>
+
+      <DecisionBranchDiscovery
+        apiPath={`/api/public/tournaments/${encodeURIComponent(moment.tournamentId)}/decision-branches?handNo=${moment.handNo}&limit=4`}
+        title={text("这一手的决策分叉", "Decision branches from this hand")}
+      />
 
       <footer className="moment-footer-link">
         <span>{text("完整行动链、筹码走势与模型决策", "Full action chain, stack history, and model decisions")}</span>
