@@ -100,6 +100,12 @@ export interface ArenaBroadcastReplayState {
   timeline: BroadcastView[];
   events: ProjectedArenaEvent[];
   playerBrands: Record<string, ProviderBrand | null>;
+  playerCompetitorIds: Record<string, string>;
+}
+
+interface PublicPlayerMetadata {
+  playerBrands: Record<string, ProviderBrand | null>;
+  playerCompetitorIds: Record<string, string>;
 }
 
 export class TournamentMomentInputError extends Error {
@@ -158,7 +164,7 @@ export class ArenaService {
   readonly #statisticsPending = new Map<string, Promise<TournamentStatisticsComputation>>();
   readonly #broadcastViews = new BroadcastViewBuilder();
   readonly #broadcastReplayCache = new Map<string, ArenaBroadcastReplayState>();
-  readonly #playerBrandCache = new Map<string, Record<string, ProviderBrand | null>>();
+  readonly #playerMetadataCache = new Map<string, PublicPlayerMetadata>();
   readonly #store: PgEventStore;
   readonly #systemPrompts: SystemPromptVersionService;
   #stopping = false;
@@ -528,15 +534,15 @@ export class ArenaService {
     const state = await this.publicState(tournamentId);
     const id = (state as { tournamentId?: unknown } | null)?.tournamentId;
     if (!state || typeof id !== "string") return null;
-    const [events, playerBrands] = await Promise.all([
+    const [events, playerMetadata] = await Promise.all([
       this.projectedEvents(id, "SPECTATOR_BROADCAST"),
-      this.#playerBrands(state),
+      this.#playerMetadata(state),
     ]);
     return {
       state,
       broadcast: this.#broadcastViews.build(state, events),
       timeline: this.#broadcastViews.buildTimeline(state, events),
-      playerBrands,
+      playerBrands: playerMetadata.playerBrands,
     };
   }
 
@@ -550,11 +556,11 @@ export class ArenaService {
     if (status !== "COMPLETED" && status !== "CANCELLED") {
       // Preserve the route's not-finished response without doing the expensive
       // replay projection or caching a snapshot that can still change.
-      return { state, timeline: [], events: [], playerBrands: {} };
+      return { state, timeline: [], events: [], playerBrands: {}, playerCompetitorIds: {} };
     }
-    const [events, playerBrands] = await Promise.all([
+    const [events, playerMetadata] = await Promise.all([
       this.projectedEvents(id, "SPECTATOR_BROADCAST"),
-      this.#playerBrands(state),
+      this.#playerMetadata(state),
     ]);
     const replay = {
       state,
@@ -564,7 +570,7 @@ export class ArenaService {
         equitySampleCount: 500,
       }),
       events,
-      playerBrands,
+      ...playerMetadata,
     };
     this.#broadcastReplayCache.set(tournamentId, replay);
     if (this.#broadcastReplayCache.size > 8) {
@@ -656,6 +662,7 @@ export class ArenaService {
   async tournamentStatistics(tournamentId: string): Promise<{
     statistics: TournamentStatistics;
     playerBrands: Record<string, ProviderBrand | null>;
+    playerCompetitorIds: Record<string, string>;
   } | null>;
   async tournamentStatistics(
     tournamentId: string,
@@ -663,6 +670,7 @@ export class ArenaService {
   ): Promise<{
     statistics: TournamentStatistics;
     playerBrands: Record<string, ProviderBrand | null>;
+    playerCompetitorIds: Record<string, string>;
   } | null>;
   async tournamentStatistics(
     tournamentId: string,
@@ -670,14 +678,15 @@ export class ArenaService {
   ): Promise<{
     statistics: TournamentStatistics;
     playerBrands: Record<string, ProviderBrand | null>;
+    playerCompetitorIds: Record<string, string>;
   } | null> {
     const state = await this.publicState(tournamentId);
     if (!state) return null;
-    const [calculation, playerBrands] = await Promise.all([
+    const [calculation, playerMetadata] = await Promise.all([
       this.#calculateStatistics(tournamentId, state, includeAllInEquity),
-      this.#playerBrands(state),
+      this.#playerMetadata(state),
     ]);
-    return { statistics: calculation.statistics, playerBrands };
+    return { statistics: calculation.statistics, ...playerMetadata };
   }
 
   async leaderboard(): Promise<ArenaLeaderboards> {
@@ -782,10 +791,12 @@ export class ArenaService {
     return providers;
   }
 
-  async #playerBrands(rawState: unknown): Promise<Record<string, ProviderBrand | null>> {
+  async #playerMetadata(rawState: unknown): Promise<PublicPlayerMetadata> {
     const state = rawState as { tournamentId?: unknown; players?: Array<{ id?: unknown }> } | null;
-    if (!state || typeof state.tournamentId !== "string" || !Array.isArray(state.players)) return {};
-    const cached = this.#playerBrandCache.get(state.tournamentId);
+    if (!state || typeof state.tournamentId !== "string" || !Array.isArray(state.players)) {
+      return { playerBrands: {}, playerCompetitorIds: {} };
+    }
+    const cached = this.#playerMetadataCache.get(state.tournamentId);
     if (cached) return cached;
 
     const playerIds = [...new Set(state.players.flatMap((player) => (
@@ -795,20 +806,29 @@ export class ArenaService {
     const revisions = await this.models.revisionDetails(revisionIds);
     const resolved = new Map(revisions.map((model) => [
       model.revisionId,
-      resolveProviderBrand({
-        providerProfile: model.providerProfile,
-        providerType: model.providerType,
-        label: model.providerLabel,
-        baseUrl: model.providerBaseUrl,
-        modelId: model.modelId,
-      }),
+      {
+        competitorId: model.competitorFamilyId,
+        providerBrand: resolveProviderBrand({
+          providerProfile: model.providerProfile,
+          providerType: model.providerType,
+          label: model.providerLabel,
+          baseUrl: model.providerBaseUrl,
+          modelId: model.modelId,
+        }),
+      },
     ] as const));
-    const playerBrands = Object.fromEntries(playerIds.map((id) => [id, resolved.get(id) ?? null]));
-    this.#playerBrandCache.set(state.tournamentId, playerBrands);
-    if (this.#playerBrandCache.size > 32) {
-      this.#playerBrandCache.delete(this.#playerBrandCache.keys().next().value!);
+    const metadata = {
+      playerBrands: Object.fromEntries(playerIds.map((id) => [id, resolved.get(id)?.providerBrand ?? null])),
+      playerCompetitorIds: Object.fromEntries(playerIds.flatMap((id) => {
+        const competitorId = resolved.get(id)?.competitorId;
+        return competitorId ? [[id, competitorId]] : [];
+      })),
+    } satisfies PublicPlayerMetadata;
+    this.#playerMetadataCache.set(state.tournamentId, metadata);
+    if (this.#playerMetadataCache.size > 32) {
+      this.#playerMetadataCache.delete(this.#playerMetadataCache.keys().next().value!);
     }
-    return playerBrands;
+    return metadata;
   }
 
   #providersFromFrozen(configByProviderId: Readonly<Record<string, FrozenModelConfig>>): Map<string, ModelProvider> {

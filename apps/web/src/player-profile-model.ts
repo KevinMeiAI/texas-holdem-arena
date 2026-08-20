@@ -162,12 +162,16 @@ function assertUuid(value: string): string {
   return normalized;
 }
 
+export function playerProfilePath(competitorId: string): string {
+  return `/players/${assertUuid(competitorId)}`;
+}
+
 export function canonicalPlayerUrl(origin: string, competitorId: string): string {
   const base = new URL(origin);
   if (base.protocol !== "http:" && base.protocol !== "https:") {
     throw new TypeError("Player links require an HTTP(S) origin");
   }
-  return new URL(`/players/${assertUuid(competitorId)}`, base.origin).href;
+  return new URL(playerProfilePath(competitorId), base.origin).href;
 }
 
 function safeFilenameSegment(value: string): string {

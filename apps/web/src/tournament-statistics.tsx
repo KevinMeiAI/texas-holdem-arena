@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { formatChips, modelTint } from "./components";
+import { playerProfilePath } from "./player-profile-model";
 import type { ProviderBrand } from "./provider-brand";
 import { ProviderLogo } from "./provider-logo";
 import type { TournamentPlayerStatistics, TournamentStatistics } from "./types";
@@ -83,9 +85,11 @@ function metricsFor(player: TournamentPlayerStatistics, view: ReportView, locale
 export function TournamentStatisticsReport({
   statistics,
   playerBrands,
+  playerCompetitorIds,
 }: {
   statistics: TournamentStatistics;
   playerBrands: Readonly<Record<string, ProviderBrand | null>>;
+  playerCompetitorIds: Readonly<Record<string, string>>;
 }) {
   const { locale, text } = useUiPreferences();
   const [view, setView] = useState<ReportView>("competition");
@@ -97,6 +101,15 @@ export function TournamentStatisticsReport({
   ];
   const activeView = reportViews.find((item) => item.id === view)!;
   const champion = statistics.players.find((player) => player.finishingPosition === 1);
+  const championIdentity = champion && <>
+    <ProviderLogo
+      brand={playerBrands[champion.playerId] ?? null}
+      fallback={champion.displayName.trim().slice(0, 1).toLocaleUpperCase() || "—"}
+      fallbackStyle={modelTint(champion.playerId)}
+    />
+    <div><small>{text("本场冠军", "Champion")}</small><strong title={champion.displayName}>{champion.displayName}</strong></div>
+  </>;
+  const championCompetitorId = champion ? playerCompetitorIds[champion.playerId] : undefined;
 
   return (
     <section className="tournament-report" aria-labelledby="tournament-report-heading">
@@ -107,12 +120,9 @@ export function TournamentStatisticsReport({
       </header>
       <div className="report-overview">
         <div className="report-champion">
-          <ProviderLogo
-            brand={champion ? playerBrands[champion.playerId] ?? null : null}
-            fallback={champion?.displayName.trim().slice(0, 1).toLocaleUpperCase() || "—"}
-            fallbackStyle={modelTint(champion?.playerId ?? "")}
-          />
-          <div><small>{text("本场冠军", "Champion")}</small><strong>{champion?.displayName ?? text("尚未产生", "Pending")}</strong></div>
+          {championIdentity && championCompetitorId
+            ? <Link className="report-champion-link" to={playerProfilePath(championCompetitorId)} aria-label={text(`查看 ${champion?.displayName} 的选手档案`, `View ${champion?.displayName} player profile`)}>{championIdentity}</Link>
+            : championIdentity ?? <div><small>{text("本场冠军", "Champion")}</small><strong>{text("尚未产生", "Pending")}</strong></div>}
         </div>
         <dl>
           <div><dt>{text("完成手数", "Hands")}</dt><dd>{statistics.completedHands}</dd></div>
@@ -135,16 +145,22 @@ export function TournamentStatisticsReport({
         ))}
       </div>
       <div className="report-players" role="table" aria-label={`${activeView.label} ${text("排名", "ranking")}`}>
-        {statistics.players.map((player) => (
-          <article className="report-player" role="row" key={player.playerId}>
+        {statistics.players.map((player) => {
+          const identity = <>
+            <ProviderLogo
+              brand={playerBrands[player.playerId] ?? null}
+              fallback={player.displayName.trim().slice(0, 1).toLocaleUpperCase() || "?"}
+              fallbackStyle={modelTint(player.playerId)}
+            />
+            <div><strong title={player.displayName}>{player.displayName}</strong><small>{player.finishingPosition === 1 ? text("冠军", "Champion") : `${text("第", "Rank")} ${player.finishingPosition ?? "—"} ${text("名", "")}`}</small></div>
+          </>;
+          const competitorId = playerCompetitorIds[player.playerId];
+          return <article className="report-player" role="row" key={player.playerId}>
             <div className="report-player-identity" role="rowheader">
               <b>{player.finishingPosition ?? "—"}</b>
-              <ProviderLogo
-                brand={playerBrands[player.playerId] ?? null}
-                fallback={player.displayName.trim().slice(0, 1).toLocaleUpperCase() || "?"}
-                fallbackStyle={modelTint(player.playerId)}
-              />
-              <div><strong>{player.displayName}</strong><small>{player.finishingPosition === 1 ? text("冠军", "Champion") : `${text("第", "Rank")} ${player.finishingPosition ?? "—"} ${text("名", "")}`}</small></div>
+              {competitorId
+                ? <Link className="report-player-profile-link" to={playerProfilePath(competitorId)} aria-label={text(`查看 ${player.displayName} 的选手档案`, `View ${player.displayName} player profile`)}>{identity}</Link>
+                : <span className="report-player-profile-link">{identity}</span>}
             </div>
             <div className="report-player-metrics">
               {metricsFor(player, view, locale).map((metric) => (
@@ -155,8 +171,8 @@ export function TournamentStatisticsReport({
                 </div>
               ))}
             </div>
-          </article>
-        ))}
+          </article>;
+        })}
       </div>
     </section>
   );

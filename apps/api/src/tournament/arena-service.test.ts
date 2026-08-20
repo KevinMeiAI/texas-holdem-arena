@@ -25,6 +25,8 @@ describe("arena tournament statistics report", () => {
   it("returns frozen player brands with the calculated statistics", async () => {
     const claudeRevisionId = "11111111-1111-4111-8111-111111111111";
     const deepseekRevisionId = "22222222-2222-4222-8222-222222222222";
+    const claudeCompetitorId = "44444444-4444-4444-8444-444444444444";
+    const deepseekCompetitorId = "55555555-5555-4555-8555-555555555555";
     const state = {
       tournamentId: "33333333-3333-4333-8333-333333333333",
       status: "COMPLETED",
@@ -43,6 +45,7 @@ describe("arena tournament statistics report", () => {
     const revisionDetails = vi.fn(async () => [
       {
         revisionId: claudeRevisionId,
+        competitorFamilyId: claudeCompetitorId,
         providerProfile: "anthropic",
         providerType: "anthropic-messages",
         providerLabel: "Anthropic",
@@ -51,6 +54,7 @@ describe("arena tournament statistics report", () => {
       },
       {
         revisionId: deepseekRevisionId,
+        competitorFamilyId: deepseekCompetitorId,
         providerProfile: "deepseek",
         providerType: "openai-compatible",
         providerLabel: "DeepSeek",
@@ -71,6 +75,10 @@ describe("arena tournament statistics report", () => {
     expect(report?.playerBrands).toEqual({
       [claudeRevisionId]: "claude",
       [deepseekRevisionId]: "deepseek",
+    });
+    expect(report?.playerCompetitorIds).toEqual({
+      [claudeRevisionId]: claudeCompetitorId,
+      [deepseekRevisionId]: deepseekCompetitorId,
     });
     expect(revisionDetails).toHaveBeenCalledWith([claudeRevisionId, deepseekRevisionId]);
   });

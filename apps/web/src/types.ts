@@ -544,4 +544,5 @@ export interface TournamentStatistics {
 export interface TournamentStatisticsResponse {
   statistics: TournamentStatistics;
   playerBrands: Record<string, ProviderBrand | null>;
+  playerCompetitorIds: Record<string, string>;
 }

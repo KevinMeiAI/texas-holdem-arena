@@ -105,6 +105,7 @@ export function momentReplayWindow(
     timeline: replay.timeline.filter((frame) => frame.sequence >= start && frame.sequence <= end),
     events: replay.events.filter((event) => event.sequence >= start && event.sequence <= end),
     playerBrands: { ...replay.playerBrands },
+    playerCompetitorIds: { ...replay.playerCompetitorIds },
     // The opening snapshot is a causal baseline. Falling forward to a later
     // frame could reveal an action, board card, or settlement before playback
     // reaches its authoritative sequence.

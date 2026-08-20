@@ -12,6 +12,7 @@ import {
   playerResultTrend,
   playerProfileSampleWarning,
   playerProfileTokenCoverageCopy,
+  playerProfilePath,
   playerStoryCardFilename,
   profileConsistencyTierLabel,
   profileEventClassLabel,
@@ -270,10 +271,12 @@ describe("player profile model", () => {
   });
 
   it("builds canonical player links and rejects non-UUID ids or unsafe origins", () => {
+    expect(playerProfilePath(COMPETITOR_ID.toUpperCase())).toBe(`/players/${COMPETITOR_ID}`);
     expect(canonicalPlayerUrl(
       "https://arena.example/app?from=share#state",
       COMPETITOR_ID.toUpperCase(),
     )).toBe(`https://arena.example/players/${COMPETITOR_ID}`);
+    expect(() => playerProfilePath("not-a-uuid")).toThrow("Player links require a UUID competitor id");
     expect(() => canonicalPlayerUrl("file:///tmp/index.html", COMPETITOR_ID))
       .toThrow(/HTTP\(S\)/);
     expect(() => canonicalPlayerUrl("javascript:alert(1)", COMPETITOR_ID))

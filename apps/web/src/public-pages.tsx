@@ -5,6 +5,7 @@ import { useBroadcastReplayPlayer } from "./broadcast-replay-player";
 import { defaultWatchRoomTournament, unseenBroadcastFrames } from "./broadcast-timeline";
 import { HandActionLedger } from "./hand-action-ledger";
 import { styleProfileLabel } from "./leaderboard-format";
+import { playerProfilePath } from "./player-profile-model";
 import {
   sortLeaderboardEntries,
   type LeaderboardSortDirection,
@@ -381,6 +382,7 @@ export function LeaderboardPage() {
   const sortedStyles = sortLeaderboardEntries(styleEntries, (entry) => metricValue(entry, sortFor("styles").key), sortFor("styles").direction);
   const identity = (
     index: number,
+    competitorId: string,
     modelId: string,
     displayName: string,
     providerBrand: ProviderBrand | null,
@@ -389,16 +391,18 @@ export function LeaderboardPage() {
   ) => (
     <div className="rank-model">
       <b>{String(index + 1).padStart(2, "0")}</b>
-      <ProviderLogo
-        brand={providerBrand}
-        label={displayName}
-        fallback={displayName.slice(0, 1).toUpperCase()}
-        fallbackStyle={modelTint(modelId)}
-      />
-      <div>
-        <strong>{displayName}</strong>
-        {warning && <small>{warningText}</small>}
-      </div>
+      <Link className="rank-model-link" to={playerProfilePath(competitorId)} aria-label={text(`查看 ${displayName} 的选手档案`, `View ${displayName} player profile`)}>
+        <ProviderLogo
+          brand={providerBrand}
+          label={displayName}
+          fallback={displayName.slice(0, 1).toUpperCase()}
+          fallbackStyle={modelTint(modelId)}
+        />
+        <div>
+          <strong title={displayName}>{displayName}</strong>
+          {warning && <small>{warningText}</small>}
+        </div>
+      </Link>
     </div>
   );
   const percent = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(0)}%`;
@@ -422,8 +426,8 @@ export function LeaderboardPage() {
             <div className="leaderboard leaderboard-grid is-competition">
               <div className="leaderboard-head" role="row"><span role="columnheader">{text("排名 / 模型", "Rank / model")}</span>{sortHeader("Rating", "rating")}{sortHeader(text("积分", "Points"), "points")}{sortHeader(text("赛事", "Events"), "tournaments")}{sortHeader(text("冠军", "Wins"), "championships")}{sortHeader(text("前三率", "Top 3"), "topThreeRate")}{sortHeader(text("平均名次", "Avg finish"), "averageFinish")}</div>
               {sortedCompetition.map((entry, index) => (
-                <article className="leaderboard-row" key={entry.modelId}>
-                  {identity(index, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("样本少于 10 场", "Fewer than 10 events"))}
+                <article className="leaderboard-row" key={entry.competitorId}>
+                  {identity(index, entry.competitorId, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("样本少于 10 场", "Fewer than 10 events"))}
                   <strong data-label="Rating">{entry.rating}</strong>
                   <span data-label={text("积分", "Points")}>{entry.points.toFixed(1)}</span>
                   <span data-label={text("赛事", "Events")}>{entry.tournaments}</span>
@@ -438,8 +442,8 @@ export function LeaderboardPage() {
             <div className="leaderboard leaderboard-grid is-reliability">
               <div className="leaderboard-head" role="row"><span role="columnheader">{text("排名 / 模型", "Rank / model")}</span>{sortHeader(text("有效决策", "Valid"), "validDecisionRate")}{sortHeader(text("一次成功", "First pass"), "firstPassRate")}{sortHeader(text("协议纠错", "Corrections"), "protocolCorrections")}{sortHeader(text("规则兜底", "Fallbacks"), "fallbacks")}{sortHeader(text("超时", "Timeouts"), "timeouts")}{sortHeader(text("暂停", "Pauses"), "infrastructurePauses")}</div>
               {sortedReliability.map((entry, index) => (
-                <article className="leaderboard-row" key={entry.modelId}>
-                  {identity(index, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("决策少于 50 次", "Fewer than 50 decisions"))}
+                <article className="leaderboard-row" key={entry.competitorId}>
+                  {identity(index, entry.competitorId, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("决策少于 50 次", "Fewer than 50 decisions"))}
                   <strong data-label={text("有效决策", "Valid")}>{percent(entry.validDecisionRate)}</strong>
                   <span data-label={text("一次成功", "First pass")}>{percent(entry.firstPassRate)}</span>
                   <span data-label={text("协议纠错", "Corrections")}>{entry.protocolCorrections}</span>
@@ -454,8 +458,8 @@ export function LeaderboardPage() {
             <div className="leaderboard leaderboard-grid is-efficiency">
               <div className="leaderboard-head" role="row"><span role="columnheader">{text("排名 / 模型", "Rank / model")}</span>{sortHeader(text("平均响应", "Average"), "averageLatencyMs")}{sortHeader(text("95% 响应", "P95"), "p95LatencyMs")}{sortHeader(text("调用次数", "Calls"), "providerCalls")}{sortHeader(text("总 Token", "Total tokens"), "totalTokens")}{sortHeader(text("每次决策", "Per decision"), "tokensPerDecision")}</div>
               {sortedEfficiency.map((entry, index) => (
-                <article className="leaderboard-row" key={entry.modelId}>
-                  {identity(index, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("决策少于 50 次", "Fewer than 50 decisions"))}
+                <article className="leaderboard-row" key={entry.competitorId}>
+                  {identity(index, entry.competitorId, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("决策少于 50 次", "Fewer than 50 decisions"))}
                   <strong data-label={text("平均响应", "Average")}>{latency(entry.averageLatencyMs)}</strong>
                   <span data-label={text("95% 响应", "P95")}>{latency(entry.p95LatencyMs)}</span>
                   <span data-label={text("调用次数", "Calls")}>{entry.providerCalls}</span>
@@ -469,8 +473,8 @@ export function LeaderboardPage() {
             <div className="leaderboard leaderboard-grid is-styles">
               <div className="leaderboard-head" role="row"><span role="columnheader">{text("模型", "Model")}</span><span role="columnheader">{text("牌风", "Style")}</span>{sortHeader(text("主动入池", "VPIP"), "vpipRate")}{sortHeader(text("翻前加注", "PFR"), "pfrRate")}{sortHeader(text("再加注手牌", "3-bet"), "threeBetRate")}{sortHeader(text("摊牌胜率", "Showdown win"), "showdownWinRate")}{sortHeader(text("样本手数", "Hands"), "handsPlayed")}</div>
               {sortedStyles.map((entry, index) => (
-                <article className="leaderboard-row" key={entry.modelId}>
-                  {identity(index, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("样本少于 200 手", "Fewer than 200 hands"))}
+                <article className="leaderboard-row" key={entry.competitorId}>
+                  {identity(index, entry.competitorId, entry.modelId, entry.displayName, entry.providerBrand, entry.sampleWarning, text("样本少于 200 手", "Fewer than 200 hands"))}
                   <span data-label={text("牌风", "Style")}>{styleProfileLabel(entry.profile, locale)}</span>
                   <strong data-label={text("主动入池", "VPIP")}>{percent(entry.vpipRate)}</strong>
                   <span data-label={text("翻前加注", "PFR")}>{percent(entry.pfrRate)}</span>
@@ -615,7 +619,7 @@ export function ReplayPage() {
           </section>
           {performance.loading ? <LoadingBlock label={text("正在计算赛后战报", "Loading tournament report")} />
             : performance.error ? <ErrorBlock message={performance.error} onRetry={() => void performance.refresh()} />
-              : performance.data && <TournamentStatisticsReport statistics={performance.data.statistics} playerBrands={performance.data.playerBrands} />}
+              : performance.data && <TournamentStatisticsReport statistics={performance.data.statistics} playerBrands={performance.data.playerBrands} playerCompetitorIds={performance.data.playerCompetitorIds ?? {}} />}
         </>
       )}
       <HandSelector hands={hands.data?.hands ?? []} activeHand={handNo} tournamentId={id} />

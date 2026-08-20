@@ -278,6 +278,7 @@ describe("moment replay window", () => {
         { tournamentId: TOURNAMENT_ID, sequence: 26, aggregateVersion: 26, type: "HAND_COMPLETED", actorId: null, handNo: 2, publicPayload: {}, eventHash: "c".repeat(64), createdAt: "2026-08-20T00:00:02.000Z" },
       ],
       playerBrands: { a: "chatgpt" },
+      playerCompetitorIds: { a: "11111111-1111-4111-8111-111111111111" },
     };
     const originalTimeline = [...replay.timeline];
     const originalEvents = [...replay.events];
@@ -288,6 +289,8 @@ describe("moment replay window", () => {
     expect(window.initialFrame?.sequence).toBe(19);
     expect(window.coverFrame?.sequence).toBe(22);
     expect(window.initialEliminatedPlayerIds).toEqual(["c"]);
+    expect(window.playerCompetitorIds).toEqual({ a: "11111111-1111-4111-8111-111111111111" });
+    expect(window.playerCompetitorIds).not.toBe(replay.playerCompetitorIds);
     expect(window.timeline).not.toBe(replay.timeline);
     expect(window.events).not.toBe(replay.events);
     expect(replay.timeline).toEqual(originalTimeline);
@@ -300,6 +303,7 @@ describe("moment replay window", () => {
       timeline: [frame(31)],
       events: [],
       playerBrands: {},
+      playerCompetitorIds: {},
     };
     const moment = publicMomentDtoSchema.parse({
       ...publicMoment(),
@@ -321,6 +325,7 @@ describe("moment replay window", () => {
       timeline: [frame(22)],
       events: [],
       playerBrands: {},
+      playerCompetitorIds: {},
     };
     const moment = publicMomentDtoSchema.parse({
       ...publicMoment(),
@@ -340,6 +345,7 @@ describe("moment replay window", () => {
       timeline: [frame(22)],
       events: [],
       playerBrands: {},
+      playerCompetitorIds: {},
     };
     const moment = publicMomentDtoSchema.parse({
       ...publicMoment(),

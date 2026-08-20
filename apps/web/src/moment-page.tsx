@@ -27,6 +27,7 @@ import {
   canonicalMomentUrl,
   momentStoryCardFilename,
 } from "./moment-story-card-model";
+import { playerProfilePath } from "./player-profile-model";
 import { MomentStoryCard } from "./moment-story-card";
 import { copyMomentLink, downloadMomentStoryCard } from "./moment-share";
 import type { ProviderBrand } from "./provider-brand";
@@ -46,6 +47,7 @@ interface PublicMomentReplayResponse {
   timeline: ArenaBroadcast[];
   events: ArenaEvent[];
   playerBrands: Record<string, ProviderBrand | null>;
+  playerCompetitorIds: Record<string, string>;
   initialFrame: ArenaBroadcast | null;
   coverFrame: ArenaBroadcast | null;
   initialEliminatedPlayerIds: string[];
@@ -55,19 +57,22 @@ function MomentPlayerLine({
   playerIds,
   players,
   playerBrands,
+  playerCompetitorIds,
   label,
 }: {
   playerIds: readonly string[];
   players: readonly ArenaPlayer[];
   playerBrands: Readonly<Record<string, ProviderBrand | null>>;
+  playerCompetitorIds?: Readonly<Record<string, string>>;
   label: string;
 }) {
+  const { text } = useUiPreferences();
   const visiblePlayers = sortMomentPlayersBySeat(playerIds, players);
   if (visiblePlayers.length === 0) return null;
   return (
     <div className="moment-player-line" aria-label={label}>
-      {visiblePlayers.map((player) => (
-        <span key={player.id}>
+      {visiblePlayers.map((player) => {
+        const content = <>
           <ProviderLogo
             brand={playerBrands[player.id] ?? null}
             fallback={player.displayName.trim().slice(0, 1).toLocaleUpperCase() || "?"}
@@ -75,8 +80,12 @@ function MomentPlayerLine({
             className="moment-player-logo"
           />
           <b title={player.displayName}>{player.displayName}</b>
-        </span>
-      ))}
+        </>;
+        const competitorId = playerCompetitorIds?.[player.id];
+        return competitorId
+          ? <Link key={player.id} to={playerProfilePath(competitorId)} aria-label={text(`查看 ${player.displayName} 的选手档案`, `View ${player.displayName} player profile`)}>{content}</Link>
+          : <span key={player.id}>{content}</span>;
+      })}
     </div>
   );
 }
@@ -258,6 +267,7 @@ export function MomentPage() {
             playerIds={momentPublicPlayerIds(moment, replayEnded)}
             players={state.players}
             playerBrands={playerBrands}
+            playerCompetitorIds={response.playerCompetitorIds}
             label={text("本手选手", "Players in this hand")}
           />
         </div>
@@ -293,6 +303,7 @@ export function MomentPage() {
             playerIds={outcome.winnerPlayerIds}
             players={state.players}
             playerBrands={playerBrands}
+            playerCompetitorIds={response.playerCompetitorIds}
             label={text("获胜选手", "Winning players")}
           />
           <div>
