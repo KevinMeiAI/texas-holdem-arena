@@ -75,6 +75,44 @@ describe("arena tournament statistics report", () => {
     expect(revisionDetails).toHaveBeenCalledWith([claudeRevisionId, deepseekRevisionId]);
   });
 
+  it("deduplicates completed light and full calculations without mixing their caches", async () => {
+    const tournamentId = "33333333-3333-4333-8333-333333333333";
+    const state = {
+      tournamentId,
+      status: "COMPLETED",
+      completedHands: 0,
+      championPlayerId: null,
+      players: [],
+    };
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("from tournaments")) return { rows: [{ public_state: state }] };
+      if (sql.includes("from arena_events")) return { rows: [] };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const service = new ArenaService(
+      { query } as unknown as Pool,
+      new Uint8Array(32),
+      { revisionDetails: vi.fn(async () => []) } as unknown as ModelConfigService,
+      0,
+    );
+
+    await Promise.all([
+      service.tournamentStatistics(tournamentId, false),
+      service.tournamentStatistics(tournamentId, false),
+    ]);
+    expect(query.mock.calls.filter(([sql]) => String(sql).includes("from arena_events"))).toHaveLength(1);
+
+    await Promise.all([
+      service.tournamentStatistics(tournamentId, true),
+      service.tournamentStatistics(tournamentId, true),
+    ]);
+    expect(query.mock.calls.filter(([sql]) => String(sql).includes("from arena_events"))).toHaveLength(2);
+
+    await service.tournamentStatistics(tournamentId, false);
+    await service.tournamentStatistics(tournamentId, true);
+    expect(query.mock.calls.filter(([sql]) => String(sql).includes("from arena_events"))).toHaveLength(2);
+  });
+
   it("does not cache a partial broadcast replay before the tournament ends", async () => {
     const tournamentId = "33333333-3333-4333-8333-333333333333";
     let state = {

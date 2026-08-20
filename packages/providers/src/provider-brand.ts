@@ -1,16 +1,6 @@
-export type ProviderBrand =
-  | "chatgpt"
-  | "claude"
-  | "deepseek"
-  | "doubao"
-  | "gemini"
-  | "glm"
-  | "hunyuan"
-  | "kimi"
-  | "minimax"
-  | "qwen"
-  | "wenxin"
-  | "xai";
+import type { ProviderBrand } from "../../contracts/src/competitors.js";
+
+export type { ProviderBrand } from "../../contracts/src/competitors.js";
 
 export interface ProviderBrandHints {
   providerProfile?: string | null;

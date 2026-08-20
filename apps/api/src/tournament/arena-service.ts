@@ -656,11 +656,25 @@ export class ArenaService {
   async tournamentStatistics(tournamentId: string): Promise<{
     statistics: TournamentStatistics;
     playerBrands: Record<string, ProviderBrand | null>;
+  } | null>;
+  async tournamentStatistics(
+    tournamentId: string,
+    includeAllInEquity: boolean,
+  ): Promise<{
+    statistics: TournamentStatistics;
+    playerBrands: Record<string, ProviderBrand | null>;
+  } | null>;
+  async tournamentStatistics(
+    tournamentId: string,
+    includeAllInEquity = true,
+  ): Promise<{
+    statistics: TournamentStatistics;
+    playerBrands: Record<string, ProviderBrand | null>;
   } | null> {
     const state = await this.publicState(tournamentId);
     if (!state) return null;
     const [calculation, playerBrands] = await Promise.all([
-      this.#calculateStatistics(tournamentId, state),
+      this.#calculateStatistics(tournamentId, state, includeAllInEquity),
       this.#playerBrands(state),
     ]);
     return { statistics: calculation.statistics, playerBrands };
@@ -739,23 +753,24 @@ export class ArenaService {
     if (!state || !Array.isArray(state.players) || typeof state.completedHands !== "number") {
       throw new Error(`Tournament public state is unavailable for statistics: ${tournamentId}`);
     }
-    const cached = includeAllInEquity ? this.#statisticsCache.get(tournamentId) : null;
+    const cacheKey = `${tournamentId}:${includeAllInEquity ? "full" : "light"}`;
+    const cached = this.#statisticsCache.get(cacheKey);
     if (cached && state.status === "COMPLETED") return cached;
-    const pending = includeAllInEquity ? this.#statisticsPending.get(tournamentId) : null;
+    const pending = this.#statisticsPending.get(cacheKey);
     if (pending && state.status === "COMPLETED") return pending;
     const calculate = async () => {
       const events = await this.projectedEvents(tournamentId, "SPECTATOR_REPLAY");
       const calculation = calculateTournamentStatistics(state, events, { includeAllInEquity });
-      if (state.status === "COMPLETED" && includeAllInEquity) this.#statisticsCache.set(tournamentId, calculation);
+      if (state.status === "COMPLETED") this.#statisticsCache.set(cacheKey, calculation);
       return calculation;
     };
-    if (state.status !== "COMPLETED" || !includeAllInEquity) return calculate();
+    if (state.status !== "COMPLETED") return calculate();
     const calculation = calculate();
-    this.#statisticsPending.set(tournamentId, calculation);
+    this.#statisticsPending.set(cacheKey, calculation);
     try {
       return await calculation;
     } finally {
-      this.#statisticsPending.delete(tournamentId);
+      this.#statisticsPending.delete(cacheKey);
     }
   }
 

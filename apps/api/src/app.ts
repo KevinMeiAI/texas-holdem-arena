@@ -13,6 +13,9 @@ import { registerSystemPromptRoutes } from "./admin/system-prompt-routes.js";
 import { SystemPromptVersionService } from "./admin/system-prompt-service.js";
 import { AuthService } from "./auth/auth-service.js";
 import { registerAuthRoutes } from "./auth/routes.js";
+import { CompetitorIdentityService } from "./competitors/identity-service.js";
+import { CompetitorProfileService } from "./competitors/profile-service.js";
+import { registerCompetitorRoutes } from "./competitors/routes.js";
 import type { AppConfig } from "./config.js";
 import { PgEventStore } from "./persistence/event-store.js";
 import { decodeMasterKey } from "./security/encryption.js";
@@ -119,6 +122,12 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
           events: replay.events,
         }).safe;
       });
+      const competitorProfiles = new CompetitorProfileService(
+        pool,
+        new CompetitorIdentityService(pool),
+        arenaService,
+        moments,
+      );
       await registerAuthRoutes(app, authContext);
       await registerAdminModelRoutes(app, {
         ...authContext,
@@ -135,6 +144,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
         handForks: forkService,
       });
       await registerMomentRoutes(app, { ...authContext, arena, moments });
+      await registerCompetitorRoutes(app, { competitorProfiles });
       await consistency.restorePending();
       await forkService.restorePending();
       await arena.restoreActive();

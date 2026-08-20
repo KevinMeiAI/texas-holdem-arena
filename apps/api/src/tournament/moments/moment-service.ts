@@ -188,6 +188,17 @@ export class MomentService {
     });
   }
 
+  async listPublicForPlayers(
+    playerIds: readonly string[],
+    limit = 6,
+  ): Promise<PublicMomentDto[]> {
+    const records = await this.repository.listPublishedRecordsForPlayers(playerIds, limit);
+    return records.flatMap((record) => {
+      const moment = publicMomentFromRecord(record);
+      return moment ? [moment] : [];
+    });
+  }
+
   async getPublicBySlug(slug: string): Promise<PublicMomentDto | null> {
     const record = await this.repository.getPublishedRecordBySlug(slug);
     return record ? publicMomentFromRecord(record) : null;

@@ -46,6 +46,10 @@ export interface MomentRepository {
     audit: MomentAuditEvent,
   ): Promise<AdminMomentRecord>;
   listPublishedRecords(tournamentId: string): Promise<AdminMomentRecord[]>;
+  listPublishedRecordsForPlayers(
+    playerIds: readonly string[],
+    limit: number,
+  ): Promise<AdminMomentRecord[]>;
   getPublishedRecordBySlug(slug: string): Promise<AdminMomentRecord | null>;
 }
 
@@ -423,6 +427,23 @@ export class PgMomentRepository implements MomentRepository {
         order by p.is_primary desc, m.recommendation_rank nulls last,
                  p.published_at desc, m.hand_no`,
       [tournamentId],
+    );
+    return result.rows.map(mapRow);
+  }
+
+  async listPublishedRecordsForPlayers(
+    playerIds: readonly string[],
+    limit: number,
+  ): Promise<AdminMomentRecord[]> {
+    if (playerIds.length === 0) return [];
+    const boundedLimit = Math.min(Math.max(Math.trunc(limit), 1), 12);
+    const result = await this.pool.query<MomentJoinRow>(
+      `${JOIN_SELECT}
+        where p.status = 'PUBLISHED'
+          and (m.facts->'featuredPlayerIds') ?| $1::text[]
+        order by p.published_at desc, m.score desc, m.hand_no
+        limit $2`,
+      [[...new Set(playerIds)], boundedLimit],
     );
     return result.rows.map(mapRow);
   }

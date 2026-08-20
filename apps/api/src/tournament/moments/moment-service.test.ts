@@ -1,3 +1,4 @@
+import type { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import {
   MOMENT_DETECTOR_VERSION,
@@ -6,7 +7,11 @@ import {
   type MomentPublicationMutation,
   type TournamentMomentFacts,
 } from "../../../../../packages/contracts/src/moments.js";
-import type { MomentAuditEvent, MomentRepository } from "./moment-repository.js";
+import {
+  PgMomentRepository,
+  type MomentAuditEvent,
+  type MomentRepository,
+} from "./moment-repository.js";
 import { MomentService } from "./moment-service.js";
 
 const MOMENT_ID = "00000000-0000-5000-8000-000000000001";
@@ -128,12 +133,37 @@ class FakeMomentRepository implements MomentRepository {
     return tournamentId === this.record.facts.tournamentId ? [structuredClone(this.record)] : [];
   }
 
+  async listPublishedRecordsForPlayers(
+    playerIds: readonly string[],
+    _limit: number,
+  ): Promise<AdminMomentRecord[]> {
+    return this.record.facts.featuredPlayerIds.some((playerId) => playerIds.includes(playerId))
+      ? [structuredClone(this.record)]
+      : [];
+  }
+
   async getPublishedRecordBySlug(_slug: string): Promise<AdminMomentRecord | null> {
     return structuredClone(this.record);
   }
 }
 
 describe("moment service", () => {
+  it("selects profile moments by editorial prominence rather than table participation", async () => {
+    const query = vi.fn(async (_sql: string, _parameters?: unknown[]) => ({
+      rows: [],
+      rowCount: 0,
+    }));
+    const repository = new PgMomentRepository({ query } as unknown as Pool);
+
+    await repository.listPublishedRecordsForPlayers(["featured-player"], 6);
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("m.facts->'featuredPlayerIds'"),
+      [["featured-player"], 6],
+    );
+    expect(String(query.mock.calls[0]?.[0])).not.toContain("participantPlayerIds");
+  });
+
   it("keeps drafts out of public DTOs and publishes a complete localized record", async () => {
     const repository = new FakeMomentRepository();
     const service = new MomentService(repository, acceptSuspenseCover);
