@@ -26,7 +26,11 @@ export async function apiRequest<T>(
 export function useApiResource<T>(url: string | null, intervalMs = 0) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(Boolean(url));
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{
+    message: string;
+    status: number | null;
+    code: string | null;
+  } | null>(null);
   const generationRef = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -43,7 +47,11 @@ export function useApiResource<T>(url: string | null, intervalMs = 0) {
       setError(null);
     } catch (reason) {
       if (controller.signal.aborted || generation !== generationRef.current) return;
-      setError(reason instanceof Error ? reason.message : "Request failed");
+      setError({
+        message: reason instanceof Error ? reason.message : "Request failed",
+        status: reason instanceof ApiError ? reason.status : null,
+        code: reason instanceof ApiError ? reason.code : null,
+      });
     } finally {
       if (generation === generationRef.current) {
         controllerRef.current = null;
@@ -76,5 +84,13 @@ export function useApiResource<T>(url: string | null, intervalMs = 0) {
     };
   }, [intervalMs, refresh, url]);
 
-  return { data, setData, loading, error, refresh };
+  return {
+    data,
+    setData,
+    loading,
+    error: error?.message ?? null,
+    errorStatus: error?.status ?? null,
+    errorCode: error?.code ?? null,
+    refresh,
+  };
 }

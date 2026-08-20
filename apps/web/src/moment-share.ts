@@ -156,3 +156,10 @@ export function downloadMomentStoryCard(
   activeDownloads.set(node, task);
   return task;
 }
+
+// Moment and competitor cards share the same browser-safe export pipeline.
+// Keep the original names as compatibility aliases for existing Moment UI.
+export const copyShareLink = copyMomentLink;
+export const downloadShareCard = downloadMomentStoryCard;
+export type CopyShareLinkDependencies = CopyMomentLinkDependencies;
+export type DownloadShareCardDependencies = DownloadMomentStoryCardDependencies;
