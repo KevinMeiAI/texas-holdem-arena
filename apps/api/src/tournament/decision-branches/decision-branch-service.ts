@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import {
   decisionBranchEditorialPatchSchema,
   publicDecisionBranchDtoSchema,
+  publicDecisionBranchSummarySchema,
   type DecisionBranchEditorialPatch,
   type DecisionBranchPublication,
   type DecisionBranchPublicationStatus,
   type PublicDecisionBranchDto,
+  type PublicDecisionBranchSummary,
 } from "../../../../../packages/contracts/src/index.js";
 import {
   buildDecisionBranchSnapshot,
@@ -68,6 +70,67 @@ function publicBranch(publication: DecisionBranchPublication): PublicDecisionBra
     publicationRevision: publication.revision,
     publishedAt: publication.publishedAt,
     snapshot: publication.snapshot,
+  });
+}
+
+export function publicDecisionBranchSummary(
+  publication: DecisionBranchPublication,
+  relatedCompetitorId: string | null = null,
+): PublicDecisionBranchSummary | null {
+  if (publication.status !== "PUBLISHED"
+    || publication.slug === null
+    || publication.publishedAt === null
+    || (publication.titleZh === null && publication.titleEn === null)) return null;
+  const source = publication.snapshot.source;
+  const hero = source.players.find((player) => player.playerId === source.heroPlayerId);
+  if (!hero) throw new Error(`Decision branch source hero is missing: ${publication.id}`);
+  const action = source.originalDecision.action;
+  const displayAmountTo = action === "all_in"
+    ? source.legalActions.all_in?.resulting_street_commitment ?? null
+    : action === "bet" || action === "raise"
+      ? source.originalDecision.amountTo
+      : null;
+  const relatedPlayerRoles: PublicDecisionBranchSummary["relatedPlayerRoles"] = [];
+  if (relatedCompetitorId !== null) {
+    if (hero.competitorId === relatedCompetitorId) relatedPlayerRoles.push("DECISION_MAKER");
+    if (publication.snapshot.targets.some((target) => target.competitorId === relatedCompetitorId)) {
+      relatedPlayerRoles.push("COMPARED_MODEL");
+    }
+  }
+  return publicDecisionBranchSummarySchema.parse({
+    id: publication.id,
+    status: "PUBLISHED",
+    slug: publication.slug,
+    titleZh: publication.titleZh,
+    titleEn: publication.titleEn,
+    summaryZh: publication.summaryZh,
+    summaryEn: publication.summaryEn,
+    publishedAt: publication.publishedAt,
+    tournamentId: source.tournamentId,
+    tournamentName: source.tournamentName,
+    handNo: source.handNo,
+    actionSequence: source.actionSequence,
+    street: source.street,
+    hero: {
+      competitorId: hero.competitorId,
+      displayName: source.heroDisplayName,
+      position: source.heroPosition,
+      providerBrand: hero.providerBrand,
+    },
+    originalDecision: { action, displayAmountTo },
+    targetCount: publication.snapshot.methodology.targetCount,
+    sampleCountPerModel: publication.snapshot.methodology.sampleCountPerModel,
+    targets: publication.snapshot.targets.map((target) => ({
+      ordinal: target.ordinal,
+      competitorId: target.competitorId,
+      displayName: target.displayName,
+      providerBrand: target.providerBrand,
+      modelActionTrials: target.modelActionTrials,
+      fallbackTrials: target.fallbackTrials,
+      infrastructureErrorTrials: target.infrastructureErrorTrials,
+      actionDistribution: target.actionDistribution,
+    })),
+    relatedPlayerRoles,
   });
 }
 
@@ -228,6 +291,33 @@ export class DecisionBranchService {
     return publications.flatMap((publication) => {
       const branch = publicBranch(publication);
       return branch ? [branch] : [];
+    });
+  }
+
+  async listPublicForTournamentHand(
+    tournamentId: string,
+    handNo: number,
+    limit = 4,
+  ): Promise<PublicDecisionBranchSummary[]> {
+    const publications = await this.#repository.listPublishedForTournamentHand(
+      tournamentId,
+      handNo,
+      limit,
+    );
+    return publications.flatMap((publication) => {
+      const summary = publicDecisionBranchSummary(publication);
+      return summary ? [summary] : [];
+    });
+  }
+
+  async listPublicForCompetitor(
+    competitorId: string,
+    limit = 4,
+  ): Promise<PublicDecisionBranchSummary[]> {
+    const publications = await this.#repository.listPublishedForCompetitor(competitorId, limit);
+    return publications.flatMap((publication) => {
+      const summary = publicDecisionBranchSummary(publication, competitorId);
+      return summary && summary.relatedPlayerRoles.length > 0 ? [summary] : [];
     });
   }
 

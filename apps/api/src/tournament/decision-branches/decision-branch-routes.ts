@@ -4,6 +4,7 @@ import {
   decisionBranchEditorialPatchSchema,
   type DecisionBranchPublication,
   type PublicDecisionBranchDto,
+  type PublicDecisionBranchSummary,
 } from "../../../../../packages/contracts/src/index.js";
 import { requireAdmin, type AdminAuthContext } from "../../auth/routes.js";
 import { DecisionBranchSlugConflictError } from "./decision-branch-repository.js";
@@ -32,6 +33,20 @@ const publicListQuerySchema = z.object({
     (value) => Number.isSafeInteger(value) && value <= 24,
     "limit must be between 1 and 24",
   ).optional(),
+}).strict();
+const publicDiscoveryLimitSchema = z.string().regex(/^[1-9]\d*$/).transform(Number).refine(
+  (value) => Number.isSafeInteger(value) && value <= 12,
+  "limit must be between 1 and 12",
+).optional();
+const publicTournamentHandListQuerySchema = z.object({
+  handNo: z.string().regex(/^[1-9]\d*$/).transform(Number).refine(
+    (value) => Number.isSafeInteger(value),
+    "handNo must be a positive safe integer",
+  ),
+  limit: publicDiscoveryLimitSchema,
+}).strict();
+const publicCompetitorListQuerySchema = z.object({
+  limit: publicDiscoveryLimitSchema,
 }).strict();
 const publicSlugSchema = z.string().trim().toLowerCase()
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
@@ -64,6 +79,15 @@ export interface DecisionBranchRouteService {
   ): Promise<DecisionBranchPublication>;
   getPublicBySlug(slug: string): Promise<PublicDecisionBranchDto | null>;
   listPublic(limit?: number): Promise<PublicDecisionBranchDto[]>;
+  listPublicForTournamentHand(
+    tournamentId: string,
+    handNo: number,
+    limit?: number,
+  ): Promise<PublicDecisionBranchSummary[]>;
+  listPublicForCompetitor(
+    competitorId: string,
+    limit?: number,
+  ): Promise<PublicDecisionBranchSummary[]>;
 }
 
 export interface DecisionBranchRouteContext extends AdminAuthContext {
@@ -286,6 +310,51 @@ export async function registerDecisionBranchRoutes(
     if (!query.success) return reply.code(400).send({ error: "invalid_decision_branch_list_query" });
     try {
       return { decisionBranches: await context.decisionBranches.listPublic(query.data.limit ?? 12) };
+    } catch (error) {
+      return sendDecisionBranchError(request, reply, error);
+    }
+  });
+
+  app.get<{
+    Params: { id: string };
+    Querystring: { handNo?: string; limit?: string };
+  }>("/api/public/tournaments/:id/decision-branches", async (request, reply) => {
+    noStore(reply);
+    const tournamentId = uuidSchema.safeParse(request.params.id);
+    const query = publicTournamentHandListQuerySchema.safeParse(request.query ?? {});
+    if (!tournamentId.success || !query.success) {
+      return reply.code(400).send({ error: "invalid_tournament_decision_branch_list_query" });
+    }
+    try {
+      return {
+        decisionBranches: await context.decisionBranches.listPublicForTournamentHand(
+          tournamentId.data,
+          query.data.handNo,
+          query.data.limit ?? 4,
+        ),
+      };
+    } catch (error) {
+      return sendDecisionBranchError(request, reply, error);
+    }
+  });
+
+  app.get<{
+    Params: { id: string };
+    Querystring: { limit?: string };
+  }>("/api/public/competitors/:id/decision-branches", async (request, reply) => {
+    noStore(reply);
+    const competitorId = uuidSchema.safeParse(request.params.id);
+    const query = publicCompetitorListQuerySchema.safeParse(request.query ?? {});
+    if (!competitorId.success || !query.success) {
+      return reply.code(400).send({ error: "invalid_competitor_decision_branch_list_query" });
+    }
+    try {
+      return {
+        decisionBranches: await context.decisionBranches.listPublicForCompetitor(
+          competitorId.data,
+          query.data.limit ?? 4,
+        ),
+      };
     } catch (error) {
       return sendDecisionBranchError(request, reply, error);
     }

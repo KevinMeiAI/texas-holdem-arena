@@ -254,4 +254,49 @@ describe("decision branch repository", () => {
     } as unknown as Pool);
     await expect(repository.getById(uuid(10))).rejects.toThrow(/snapshot hash mismatch/i);
   });
+
+  it("lists only published branches for the exact tournament hand in action order", async () => {
+    const calls: { sql: string; values: unknown[] }[] = [];
+    const repository = new PgDecisionBranchRepository({
+      query: async (sql: string, values: unknown[]) => {
+        calls.push({ sql, values });
+        return {
+          rows: [row({
+            status: "PUBLISHED",
+            slug: "flop-study",
+            title_en: "Flop study",
+            published_at: "2026-08-20T02:00:00.000Z",
+          })],
+          rowCount: 1,
+        };
+      },
+    } as unknown as Pool);
+
+    await expect(repository.listPublishedForTournamentHand(uuid(1), 12, 99))
+      .resolves.toMatchObject([{ status: "PUBLISHED", slug: "flop-study" }]);
+    expect(calls[0]?.values).toEqual([uuid(1), 12, 12]);
+    expect(calls[0]?.sql).toContain("status = 'PUBLISHED'");
+    expect(calls[0]?.sql).toContain("'{source,tournamentId}'");
+    expect(calls[0]?.sql).toContain("'{source,handNo}'");
+    expect(calls[0]?.sql).toContain("'{source,actionSequence}'");
+  });
+
+  it("matches a competitor only as the decision maker or compared model", async () => {
+    const calls: { sql: string; values: unknown[] }[] = [];
+    const repository = new PgDecisionBranchRepository({
+      query: async (sql: string, values: unknown[]) => {
+        calls.push({ sql, values });
+        return { rows: [], rowCount: 0 };
+      },
+    } as unknown as Pool);
+
+    await repository.listPublishedForCompetitor(uuid(2), 4);
+
+    expect(calls[0]?.values).toEqual([uuid(2), 4]);
+    expect(calls[0]?.sql).toContain("publication.status = 'PUBLISHED'");
+    expect(calls[0]?.sql).toContain("player->>'playerId' = publication.public_snapshot #>> '{source,heroPlayerId}'");
+    expect(calls[0]?.sql).toContain("player->>'competitorId' = $1");
+    expect(calls[0]?.sql).toContain("target->>'competitorId' = $1");
+    expect(calls[0]?.sql).not.toContain("participantPlayerIds");
+  });
 });

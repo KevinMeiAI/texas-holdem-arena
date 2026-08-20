@@ -3,6 +3,7 @@ import {
   DECISION_BRANCH_SNAPSHOT_V1,
   decisionBranchPublicationSchema,
   decisionBranchSnapshotV1Schema,
+  publicDecisionBranchSummarySchema,
   storedDecisionBranchSnapshotSchema,
 } from "./decision-branches.js";
 
@@ -212,6 +213,56 @@ describe("decision branch contracts", () => {
     expect(decisionBranchPublicationSchema.safeParse({
       ...base,
       status: "PUBLISHED",
+    }).success).toBe(false);
+  });
+
+  it("accepts only the lightweight, role-aware public discovery summary", () => {
+    const summary = {
+      id: ids.publication,
+      status: "PUBLISHED" as const,
+      slug: "turn-call-study",
+      titleZh: "转牌跟注实验",
+      titleEn: "Turn call study",
+      summaryZh: null,
+      summaryEn: null,
+      publishedAt: "2026-08-20T02:00:00.000Z",
+      tournamentId: ids.tournament,
+      tournamentName: "Model Championship",
+      handNo: 42,
+      actionSequence: 812,
+      street: "TURN" as const,
+      hero: {
+        competitorId: ids.heroCompetitor,
+        displayName: "Original Model",
+        position: "BTN",
+        providerBrand: "chatgpt" as const,
+      },
+      originalDecision: { action: "call" as const, displayAmountTo: null },
+      targetCount: 1,
+      sampleCountPerModel: 2,
+      targets: [{
+        ordinal: 1,
+        competitorId: ids.targetCompetitor,
+        displayName: "Counterfactual Model",
+        providerBrand: "deepseek" as const,
+        modelActionTrials: 2,
+        fallbackTrials: 0,
+        infrastructureErrorTrials: 0,
+        actionDistribution: [
+          { action: "call" as const, count: 1, share: 0.5 },
+          { action: "fold" as const, count: 1, share: 0.5 },
+        ],
+      }],
+      relatedPlayerRoles: ["DECISION_MAKER" as const],
+    };
+    expect(publicDecisionBranchSummarySchema.parse(summary)).toEqual(summary);
+    expect(publicDecisionBranchSummarySchema.safeParse({
+      ...summary,
+      snapshot: snapshot(),
+    }).success).toBe(false);
+    expect(publicDecisionBranchSummarySchema.safeParse({
+      ...summary,
+      relatedPlayerRoles: ["DESISION_MAKER"],
     }).success).toBe(false);
   });
 });

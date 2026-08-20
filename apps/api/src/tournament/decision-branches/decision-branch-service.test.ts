@@ -208,6 +208,8 @@ function repositoryStub(
     }),
     getPublishedBySlug: vi.fn(async () => null),
     listPublished: vi.fn(async () => []),
+    listPublishedForTournamentHand: vi.fn(async () => []),
+    listPublishedForCompetitor: vi.fn(async () => []),
     ...overrides,
   };
 }
@@ -602,5 +604,73 @@ describe("decision branch service", () => {
     await expect(harness.service.getPublicBySlug("hidden-branch")).resolves.toBeNull();
     await expect(harness.service.listPublic(7)).resolves.toEqual([detail]);
     expect(repository.listPublished).toHaveBeenCalledWith(7);
+  });
+
+  it("projects lightweight hand discovery summaries without detailed evidence", async () => {
+    const allInSnapshot = decisionBranchSnapshotV1Schema.parse({
+      ...snapshot(),
+      source: {
+        ...snapshot().source,
+        originalDecision: {
+          action: "all_in",
+          amountTo: null,
+          decisionSummary: "Apply maximum pressure.",
+          usedFallback: false,
+        },
+      },
+    });
+    const published = publication("PUBLISHED", { snapshot: allInSnapshot });
+    const repository = repositoryStub({
+      listPublishedForTournamentHand: vi.fn(async () => [published]),
+    });
+    const harness = serviceWith({ repository });
+
+    const summaries = await harness.service.listPublicForTournamentHand(TOURNAMENT_ID, 12, 4);
+
+    expect(repository.listPublishedForTournamentHand).toHaveBeenCalledWith(TOURNAMENT_ID, 12, 4);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      tournamentId: TOURNAMENT_ID,
+      handNo: 12,
+      actionSequence: 90,
+      hero: { competitorId: uuid(5), displayName: "Hero", position: "BTN" },
+      originalDecision: { action: "all_in", displayAmountTo: 4_000 },
+      targetCount: 1,
+      sampleCountPerModel: 1,
+      relatedPlayerRoles: [],
+      targets: [{
+        competitorId: uuid(7),
+        displayName: "Rerun Model",
+        modelActionTrials: 1,
+        fallbackTrials: 0,
+        infrastructureErrorTrials: 0,
+      }],
+    });
+    expect(summaries[0]).not.toHaveProperty("snapshot");
+    expect(summaries[0]?.targets[0]).not.toHaveProperty("trials");
+    expect(summaries[0]?.targets[0]).not.toHaveProperty("modelId");
+    expect(summaries[0]?.targets[0]).not.toHaveProperty("competitorRevisionId");
+  });
+
+  it("reports and deduplicates only the queried competitor's decision roles", async () => {
+    const dualRoleSnapshot = decisionBranchSnapshotV1Schema.parse({
+      ...snapshot(),
+      targets: [{
+        ...snapshot().targets[0],
+        competitorId: uuid(5),
+      }],
+    });
+    const dualRole = publication("PUBLISHED", { snapshot: dualRoleSnapshot });
+    const repository = repositoryStub({
+      listPublishedForCompetitor: vi.fn(async () => [dualRole]),
+    });
+    const harness = serviceWith({ repository });
+
+    await expect(harness.service.listPublicForCompetitor(uuid(5), 3)).resolves.toMatchObject([{
+      relatedPlayerRoles: ["DECISION_MAKER", "COMPARED_MODEL"],
+    }]);
+    expect(repository.listPublishedForCompetitor).toHaveBeenCalledWith(uuid(5), 3);
+
+    await expect(harness.service.listPublicForCompetitor(uuid(6), 3)).resolves.toEqual([]);
   });
 });

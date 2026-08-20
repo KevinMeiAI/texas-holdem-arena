@@ -5,6 +5,7 @@ import {
   DECISION_BRANCH_SNAPSHOT_VERSION,
   type DecisionBranchPublication,
   type PublicDecisionBranchDto,
+  type PublicDecisionBranchSummary,
 } from "../../../../../packages/contracts/src/index.js";
 import type { AuthService } from "../../auth/auth-service.js";
 import type { AppConfig } from "../../config.js";
@@ -178,6 +179,46 @@ function publicBranch(): PublicDecisionBranchDto {
   };
 }
 
+function publicSummary(
+  relatedPlayerRoles: PublicDecisionBranchSummary["relatedPlayerRoles"] = [],
+): PublicDecisionBranchSummary {
+  return {
+    id: BRANCH_ID,
+    status: "PUBLISHED",
+    slug: "stable-branch",
+    titleZh: "稳定决策分叉",
+    titleEn: "Stable decision branch",
+    summaryZh: null,
+    summaryEn: "Same spot, different models.",
+    publishedAt: PUBLISHED_AT,
+    tournamentId: uuid(4),
+    tournamentName: "Final Table",
+    handNo: 12,
+    actionSequence: 90,
+    street: "FLOP",
+    hero: {
+      competitorId: uuid(5),
+      displayName: "Hero",
+      position: "BTN",
+      providerBrand: "chatgpt",
+    },
+    originalDecision: { action: "check", displayAmountTo: null },
+    targetCount: 1,
+    sampleCountPerModel: 1,
+    targets: [{
+      ordinal: 1,
+      competitorId: uuid(7),
+      displayName: "Rerun Model",
+      providerBrand: "deepseek",
+      modelActionTrials: 1,
+      fallbackTrials: 0,
+      infrastructureErrorTrials: 0,
+      actionDistribution: [{ action: "bet", count: 1, share: 1 }],
+    }],
+    relatedPlayerRoles,
+  };
+}
+
 interface AppOptions {
   authenticated?: boolean;
   csrfValid?: boolean;
@@ -206,6 +247,8 @@ async function appWith(options: AppOptions = {}) {
     hide: vi.fn(async () => adminPublication("HIDDEN")),
     getPublicBySlug: vi.fn(async () => null),
     listPublic: vi.fn(async () => [] as PublicDecisionBranchDto[]),
+    listPublicForTournamentHand: vi.fn(async () => [] as PublicDecisionBranchSummary[]),
+    listPublicForCompetitor: vi.fn(async () => [] as PublicDecisionBranchSummary[]),
     ...options.decisionBranches,
   } satisfies DecisionBranchRouteService;
   await registerDecisionBranchRoutes(app, {
@@ -433,5 +476,63 @@ describe("decision branch routes", () => {
     expect(invalid.statusCode).toBe(400);
     expect(invalid.headers["cache-control"]).toBe("no-store");
     expect(listPublic).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves lightweight discovery summaries for an exact tournament hand", async () => {
+    const summary = publicSummary();
+    const listPublicForTournamentHand = vi.fn(async () => [summary]);
+    const { app } = await appWith({ decisionBranches: { listPublicForTournamentHand } });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/public/tournaments/${uuid(4)}/decision-branches?handNo=12`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toEqual({ decisionBranches: [summary] });
+    expect(listPublicForTournamentHand).toHaveBeenCalledWith(uuid(4), 12, 4);
+    expect(response.body).not.toMatch(/snapshot|trials|decisionSummary|modelId|RevisionId/);
+  });
+
+  it("serves role-aware discovery summaries for a competitor", async () => {
+    const summary = publicSummary(["COMPARED_MODEL"]);
+    const listPublicForCompetitor = vi.fn(async () => [summary]);
+    const { app } = await appWith({ decisionBranches: { listPublicForCompetitor } });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/public/competitors/${uuid(7)}/decision-branches?limit=12`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toEqual({ decisionBranches: [summary] });
+    expect(listPublicForCompetitor).toHaveBeenCalledWith(uuid(7), 12);
+  });
+
+  it.each([
+    ["tournament", `/api/public/tournaments/not-a-uuid/decision-branches?handNo=12`],
+    ["tournament", `/api/public/tournaments/${uuid(4)}/decision-branches`],
+    ["tournament", `/api/public/tournaments/${uuid(4)}/decision-branches?handNo=0`],
+    ["tournament", `/api/public/tournaments/${uuid(4)}/decision-branches?handNo=12&limit=13`],
+    ["tournament", `/api/public/tournaments/${uuid(4)}/decision-branches?handNo=12&extra=true`],
+    ["competitor", "/api/public/competitors/not-a-uuid/decision-branches"],
+    ["competitor", `/api/public/competitors/${uuid(7)}/decision-branches?limit=0`],
+    ["competitor", `/api/public/competitors/${uuid(7)}/decision-branches?extra=true`],
+  ] as const)("strictly rejects an invalid %s discovery query", async (scope, url) => {
+    const { app, decisionBranches } = await appWith();
+
+    const response = await app.inject({ method: "GET", url });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(decisionBranches.listPublicForTournamentHand).not.toHaveBeenCalled();
+    expect(decisionBranches.listPublicForCompetitor).not.toHaveBeenCalled();
+    expect(response.json()).toMatchObject({
+      error: scope === "tournament"
+        ? "invalid_tournament_decision_branch_list_query"
+        : "invalid_competitor_decision_branch_list_query",
+    });
   });
 });

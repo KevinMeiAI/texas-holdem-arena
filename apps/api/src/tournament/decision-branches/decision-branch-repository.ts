@@ -75,6 +75,15 @@ export interface DecisionBranchRepository {
   ): Promise<DecisionBranchPublication>;
   getPublishedBySlug(slug: string): Promise<DecisionBranchPublication | null>;
   listPublished(limit: number): Promise<DecisionBranchPublication[]>;
+  listPublishedForTournamentHand(
+    tournamentId: string,
+    handNo: number,
+    limit: number,
+  ): Promise<DecisionBranchPublication[]>;
+  listPublishedForCompetitor(
+    competitorId: string,
+    limit: number,
+  ): Promise<DecisionBranchPublication[]>;
 }
 
 export class DecisionBranchSourceUnavailableError extends Error {
@@ -328,6 +337,54 @@ export class PgDecisionBranchRepository implements DecisionBranchRepository {
         order by published_at desc, id desc
         limit $1`,
       [bounded],
+    );
+    return result.rows.map(mapRow);
+  }
+
+  async listPublishedForTournamentHand(
+    tournamentId: string,
+    handNo: number,
+    limit: number,
+  ): Promise<DecisionBranchPublication[]> {
+    const bounded = Math.min(Math.max(Math.trunc(limit), 1), 12);
+    const result = await this.pool.query<DecisionBranchPublicationRow>(
+      `select * from decision_branch_publications
+        where status = 'PUBLISHED'
+          and public_snapshot #>> '{source,tournamentId}' = $1
+          and public_snapshot #>> '{source,handNo}' = $2::text
+        order by (public_snapshot #>> '{source,actionSequence}')::bigint,
+                 published_at desc,
+                 id
+        limit $3`,
+      [tournamentId, handNo, bounded],
+    );
+    return result.rows.map(mapRow);
+  }
+
+  async listPublishedForCompetitor(
+    competitorId: string,
+    limit: number,
+  ): Promise<DecisionBranchPublication[]> {
+    const bounded = Math.min(Math.max(Math.trunc(limit), 1), 12);
+    const result = await this.pool.query<DecisionBranchPublicationRow>(
+      `select * from decision_branch_publications publication
+        where publication.status = 'PUBLISHED'
+          and (
+            exists (
+              select 1
+                from jsonb_array_elements(publication.public_snapshot #> '{source,players}') player
+               where player->>'playerId' = publication.public_snapshot #>> '{source,heroPlayerId}'
+                 and player->>'competitorId' = $1
+            )
+            or exists (
+              select 1
+                from jsonb_array_elements(publication.public_snapshot->'targets') target
+               where target->>'competitorId' = $1
+            )
+          )
+        order by publication.published_at desc, publication.id desc
+        limit $2`,
+      [competitorId, bounded],
     );
     return result.rows.map(mapRow);
   }

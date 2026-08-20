@@ -370,3 +370,139 @@ export const publicDecisionBranchDtoSchema = z.object({
 }).strict();
 
 export type PublicDecisionBranchDto = z.infer<typeof publicDecisionBranchDtoSchema>;
+
+export const decisionBranchRelatedPlayerRoleSchema = z.enum([
+  "DECISION_MAKER",
+  "COMPARED_MODEL",
+]);
+export type DecisionBranchRelatedPlayerRole = z.infer<
+  typeof decisionBranchRelatedPlayerRoleSchema
+>;
+
+export const publicDecisionBranchSummaryHeroSchema = z.object({
+  competitorId: z.string().uuid().nullable(),
+  displayName: boundedNameSchema,
+  position: z.string().trim().min(1).max(32),
+  providerBrand: providerBrandSchema.nullable(),
+}).strict();
+
+export const publicDecisionBranchSummaryOriginalDecisionSchema = z.object({
+  action: pokerActionSchema,
+  displayAmountTo: z.number().int().positive().nullable(),
+}).strict().superRefine((decision, context) => {
+  const sized = decision.action === "bet"
+    || decision.action === "raise"
+    || decision.action === "all_in";
+  if (sized !== (decision.displayAmountTo !== null)) {
+    context.addIssue({
+      code: "custom",
+      path: ["displayAmountTo"],
+      message: "Bet, raise, and all-in summaries require a display amount",
+    });
+  }
+});
+
+export const publicDecisionBranchSummaryTargetSchema = z.object({
+  ordinal: z.number().int().min(1).max(9),
+  competitorId: z.string().uuid(),
+  displayName: boundedNameSchema,
+  providerBrand: providerBrandSchema.nullable(),
+  modelActionTrials: z.number().int().nonnegative(),
+  fallbackTrials: z.number().int().nonnegative(),
+  infrastructureErrorTrials: z.number().int().nonnegative(),
+  actionDistribution: z.array(decisionBranchActionDistributionEntrySchema).max(6),
+}).strict().superRefine((target, context) => {
+  const distributionTotal = target.actionDistribution.reduce((sum, entry) => sum + entry.count, 0);
+  if (distributionTotal !== target.modelActionTrials) {
+    context.addIssue({
+      code: "custom",
+      path: ["actionDistribution"],
+      message: "Summary distributions must use model actions only",
+    });
+  }
+  if (new Set(target.actionDistribution.map((entry) => entry.action)).size
+    !== target.actionDistribution.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["actionDistribution"],
+      message: "Summary distribution actions must be unique",
+    });
+  }
+  for (let index = 0; index < target.actionDistribution.length; index += 1) {
+    const entry = target.actionDistribution[index]!;
+    const expectedShare = target.modelActionTrials === 0 ? 0 : entry.count / target.modelActionTrials;
+    if (Math.abs(entry.share - expectedShare) > 1e-12) {
+      context.addIssue({
+        code: "custom",
+        path: ["actionDistribution", index, "share"],
+        message: "Summary action shares must use model actions as their denominator",
+      });
+    }
+  }
+});
+
+export const publicDecisionBranchSummarySchema = z.object({
+  id: z.string().uuid(),
+  status: z.literal("PUBLISHED"),
+  slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(120),
+  titleZh: z.string().trim().min(1).max(140).nullable(),
+  titleEn: z.string().trim().min(1).max(140).nullable(),
+  summaryZh: z.string().trim().min(1).max(500).nullable(),
+  summaryEn: z.string().trim().min(1).max(500).nullable(),
+  publishedAt: z.string().datetime(),
+  tournamentId: z.string().uuid(),
+  tournamentName: boundedNameSchema,
+  handNo: z.number().int().positive(),
+  actionSequence: z.number().int().positive(),
+  street: z.enum(["PREFLOP", "FLOP", "TURN", "RIVER"]),
+  hero: publicDecisionBranchSummaryHeroSchema,
+  originalDecision: publicDecisionBranchSummaryOriginalDecisionSchema,
+  targetCount: z.number().int().min(1).max(9),
+  sampleCountPerModel: z.number().int().min(1).max(20),
+  targets: z.array(publicDecisionBranchSummaryTargetSchema).min(1).max(9),
+  relatedPlayerRoles: z.array(decisionBranchRelatedPlayerRoleSchema).max(2),
+}).strict().superRefine((summary, context) => {
+  if (summary.titleZh === null && summary.titleEn === null) {
+    context.addIssue({
+      code: "custom",
+      path: ["titleZh"],
+      message: "A public decision branch summary requires a localized title",
+    });
+  }
+  if (summary.targets.length !== summary.targetCount) {
+    context.addIssue({
+      code: "custom",
+      path: ["targets"],
+      message: "Summary target count must match its targets",
+    });
+  }
+  if (new Set(summary.targets.map((target) => target.ordinal)).size !== summary.targets.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["targets"],
+      message: "Summary target ordinals must be unique",
+    });
+  }
+  for (let index = 0; index < summary.targets.length; index += 1) {
+    const target = summary.targets[index]!;
+    const completed = target.modelActionTrials
+      + target.fallbackTrials
+      + target.infrastructureErrorTrials;
+    if (completed !== summary.sampleCountPerModel) {
+      context.addIssue({
+        code: "custom",
+        path: ["targets", index],
+        message: "Every summary target must use the common sample count",
+      });
+    }
+  }
+  if (new Set(summary.relatedPlayerRoles).size !== summary.relatedPlayerRoles.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["relatedPlayerRoles"],
+      message: "Related player roles must be unique",
+    });
+  }
+});
+
+export type PublicDecisionBranchSummary = z.infer<typeof publicDecisionBranchSummarySchema>;
