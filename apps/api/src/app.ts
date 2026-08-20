@@ -20,6 +20,10 @@ import type { AppConfig } from "./config.js";
 import { PgEventStore } from "./persistence/event-store.js";
 import { decodeMasterKey } from "./security/encryption.js";
 import { ArenaService } from "./tournament/arena-service.js";
+import { PgDecisionBranchRepository } from "./tournament/decision-branches/decision-branch-repository.js";
+import { registerDecisionBranchRoutes } from "./tournament/decision-branches/decision-branch-routes.js";
+import { DecisionBranchService } from "./tournament/decision-branches/decision-branch-service.js";
+import { PgDecisionBranchSourceReader } from "./tournament/decision-branches/decision-branch-source.js";
 import { HistoryQueryService } from "./tournament/history-query-service.js";
 import { PgHandForkRepository } from "./tournament/hand-forks/hand-fork-repository.js";
 import { registerHandForkRoutes } from "./tournament/hand-forks/hand-fork-routes.js";
@@ -104,8 +108,9 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
       const arenaService = new ArenaService(pool, masterKey, models);
       arena = arenaService;
       const forkSourceResolver = handForkSourceResolver(new PgEventStore(pool, masterKey));
+      const forkRepository = new PgHandForkRepository(pool, masterKey);
       const forkService = new HandForkService({
-        repository: new PgHandForkRepository(pool, masterKey),
+        repository: forkRepository,
         sourceResolver: forkSourceResolver,
         models,
         history: new HistoryQueryService(pool),
@@ -113,6 +118,11 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
       });
       handForks = forkService;
       const forkCatalog = pgHandForkSourceCatalog(pool, forkSourceResolver);
+      const decisionBranchService = new DecisionBranchService({
+        repository: new PgDecisionBranchRepository(pool),
+        sources: new PgDecisionBranchSourceReader(forkRepository),
+        identities: arenaService,
+      });
       const momentService = new MomentService(new PgMomentRepository(pool), async ({
         tournamentId,
         handNo,
@@ -154,6 +164,10 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
         pool,
         catalog: forkCatalog,
         handForks: forkService,
+      });
+      await registerDecisionBranchRoutes(app, {
+        ...authContext,
+        decisionBranches: decisionBranchService,
       });
       await registerMomentRoutes(app, { ...authContext, arena, moments: momentService });
       await registerMomentSocialCardRoutes(app, { arena, moments: momentService });
