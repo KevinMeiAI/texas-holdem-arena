@@ -12,7 +12,10 @@ import {
   MomentSupersededPublicationError,
   PgMomentRepository,
 } from "../../apps/api/src/tournament/moments/moment-repository.js";
-import { MomentService } from "../../apps/api/src/tournament/moments/moment-service.js";
+import {
+  CURRENT_MOMENT_GENERATION,
+  MomentService,
+} from "../../apps/api/src/tournament/moments/moment-service.js";
 import {
   createIsolatedPostgresSchema,
   type IsolatedPostgresSchema,
@@ -21,6 +24,7 @@ import {
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const describePostgres = databaseUrl ? describe : describe.skip;
 const TOURNAMENT_ID = "00000000-0000-4000-8000-000000000101";
+const AUTO_TOURNAMENT_ID = "00000000-0000-4000-8000-000000000103";
 const ADMIN_ID = "00000000-0000-4000-8000-000000000102";
 const MOMENT_ONE = "00000000-0000-5000-8000-000000000111";
 const MOMENT_TWO = "00000000-0000-5000-8000-000000000112";
@@ -95,7 +99,15 @@ function audit(
   metadata: Record<string, unknown> = {},
   adminUserId = ADMIN_ID,
 ): MomentAuditEvent {
-  return { adminUserId, action, targetType, targetId, metadata };
+  return {
+    adminUserId,
+    action,
+    targetType,
+    targetId,
+    metadata: action === "tournament_moments.generate"
+      ? { trigger: "ADMIN", ...CURRENT_MOMENT_GENERATION, ...metadata }
+      : metadata,
+  };
 }
 
 async function waitForBlockedTournamentLock(): Promise<void> {
@@ -426,5 +438,81 @@ describePostgres("tournament moment persistence", () => {
         displacedPrimaryMomentIds: [MOMENT_SIX],
       },
     });
+  });
+
+  it("deduplicates AUTO generation under the tournament lock with null system provenance", async () => {
+    const repository = new PgMomentRepository(pool!);
+    await pool!.query(
+      `insert into tournaments
+         (id, name, status, ruleset_version, protocol_bundle_id,
+          benchmark_track_id, benchmark_cohort_id, public_state)
+       values ($1, 'Automatic moment fixture', 'COMPLETED', 'arena-rules-v2', 'arena-native-v11',
+               'track', 'cohort', $2::jsonb)`,
+      [AUTO_TOURNAMENT_ID, JSON.stringify({
+        tournamentId: AUTO_TOURNAMENT_ID,
+        status: "COMPLETED",
+      })],
+    );
+
+    const auditEvent = audit(
+      "tournament_moments.generate",
+      "tournament",
+      AUTO_TOURNAMENT_ID,
+      { trigger: "AUTO" },
+      null,
+    );
+    expect(await repository.upsertDetectedMoments(
+      AUTO_TOURNAMENT_ID,
+      [],
+      auditEvent,
+    )).toBe(true);
+    expect(await repository.upsertDetectedMoments(
+      AUTO_TOURNAMENT_ID,
+      [],
+      auditEvent,
+    )).toBe(false);
+
+    const generated = await pool!.query<{
+      admin_user_id: string | null;
+      metadata: Record<string, unknown>;
+    }>(
+      `select admin_user_id, metadata
+         from audit_events
+        where action = 'tournament_moments.generate'
+          and target_id = $1`,
+      [AUTO_TOURNAMENT_ID],
+    );
+    expect(generated.rows).toEqual([{
+      admin_user_id: null,
+      metadata: expect.objectContaining({
+        trigger: "AUTO",
+        candidateCount: 0,
+        ...CURRENT_MOMENT_GENERATION,
+      }),
+    }]);
+    await expect(repository.listCompletedTournamentIdsMissingGeneration(
+      CURRENT_MOMENT_GENERATION,
+    )).resolves.not.toContain(AUTO_TOURNAMENT_ID);
+  });
+
+  it("pages with the exact database timestamp behind an opaque moment cursor", async () => {
+    const repository = new PgMomentRepository(pool!);
+    const service = new MomentService(repository, acceptSuspenseCover);
+    await pool!.query(
+      `update moment_publications
+          set published_at = case moment_id
+            when $1::uuid then '2099-01-01T00:00:00.000900Z'::timestamptz
+            when $2::uuid then '2099-01-01T00:00:00.000100Z'::timestamptz
+            else published_at
+          end
+        where moment_id in ($1::uuid, $2::uuid)`,
+      [MOMENT_SIX, MOMENT_SEVEN],
+    );
+
+    const first = await service.listPublicIndex(1, "LARGE_POT", null);
+    expect(first.moments.map((moment) => moment.id)).toEqual([MOMENT_SIX]);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await service.listPublicIndex(1, "LARGE_POT", first.nextCursor);
+    expect(second.moments.map((moment) => moment.id)).toEqual([MOMENT_SEVEN]);
   });
 });

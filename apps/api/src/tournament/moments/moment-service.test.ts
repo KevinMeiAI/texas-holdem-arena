@@ -5,14 +5,17 @@ import {
   tournamentMomentFactsSchema,
   type AdminMomentRecord,
   type MomentPublicationMutation,
+  type MomentTag,
   type TournamentMomentFacts,
 } from "../../../../../packages/contracts/src/moments.js";
+import { BROADCAST_EQUITY_VERSION } from "../broadcast-equity.js";
+import { BROADCAST_VIEW_VERSION } from "../broadcast-view.js";
 import {
   PgMomentRepository,
   type MomentAuditEvent,
   type MomentRepository,
 } from "./moment-repository.js";
-import { MomentService } from "./moment-service.js";
+import { CURRENT_MOMENT_GENERATION, MomentService } from "./moment-service.js";
 
 const MOMENT_ID = "00000000-0000-5000-8000-000000000001";
 const TOURNAMENT_ID = "00000000-0000-4000-8000-000000000001";
@@ -73,15 +76,26 @@ function facts(): TournamentMomentFacts {
 class FakeMomentRepository implements MomentRepository {
   record: AdminMomentRecord = { facts: facts(), publication: null, supersededAt: null };
   audits: MomentAuditEvent[] = [];
+  missingTournamentIds: string[] = [];
+  persistDetected = true;
+  indexRecordCopies = 1;
+  indexCursorExists = true;
+  beforeDetectedPersist: Promise<void> | null = null;
 
   async upsertDetectedMoments(
     _tournamentId: string,
     moments: readonly TournamentMomentFacts[],
     audit: MomentAuditEvent,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    await this.beforeDetectedPersist;
     const next = moments.find((moment) => moment.id === this.record.facts.id);
     if (next) this.record = { ...this.record, facts: next };
     this.audits.push(structuredClone(audit));
+    return this.persistDetected;
+  }
+
+  async listCompletedTournamentIdsMissingGeneration(): Promise<string[]> {
+    return [...this.missingTournamentIds];
   }
 
   async getAdminMoment(momentId: string): Promise<AdminMomentRecord | null> {
@@ -142,12 +156,219 @@ class FakeMomentRepository implements MomentRepository {
       : [];
   }
 
+  async listPublishedIndexRecords(_input: {
+    limit: number;
+    tag: MomentTag | null;
+    cursor: { momentId: string } | null;
+  }): Promise<AdminMomentRecord[]> {
+    return Array.from({ length: this.indexRecordCopies }, () => structuredClone(this.record));
+  }
+
+  async publishedIndexCursorExists(_momentId: string): Promise<boolean> {
+    return this.indexCursorExists;
+  }
+
   async getPublishedRecordBySlug(_slug: string): Promise<AdminMomentRecord | null> {
     return structuredClone(this.record);
   }
 }
 
 describe("moment service", () => {
+  it("records automatic detection as a system-generated draft-only candidate run", async () => {
+    const repository = new FakeMomentRepository();
+    const service = new MomentService(repository, acceptSuspenseCover);
+
+    const generated = await service.rebuildAutomatically({
+      tournamentId: TOURNAMENT_ID,
+      tournamentStatus: "COMPLETED",
+      events: [],
+      broadcastFrames: [],
+    });
+
+    expect(generated).toBe(true);
+    expect(repository.record.publication).toBeNull();
+    expect(repository.audits).toEqual([expect.objectContaining({
+      adminUserId: null,
+      action: "tournament_moments.generate",
+      metadata: expect.objectContaining({
+        trigger: "AUTO",
+        ...CURRENT_MOMENT_GENERATION,
+        candidateCount: 0,
+      }),
+    })]);
+  });
+
+  it("waits for in-flight automatic generation before shutdown can close persistence", async () => {
+    const repository = new FakeMomentRepository();
+    let releasePersist!: () => void;
+    repository.beforeDetectedPersist = new Promise<void>((resolve) => {
+      releasePersist = resolve;
+    });
+    const service = new MomentService(repository, acceptSuspenseCover);
+    const generation = service.rebuildAutomatically({
+      tournamentId: TOURNAMENT_ID,
+      tournamentStatus: "COMPLETED",
+      events: [],
+      broadcastFrames: [],
+    });
+    let idle = false;
+    const waiting = service.waitForAutomaticRuns().then(() => { idle = true; });
+
+    await Promise.resolve();
+    expect(idle).toBe(false);
+    releasePersist();
+    await expect(Promise.all([generation, waiting])).resolves.toEqual([true, undefined]);
+    expect(idle).toBe(true);
+  });
+
+  it("makes an AUTO generation a database-locked no-op when the current generation exists", async () => {
+    const clientQuery = vi.fn(async (sql: string) => {
+      if (sql === "begin" || sql === "commit") return { rows: [], rowCount: null };
+      if (sql.includes("select id from tournaments")) return { rows: [{ id: TOURNAMENT_ID }], rowCount: 1 };
+      if (sql.includes("as generated")) return { rows: [{ generated: true }], rowCount: 1 };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const release = vi.fn();
+    const repository = new PgMomentRepository({
+      connect: vi.fn(async () => ({ query: clientQuery, release })),
+    } as unknown as Pool);
+
+    const persisted = await repository.upsertDetectedMoments(TOURNAMENT_ID, [], {
+      adminUserId: null,
+      action: "tournament_moments.generate",
+      targetType: "tournament",
+      targetId: TOURNAMENT_ID,
+      metadata: { trigger: "AUTO", ...CURRENT_MOMENT_GENERATION },
+    });
+
+    expect(persisted).toBe(false);
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("insert into tournament_moments"))).toBe(false);
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("insert into audit_events"))).toBe(false);
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an editorial persistence audit without administrator provenance", async () => {
+    const repository = new PgMomentRepository({} as Pool);
+
+    await expect(repository.upsertPublication({
+      momentId: MOMENT_ID,
+      status: "DRAFT",
+      slug: null,
+      titleZh: null,
+      titleEn: null,
+      summaryZh: null,
+      summaryEn: null,
+      coverSequence: null,
+      playbackStartSequence: null,
+      playbackEndSequence: null,
+      spoilerMode: "SUSPENSE",
+      isPrimary: false,
+      createdByAdminUserId: null,
+    }, null, {
+      adminUserId: null,
+      action: "moment_publication.update",
+      targetType: "tournament_moment",
+      targetId: MOMENT_ID,
+      metadata: {},
+    })).rejects.toThrow("requires administrator provenance");
+  });
+
+  it("isolates backlog failures and requests only current generation gaps", async () => {
+    const repository = new FakeMomentRepository();
+    const missingTwo = "00000000-0000-4000-8000-000000000003";
+    repository.missingTournamentIds = [TOURNAMENT_ID, missingTwo];
+    const service = new MomentService(repository, acceptSuspenseCover);
+    const onError = vi.fn();
+
+    const summary = await service.restoreMissingCompletedTournaments(async (tournamentId) => {
+      if (tournamentId === missingTwo) throw new Error("bad legacy projection");
+      return {
+        tournamentId,
+        tournamentStatus: "COMPLETED",
+        events: [],
+        broadcastFrames: [],
+      };
+    }, onError);
+
+    expect(summary).toEqual({ scanned: 2, generated: 1, failed: 1 });
+    expect(onError).toHaveBeenCalledWith(missingTwo, expect.any(Error));
+    expect(repository.audits).toHaveLength(1);
+  });
+
+  it("continues the backlog when its failure observer also throws", async () => {
+    const repository = new FakeMomentRepository();
+    const brokenTournament = "00000000-0000-4000-8000-000000000003";
+    const laterTournament = "00000000-0000-4000-8000-000000000004";
+    repository.missingTournamentIds = [TOURNAMENT_ID, brokenTournament, laterTournament];
+    const service = new MomentService(repository, acceptSuspenseCover);
+
+    const summary = await service.restoreMissingCompletedTournaments(async (tournamentId) => {
+      if (tournamentId === brokenTournament) throw new Error("bad legacy projection");
+      return {
+        tournamentId,
+        tournamentStatus: "COMPLETED",
+        events: [],
+        broadcastFrames: [],
+      };
+    }, () => {
+      throw new Error("broken logger");
+    });
+
+    expect(summary).toEqual({ scanned: 3, generated: 2, failed: 1 });
+    expect(repository.audits).toHaveLength(2);
+  });
+
+  it("uses all current algorithm versions when finding the startup backlog", async () => {
+    const query = vi.fn(async (_sql: string, _parameters?: unknown[]) => ({ rows: [], rowCount: 0 }));
+    const repository = new PgMomentRepository({ query } as unknown as Pool);
+
+    await repository.listCompletedTournamentIdsMissingGeneration(CURRENT_MOMENT_GENERATION);
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("current_moment.broadcast_view_version = $4"),
+      [
+        "arena-moment-facts-v1",
+        MOMENT_DETECTOR_VERSION,
+        "arena-moment-scoring-v1",
+        BROADCAST_VIEW_VERSION,
+        BROADCAST_EQUITY_VERSION,
+      ],
+    );
+    expect(String(query.mock.calls[0]?.[0])).toContain("generation_audit.metadata->>'equityVersion' = $5");
+  });
+
+  it("keeps a draft out of the paginated public index", async () => {
+    const service = new MomentService(new FakeMomentRepository(), acceptSuspenseCover);
+
+    await expect(service.listPublicIndex(12, null, null)).resolves.toEqual({
+      moments: [],
+      nextCursor: null,
+    });
+  });
+
+  it("rejects malformed cursors and cursors created for a different tag", async () => {
+    const repository = new FakeMomentRepository();
+    repository.indexRecordCopies = 2;
+    const service = new MomentService(repository, acceptSuspenseCover);
+    await service.publish(MOMENT_ID, {
+      slug: "cursor-source",
+      titleEn: "Cursor source",
+    }, null, ADMIN_ID);
+
+    await expect(service.listPublicIndex(1, null, "not-a-cursor")).rejects.toThrow(
+      "Invalid moment index cursor",
+    );
+    const firstPage = await service.listPublicIndex(1, "FINAL_HAND", null);
+    expect(firstPage.nextCursor).not.toBeNull();
+    await expect(service.listPublicIndex(1, null, firstPage.nextCursor)).rejects.toThrow(
+      "Invalid moment index cursor",
+    );
+    repository.indexCursorExists = false;
+    await expect(service.listPublicIndex(1, "FINAL_HAND", firstPage.nextCursor)).rejects.toThrow(
+      "Invalid moment index cursor",
+    );
+  });
+
   it("selects profile moments by editorial prominence rather than table participation", async () => {
     const query = vi.fn(async (_sql: string, _parameters?: unknown[]) => ({
       rows: [],

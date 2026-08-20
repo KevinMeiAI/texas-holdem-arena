@@ -1,22 +1,73 @@
+import { Buffer } from "node:buffer";
+import { z } from "zod";
 import {
+  MOMENT_DETECTOR_VERSION,
+  MOMENT_FACTS_VERSION,
+  MOMENT_SCORING_VERSION,
   momentEditorialPatchSchema,
   momentPublicationMutationSchema,
+  momentTagSchema,
   publicMomentDtoSchema,
   type AdminMomentRecord,
   type MomentEditorialPatch,
   type MomentPublicationMutation,
   type MomentPublicationStatus,
+  type MomentTag,
   type PublicMomentDto,
   type TournamentMomentFacts,
 } from "../../../../../packages/contracts/src/moments.js";
+import { BROADCAST_EQUITY_VERSION } from "../broadcast-equity.js";
+import { BROADCAST_VIEW_VERSION } from "../broadcast-view.js";
 import { detectTournamentMoments, type MomentDetectionInput } from "./moment-detector.js";
 import {
   MomentPublicationRevisionConflictError,
   MomentSupersededPublicationError,
   type MomentAuditAction,
   type MomentAuditEvent,
+  type MomentGenerationVersions,
   type MomentRepository,
 } from "./moment-repository.js";
+
+export const CURRENT_MOMENT_GENERATION = {
+  factsVersion: MOMENT_FACTS_VERSION,
+  detectorVersion: MOMENT_DETECTOR_VERSION,
+  scoringVersion: MOMENT_SCORING_VERSION,
+  broadcastViewVersion: BROADCAST_VIEW_VERSION,
+  equityVersion: BROADCAST_EQUITY_VERSION,
+} as const satisfies MomentGenerationVersions;
+
+const momentIndexCursorPayloadSchema = z.object({
+  v: z.literal(1),
+  momentId: z.string().uuid(),
+  tag: momentTagSchema.nullable(),
+}).strict();
+
+export class InvalidMomentIndexCursorError extends Error {
+  constructor() {
+    super("Invalid moment index cursor");
+    this.name = "InvalidMomentIndexCursorError";
+  }
+}
+
+function encodeMomentIndexCursor(moment: PublicMomentDto, tag: MomentTag | null): string {
+  return Buffer.from(JSON.stringify({
+    v: 1,
+    momentId: moment.id,
+    tag,
+  }), "utf8").toString("base64url");
+}
+
+function decodeMomentIndexCursor(cursor: string) {
+  if (!/^[A-Za-z0-9_-]{8,512}$/.test(cursor)) throw new InvalidMomentIndexCursorError();
+  try {
+    const decoded = Buffer.from(cursor, "base64url");
+    if (decoded.toString("base64url") !== cursor) throw new InvalidMomentIndexCursorError();
+    return momentIndexCursorPayloadSchema.parse(JSON.parse(decoded.toString("utf8")));
+  } catch (error) {
+    if (error instanceof InvalidMomentIndexCursorError) throw error;
+    throw new InvalidMomentIndexCursorError();
+  }
+}
 
 export function publicMomentFromRecord(record: AdminMomentRecord): PublicMomentDto | null {
   const publication = record.publication;
@@ -89,26 +140,81 @@ function hasOwn<K extends keyof MomentEditorialPatch>(
 }
 
 export class MomentService {
+  readonly #automaticRuns = new Map<string, Promise<boolean>>();
+
   constructor(
     private readonly repository: MomentRepository,
     private readonly validateSuspenseCover: MomentSuspenseCoverValidator,
   ) {}
 
   async rebuild(input: MomentDetectionInput, adminUserId: string): Promise<TournamentMomentFacts[]> {
+    return (await this.#rebuild(input, adminUserId, "ADMIN")).moments;
+  }
+
+  async rebuildAutomatically(input: MomentDetectionInput): Promise<boolean> {
+    const existing = this.#automaticRuns.get(input.tournamentId);
+    if (existing) return existing;
+    const run = this.#rebuild(input, null, "AUTO").then((result) => result.persisted);
+    this.#automaticRuns.set(input.tournamentId, run);
+    try {
+      return await run;
+    } finally {
+      if (this.#automaticRuns.get(input.tournamentId) === run) {
+        this.#automaticRuns.delete(input.tournamentId);
+      }
+    }
+  }
+
+  async waitForAutomaticRuns(): Promise<void> {
+    while (this.#automaticRuns.size > 0) {
+      await Promise.allSettled([...this.#automaticRuns.values()]);
+    }
+  }
+
+  async restoreMissingCompletedTournaments(
+    loadInput: (tournamentId: string) => Promise<MomentDetectionInput | null>,
+    onError?: (tournamentId: string, error: unknown) => void,
+  ): Promise<{ scanned: number; generated: number; failed: number }> {
+    const tournamentIds = await this.repository.listCompletedTournamentIdsMissingGeneration(
+      CURRENT_MOMENT_GENERATION,
+    );
+    let generated = 0;
+    let failed = 0;
+    for (const tournamentId of tournamentIds) {
+      try {
+        const input = await loadInput(tournamentId);
+        if (input && await this.rebuildAutomatically(input)) generated += 1;
+      } catch (error) {
+        failed += 1;
+        try {
+          onError?.(tournamentId, error);
+        } catch {
+          // Observability must not break per-tournament backlog isolation.
+        }
+      }
+    }
+    return { scanned: tournamentIds.length, generated, failed };
+  }
+
+  async #rebuild(
+    input: MomentDetectionInput,
+    adminUserId: string | null,
+    trigger: "AUTO" | "ADMIN",
+  ): Promise<{ moments: TournamentMomentFacts[]; persisted: boolean }> {
     const moments = detectTournamentMoments(input);
-    await this.repository.upsertDetectedMoments(input.tournamentId, moments, {
+    const persisted = await this.repository.upsertDetectedMoments(input.tournamentId, moments, {
       adminUserId,
       action: "tournament_moments.generate",
       targetType: "tournament",
       targetId: input.tournamentId,
       metadata: {
-        detectorVersion: moments[0]?.detectorVersion ?? null,
-        scoringVersion: moments[0]?.scoringVersion ?? null,
+        trigger,
+        ...CURRENT_MOMENT_GENERATION,
         candidateCount: moments.length,
         recommendedCount: moments.filter((moment) => moment.recommendationRank !== null).length,
       },
     });
-    return moments;
+    return { moments, persisted };
   }
 
   listAdmin(tournamentId: string): Promise<AdminMomentRecord[]> {
@@ -197,6 +303,36 @@ export class MomentService {
       const moment = publicMomentFromRecord(record);
       return moment ? [moment] : [];
     });
+  }
+
+  async listPublicIndex(
+    limit: number,
+    tag: MomentTag | null,
+    cursor: string | null,
+  ): Promise<{ moments: PublicMomentDto[]; nextCursor: string | null }> {
+    const decodedCursor = cursor ? decodeMomentIndexCursor(cursor) : null;
+    if (decodedCursor && decodedCursor.tag !== tag) throw new InvalidMomentIndexCursorError();
+    if (decodedCursor
+      && !(await this.repository.publishedIndexCursorExists(decodedCursor.momentId))) {
+      throw new InvalidMomentIndexCursorError();
+    }
+    const records = await this.repository.listPublishedIndexRecords({
+      limit: limit + 1,
+      tag,
+      cursor: decodedCursor ? {
+        momentId: decodedCursor.momentId,
+      } : null,
+    });
+    const publicMoments = records.flatMap((record) => {
+      const moment = publicMomentFromRecord(record);
+      return moment ? [moment] : [];
+    });
+    const moments = publicMoments.slice(0, limit);
+    const last = moments.at(-1);
+    return {
+      moments,
+      nextCursor: records.length > limit && last ? encodeMomentIndexCursor(last, tag) : null,
+    };
   }
 
   async getPublicBySlug(slug: string): Promise<PublicMomentDto | null> {

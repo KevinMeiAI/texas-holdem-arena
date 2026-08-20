@@ -5,6 +5,7 @@ import {
   type ProjectedArenaEvent,
   type ProjectionRole,
 } from "../../../../packages/contracts/src/visibility.js";
+import type { PublicMomentIndexPlayer } from "../../../../packages/contracts/src/moments.js";
 import { deriveSeed, DeterministicRng } from "../../../../packages/fairness/src/rng.js";
 import { createProvider } from "../../../../packages/providers/src/provider-factory.js";
 import { resolveProviderBrand, type ProviderBrand } from "../../../../packages/providers/src/provider-brand.js";
@@ -108,6 +109,34 @@ interface PublicPlayerMetadata {
   playerCompetitorIds: Record<string, string>;
 }
 
+export interface PublicTournamentIdentityContext {
+  tournament: { id: string; name: string };
+  players: PublicMomentIndexPlayer[];
+}
+
+export type TournamentCompletedHandler = (tournamentId: string) => void | Promise<void>;
+
+export function dispatchDetachedTournamentCompletion(
+  tournamentId: string,
+  handler: TournamentCompletedHandler | null,
+  onError: ((tournamentId: string, error: unknown) => void) | null,
+): Promise<void> | null {
+  if (!handler) return null;
+  const report = (error: unknown) => {
+    try {
+      onError?.(tournamentId, error);
+    } catch {
+      // Observability is best-effort and must never re-enter the Arena driver.
+    }
+  };
+  try {
+    return Promise.resolve(handler(tournamentId)).then(() => undefined, report);
+  } catch (error) {
+    report(error);
+    return Promise.resolve();
+  }
+}
+
 export class TournamentMomentInputError extends Error {
   constructor(readonly tournamentStatus: string) {
     super("Moments can only be generated after a tournament is completed");
@@ -165,8 +194,11 @@ export class ArenaService {
   readonly #broadcastViews = new BroadcastViewBuilder();
   readonly #broadcastReplayCache = new Map<string, ArenaBroadcastReplayState>();
   readonly #playerMetadataCache = new Map<string, PublicPlayerMetadata>();
+  readonly #tournamentCompletionRuns = new Set<Promise<void>>();
   readonly #store: PgEventStore;
   readonly #systemPrompts: SystemPromptVersionService;
+  #tournamentCompletedHandler: TournamentCompletedHandler | null = null;
+  #tournamentCompletedErrorHandler: ((tournamentId: string, error: unknown) => void) | null = null;
   #stopping = false;
 
   constructor(
@@ -177,6 +209,14 @@ export class ArenaService {
   ) {
     this.#store = new PgEventStore(pool, masterKey);
     this.#systemPrompts = new SystemPromptVersionService(pool, masterKey);
+  }
+
+  setTournamentCompletedHandler(
+    handler: TournamentCompletedHandler,
+    onError?: (tournamentId: string, error: unknown) => void,
+  ): void {
+    this.#tournamentCompletedHandler = handler;
+    this.#tournamentCompletedErrorHandler = onError ?? null;
   }
 
   async restoreActive(): Promise<void> {
@@ -515,6 +555,9 @@ export class ArenaService {
         (promise): promise is Promise<void> => promise !== null,
       ),
     );
+    while (this.#tournamentCompletionRuns.size > 0) {
+      await Promise.all([...this.#tournamentCompletionRuns]);
+    }
   }
 
   async publicState(tournamentId?: string): Promise<unknown | null> {
@@ -597,6 +640,77 @@ export class ArenaService {
         includeReplayFrames: true,
         equitySampleCount: 500,
       }),
+    };
+  }
+
+  async publicIdentityContext(
+    tournamentId: string,
+  ): Promise<PublicTournamentIdentityContext | null> {
+    const result = await this.pool.query<{ name?: string; public_state: unknown }>(
+      "select name, public_state from tournaments where id = $1",
+      [tournamentId],
+    );
+    const state = result.rows[0]?.public_state as {
+      tournamentId?: unknown;
+      name?: unknown;
+      players?: Array<{
+        id?: unknown;
+        displayName?: unknown;
+        seat?: unknown;
+      }>;
+    } | null;
+    const tournamentName = typeof result.rows[0]?.name === "string"
+      ? result.rows[0].name
+      : state?.name;
+    if (!result.rows[0]
+      || typeof tournamentName !== "string"
+      || tournamentName.length === 0
+    ) return null;
+    let identityPlayers = Array.isArray(state?.players) ? state.players.flatMap((player) => {
+      if (typeof player.id !== "string"
+        || typeof player.displayName !== "string"
+        || player.displayName.length === 0
+        || !Number.isInteger(player.seat)
+        || (player.seat as number) < 0
+        || (player.seat as number) > 8) return [];
+      return [{
+        id: player.id,
+        displayName: player.displayName,
+        seat: player.seat as number,
+      }];
+    }) : [];
+    if (identityPlayers.length === 0) {
+      const entries = await this.pool.query<{
+        id: string;
+        display_name: string;
+        seat: number;
+      }>(
+        `select competitor_revision_id::text as id,
+                display_name_at_entry as display_name,
+                seat
+           from tournament_entries
+          where tournament_id = $1
+          order by seat`,
+        [tournamentId],
+      );
+      identityPlayers = entries.rows.map((entry) => ({
+        id: entry.id,
+        displayName: entry.display_name,
+        seat: entry.seat,
+      }));
+    }
+    const metadata = await this.#playerMetadata({
+      tournamentId,
+      players: identityPlayers,
+    });
+    const players = identityPlayers.map((player) => ({
+      ...player,
+      competitorId: metadata.playerCompetitorIds[player.id] ?? null,
+      providerBrand: metadata.playerBrands[player.id] ?? null,
+    } satisfies PublicMomentIndexPlayer)).sort((left, right) => left.seat - right.seat);
+    return {
+      tournament: { id: tournamentId, name: tournamentName },
+      players,
     };
   }
 
@@ -817,6 +931,31 @@ export class ArenaService {
         }),
       },
     ] as const));
+    const unresolvedRevisionIds = revisionIds.filter((id) => !resolved.has(id));
+    if (unresolvedRevisionIds.length > 0) {
+      // Revision 1 in the legacy protocol reused the old model UUID, which is
+      // also the deterministic family UUID created by the family migration.
+      // Prefer the revision relation, then the retained family row, so old
+      // completed tournaments keep linking to a stable public competitor.
+      const legacy = await this.pool.query<{
+        player_id: string;
+        competitor_family_id: string;
+      }>(
+        `select requested.id::text as player_id,
+                coalesce(revision.competitor_family_id, family.id)::text as competitor_family_id
+           from unnest($1::uuid[]) requested(id)
+           left join competitor_revisions revision on revision.id = requested.id
+           left join competitor_families family on family.id = requested.id
+          where revision.competitor_family_id is not null or family.id is not null`,
+        [unresolvedRevisionIds],
+      );
+      for (const row of legacy.rows) {
+        resolved.set(row.player_id, {
+          competitorId: row.competitor_family_id,
+          providerBrand: null,
+        });
+      }
+    }
     const metadata = {
       playerBrands: Object.fromEntries(playerIds.map((id) => [id, resolved.get(id)?.providerBrand ?? null])),
       playerCompetitorIds: Object.fromEntries(playerIds.flatMap((id) => {
@@ -915,6 +1054,7 @@ export class ArenaService {
           return;
         }
         if (record.runtime.operationalStatus === "COMPLETED") {
+          this.#dispatchTournamentCompleted(record.runtime.tournamentId);
           const terminalIntent = desiredStatusAfterAwait(record);
           if (terminalIntent === "CANCELLED") {
             await this.#cancelBenchmarkSeries(record.runtime);
@@ -947,6 +1087,19 @@ export class ArenaService {
         this.#startDrive(record);
       }
     }
+  }
+
+  #dispatchTournamentCompleted(tournamentId: string): void {
+    const run = dispatchDetachedTournamentCompletion(
+      tournamentId,
+      this.#tournamentCompletedHandler,
+      this.#tournamentCompletedErrorHandler,
+    );
+    if (!run) return;
+    this.#tournamentCompletionRuns.add(run);
+    void run.then(() => {
+      this.#tournamentCompletionRuns.delete(run);
+    });
   }
 
   async #startSeriesRotation(seriesId: string, pauseBeforeFirstDecision = false): Promise<OrchestratorRuntime> {

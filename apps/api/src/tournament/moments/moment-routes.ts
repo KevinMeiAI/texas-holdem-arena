@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   momentEditorialPatchSchema,
+  momentTagSchema,
+  publicMomentIndexResponseSchema,
   type PublicMomentDto,
 } from "../../../../../packages/contracts/src/moments.js";
 import { requireAdmin, type AdminAuthContext } from "../../auth/routes.js";
@@ -11,7 +13,11 @@ import {
   type ArenaBroadcastReplayState,
 } from "../arena-service.js";
 import type { BroadcastView } from "../broadcast-view.js";
-import { MomentService, MomentServiceError } from "./moment-service.js";
+import {
+  InvalidMomentIndexCursorError,
+  MomentService,
+  MomentServiceError,
+} from "./moment-service.js";
 
 const uuidSchema = z.string().uuid();
 const slugSchema = z.string().trim().toLowerCase()
@@ -30,6 +36,11 @@ export const momentEditorialUpdateSchema = momentPublicationRequestSchema.refine
 );
 
 const momentHideRequestSchema = z.object({ expectedRevision: expectedRevisionSchema }).strict();
+export const momentIndexQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(24).default(12),
+  cursor: z.string().min(1).max(512).optional(),
+  tag: momentTagSchema.optional(),
+}).strict();
 
 interface MomentRouteContext extends AdminAuthContext {
   arena: ArenaService;
@@ -252,6 +263,47 @@ export async function registerMomentRoutes(
         return reply.code(404).send({ error: "tournament_not_found" });
       }
       return { moments: await context.moments.listPublic(tournamentId.data) };
+    },
+  );
+
+  app.get<{ Querystring: { limit?: string; cursor?: string; tag?: string } }>(
+    "/api/public/moments",
+    async (request, reply) => {
+      const query = momentIndexQuerySchema.safeParse(request.query ?? {});
+      if (!query.success) {
+        return reply.code(400).send({ error: "invalid_moment_index_query" });
+      }
+      try {
+        const page = await context.moments.listPublicIndex(
+          query.data.limit,
+          query.data.tag ?? null,
+          query.data.cursor ?? null,
+        );
+        const tournamentIds = [...new Set(page.moments.map((moment) => moment.tournamentId))];
+        const identityContexts = await Promise.all(tournamentIds.map(async (tournamentId) => (
+          [tournamentId, await context.arena.publicIdentityContext(tournamentId)] as const
+        )));
+        const identityByTournament = new Map(identityContexts);
+        const items = page.moments.map((moment) => {
+          const identity = identityByTournament.get(moment.tournamentId);
+          if (!identity) {
+            throw new Error(`Missing public identity context for tournament: ${moment.tournamentId}`);
+          }
+          const participantIds = new Set(moment.facts.participantPlayerIds);
+          return {
+            moment,
+            tournament: identity.tournament,
+            players: identity.players.filter((player) => participantIds.has(player.id)),
+          };
+        });
+        return publicMomentIndexResponseSchema.parse({ items, nextCursor: page.nextCursor });
+      } catch (error) {
+        if (error instanceof InvalidMomentIndexCursorError) {
+          return reply.code(400).send({ error: "invalid_moment_index_cursor" });
+        }
+        request.log.error({ err: error }, "public moment index failed");
+        return reply.code(500).send({ error: "moment_index_failed" });
+      }
     },
   );
 

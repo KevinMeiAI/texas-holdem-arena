@@ -1,22 +1,8 @@
 import { z } from "zod";
 import { publicMomentDtoSchema } from "./moments.js";
+import { providerBrandSchema } from "./provider-brand.js";
 
-export const providerBrandSchema = z.enum([
-  "chatgpt",
-  "claude",
-  "deepseek",
-  "doubao",
-  "gemini",
-  "glm",
-  "hunyuan",
-  "kimi",
-  "minimax",
-  "qwen",
-  "wenxin",
-  "xai",
-]);
-
-export type ProviderBrand = z.infer<typeof providerBrandSchema>;
+export { providerBrandSchema, type ProviderBrand } from "./provider-brand.js";
 
 const nullableRateSchema = z.number().min(0).max(1).nullable();
 const competitorStatusSchema = z.enum(["ACTIVE", "RETIRED"]);

@@ -1,7 +1,8 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { ProviderLogo } from "./provider-logo";
 import type { ProviderBrand } from "./provider-brand";
+import { publicNavigationSection } from "./public-navigation-model";
 import { spectatorTimeline, type SettlementPresentation, type SpectatorEventTone } from "./spectator-event-timeline";
 import { tableSeatLayout } from "./table-layout";
 import type {
@@ -26,13 +27,26 @@ export function Brand() {
 
 export function AppHeader({ admin = false }: { admin?: boolean }) {
   const { text } = useUiPreferences();
+  const section = publicNavigationSection(useLocation().pathname);
   return (
     <header className="site-header">
       <Brand />
       <nav className="site-nav" aria-label={text("公开页面导航", "Public navigation")}>
-        <NavLink to="/" end>{text("观赛室", "Watch Room")}</NavLink>
-        <NavLink to="/tournaments">{text("赛事", "Events")}</NavLink>
-        <NavLink to="/leaderboard">{text("榜单", "Ranks")}</NavLink>
+        <Link to="/" className={section === "WATCH_ROOM" ? "active" : ""} aria-current={section === "WATCH_ROOM" ? "page" : undefined}>{text("观赛室", "Watch Room")}</Link>
+        <Link
+          to="/tournaments"
+          className={section === "EVENTS" ? "active" : ""}
+          aria-current={section === "EVENTS" ? "page" : undefined}
+        >
+          {text("赛事", "Events")}
+        </Link>
+        <Link
+          to="/leaderboard"
+          className={section === "RANKS" ? "active" : ""}
+          aria-current={section === "RANKS" ? "page" : undefined}
+        >
+          {text("榜单", "Ranks")}
+        </Link>
         <NavLink className={admin ? "admin-link active" : "admin-link"} to="/admin">{text("控制室", "Admin")}</NavLink>
       </nav>
       <PreferenceControls />

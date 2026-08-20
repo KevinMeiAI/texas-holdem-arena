@@ -46,9 +46,17 @@ export interface LocalizedMomentCopy {
   summary: string | null;
 }
 
-export interface MomentOutcomeProjection {
+export interface MomentPresentationPlayer {
+  id: string;
+  displayName: string;
+  seat: number;
+}
+
+export interface MomentOutcomeProjection<
+  Player extends MomentPresentationPlayer = ArenaPlayer,
+> {
   winnerPlayerIds: string[];
-  winners: ArenaPlayer[];
+  winners: Player[];
   eliminatedPlayerIds: string[];
   netChanges: Record<string, number>;
 }
@@ -107,10 +115,10 @@ export function localizedMomentCopy(
   };
 }
 
-export function sortMomentPlayersBySeat(
+export function sortMomentPlayersBySeat<Player extends Pick<MomentPresentationPlayer, "id" | "seat">>(
   playerIds: readonly string[],
-  players: readonly ArenaPlayer[],
-): ArenaPlayer[] {
+  players: readonly Player[],
+): Player[] {
   const included = new Set(playerIds);
   return players
     .filter((player) => included.has(player.id))
@@ -127,11 +135,11 @@ export function momentPublicPlayerIds(
   return [...new Set(source)];
 }
 
-export function momentOutcomeProjection(
+export function momentOutcomeProjection<Player extends MomentPresentationPlayer>(
   moment: PublicMomentDto,
-  players: readonly ArenaPlayer[],
+  players: readonly Player[],
   replayEnded: boolean,
-): MomentOutcomeProjection | null {
+): MomentOutcomeProjection<Player> | null {
   if (moment.spoilerMode === "SUSPENSE" && !replayEnded) return null;
 
   const winnerPlayerIds = [...new Set(moment.facts.winnerPlayerIds)];

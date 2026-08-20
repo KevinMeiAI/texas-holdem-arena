@@ -8,6 +8,7 @@ import {
   type AdminMomentRecord,
   type MomentPublication,
   type MomentPublicationMutation,
+  type MomentTag,
   type TournamentMomentFacts,
 } from "../../../../../packages/contracts/src/moments.js";
 
@@ -37,7 +38,10 @@ export interface MomentRepository {
     tournamentId: string,
     moments: readonly TournamentMomentFacts[],
     audit: MomentAuditEvent,
-  ): Promise<void>;
+  ): Promise<boolean>;
+  listCompletedTournamentIdsMissingGeneration(
+    versions: MomentGenerationVersions,
+  ): Promise<string[]>;
   getAdminMoment(momentId: string): Promise<AdminMomentRecord | null>;
   listAdminMoments(tournamentId: string): Promise<AdminMomentRecord[]>;
   upsertPublication(
@@ -50,7 +54,27 @@ export interface MomentRepository {
     playerIds: readonly string[],
     limit: number,
   ): Promise<AdminMomentRecord[]>;
+  publishedIndexCursorExists(momentId: string): Promise<boolean>;
+  listPublishedIndexRecords(input: PublishedMomentIndexQuery): Promise<AdminMomentRecord[]>;
   getPublishedRecordBySlug(slug: string): Promise<AdminMomentRecord | null>;
+}
+
+export interface MomentGenerationVersions {
+  factsVersion: string;
+  detectorVersion: string;
+  scoringVersion: string;
+  broadcastViewVersion: string;
+  equityVersion: string;
+}
+
+export interface PublishedMomentIndexCursor {
+  momentId: string;
+}
+
+export interface PublishedMomentIndexQuery {
+  limit: number;
+  tag: MomentTag | null;
+  cursor: PublishedMomentIndexCursor | null;
 }
 
 export type MomentAuditAction =
@@ -60,11 +84,100 @@ export type MomentAuditAction =
   | "moment_publication.hide";
 
 export interface MomentAuditEvent {
-  adminUserId: string;
+  adminUserId: string | null;
   action: MomentAuditAction;
   targetType: "tournament" | "tournament_moment";
   targetId: string;
   metadata: Record<string, unknown>;
+}
+
+function generationVersionsFromAudit(audit: MomentAuditEvent): MomentGenerationVersions {
+  const versions = audit.metadata;
+  const keys = [
+    "factsVersion",
+    "detectorVersion",
+    "scoringVersion",
+    "broadcastViewVersion",
+    "equityVersion",
+  ] as const;
+  for (const key of keys) {
+    if (typeof versions[key] !== "string" || versions[key].length === 0) {
+      throw new Error(`Moment generation audit is missing ${key}`);
+    }
+  }
+  return {
+    factsVersion: versions.factsVersion as string,
+    detectorVersion: versions.detectorVersion as string,
+    scoringVersion: versions.scoringVersion as string,
+    broadcastViewVersion: versions.broadcastViewVersion as string,
+    equityVersion: versions.equityVersion as string,
+  };
+}
+
+const CURRENT_GENERATION_PREDICATE = `(
+  exists (
+    select 1
+      from tournament_moments current_moment
+     where current_moment.tournament_id = $1::uuid
+       and current_moment.superseded_at is null
+       and current_moment.facts_version = $2
+       and current_moment.detector_version = $3
+       and current_moment.scoring_version = $4
+       and current_moment.broadcast_view_version = $5
+       and current_moment.equity_version = $6
+  )
+  or exists (
+    select 1
+      from audit_events generation_audit
+     where generation_audit.action = 'tournament_moments.generate'
+       and generation_audit.target_type = 'tournament'
+       and generation_audit.target_id = $1::text
+       and generation_audit.metadata->>'factsVersion' = $2
+       and generation_audit.metadata->>'detectorVersion' = $3
+       and generation_audit.metadata->>'scoringVersion' = $4
+       and generation_audit.metadata->>'broadcastViewVersion' = $5
+       and generation_audit.metadata->>'equityVersion' = $6
+  )
+)`;
+
+const MISSING_CURRENT_GENERATION_PREDICATE = `not (
+  exists (
+    select 1
+      from tournament_moments current_moment
+     where current_moment.tournament_id = t.id
+       and current_moment.superseded_at is null
+       and current_moment.facts_version = $1
+       and current_moment.detector_version = $2
+       and current_moment.scoring_version = $3
+       and current_moment.broadcast_view_version = $4
+       and current_moment.equity_version = $5
+  )
+  or exists (
+    select 1
+      from audit_events generation_audit
+     where generation_audit.action = 'tournament_moments.generate'
+       and generation_audit.target_type = 'tournament'
+       and generation_audit.target_id = t.id::text
+       and generation_audit.metadata->>'factsVersion' = $1
+       and generation_audit.metadata->>'detectorVersion' = $2
+       and generation_audit.metadata->>'scoringVersion' = $3
+       and generation_audit.metadata->>'broadcastViewVersion' = $4
+       and generation_audit.metadata->>'equityVersion' = $5
+  )
+)`;
+
+function generationParameters(
+  tournamentId: string,
+  versions: MomentGenerationVersions,
+): string[] {
+  return [
+    tournamentId,
+    versions.factsVersion,
+    versions.detectorVersion,
+    versions.scoringVersion,
+    versions.broadcastViewVersion,
+    versions.equityVersion,
+  ];
 }
 
 export class MomentPublicationRevisionConflictError extends Error {
@@ -215,13 +328,28 @@ export class PgMomentRepository implements MomentRepository {
     tournamentId: string,
     moments: readonly TournamentMomentFacts[],
     audit: MomentAuditEvent,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (audit.action !== "tournament_moments.generate"
       || audit.targetType !== "tournament"
       || audit.targetId !== tournamentId) {
       throw new Error("Moment generation audit target does not match its tournament");
     }
+    if (audit.metadata.trigger === "AUTO" ? audit.adminUserId !== null : (
+      audit.metadata.trigger !== "ADMIN" || audit.adminUserId === null
+    )) {
+      throw new Error("Moment generation audit provenance does not match its trigger");
+    }
     const parsed = moments.map((moment) => tournamentMomentFactsSchema.parse(moment));
+    const versions = generationVersionsFromAudit(audit);
+    if (parsed.some((moment) => (
+      moment.factsVersion !== versions.factsVersion
+      || moment.detectorVersion !== versions.detectorVersion
+      || moment.scoringVersion !== versions.scoringVersion
+      || moment.broadcastViewVersion !== versions.broadcastViewVersion
+      || moment.equityVersion !== versions.equityVersion
+    ))) {
+      throw new Error("Moment generation audit versions do not match its candidates");
+    }
     const tournamentIds = new Set(parsed.map((moment) => moment.tournamentId));
     if (tournamentIds.size > 1 || (tournamentIds.size === 1 && !tournamentIds.has(tournamentId))) {
       throw new Error("A moment upsert batch must belong to the requested tournament");
@@ -234,6 +362,16 @@ export class PgMomentRepository implements MomentRepository {
         [tournamentId],
       );
       if (tournament.rowCount !== 1) throw new Error(`Unknown tournament: ${tournamentId}`);
+      if (audit.metadata.trigger === "AUTO") {
+        const existing = await client.query<{ generated: boolean }>(
+          `select ${CURRENT_GENERATION_PREDICATE} as generated`,
+          generationParameters(tournamentId, versions),
+        );
+        if (existing.rows[0]?.generated === true) {
+          await client.query("commit");
+          return false;
+        }
+      }
       for (const moment of parsed) await upsertMoment(client, moment);
       await client.query(
         `update tournament_moments
@@ -247,19 +385,43 @@ export class PgMomentRepository implements MomentRepository {
         ...audit,
         metadata: {
           ...audit.metadata,
-          detectorVersion: parsed[0]?.detectorVersion ?? null,
-          scoringVersion: parsed[0]?.scoringVersion ?? null,
+          factsVersion: versions.factsVersion,
+          detectorVersion: versions.detectorVersion,
+          scoringVersion: versions.scoringVersion,
+          broadcastViewVersion: versions.broadcastViewVersion,
+          equityVersion: versions.equityVersion,
           candidateCount: parsed.length,
           recommendedCount: parsed.filter((moment) => moment.recommendationRank !== null).length,
         },
       });
       await client.query("commit");
+      return true;
     } catch (error) {
       await client.query("rollback");
       throw error;
     } finally {
       client.release();
     }
+  }
+
+  async listCompletedTournamentIdsMissingGeneration(
+    versions: MomentGenerationVersions,
+  ): Promise<string[]> {
+    const result = await this.pool.query<{ id: string }>(
+      `select t.id
+         from tournaments t
+        where t.status = 'COMPLETED'
+          and ${MISSING_CURRENT_GENERATION_PREDICATE}
+        order by t.created_at, t.id`,
+      [
+        versions.factsVersion,
+        versions.detectorVersion,
+        versions.scoringVersion,
+        versions.broadcastViewVersion,
+        versions.equityVersion,
+      ],
+    );
+    return result.rows.map((row) => row.id);
   }
 
   async getAdminMoment(momentId: string): Promise<AdminMomentRecord | null> {
@@ -291,6 +453,9 @@ export class PgMomentRepository implements MomentRepository {
       || audit.targetType !== "tournament_moment"
       || audit.targetId !== input.momentId) {
       throw new Error("Moment publication audit target does not match its moment");
+    }
+    if (audit.adminUserId === null) {
+      throw new Error("Moment publication audit requires administrator provenance");
     }
     const client = await this.pool.connect();
     let saved: AdminMomentRecord | null = null;
@@ -446,6 +611,42 @@ export class PgMomentRepository implements MomentRepository {
       [[...new Set(playerIds)], boundedLimit],
     );
     return result.rows.map(mapRow);
+  }
+
+  async listPublishedIndexRecords(input: PublishedMomentIndexQuery): Promise<AdminMomentRecord[]> {
+    const result = await this.pool.query<MomentJoinRow>(
+      `${JOIN_SELECT}
+        where p.status = 'PUBLISHED'
+          and ($1::text is null or m.tags ? ($1::text))
+          and (
+            $2::uuid is null
+            or (p.published_at, m.id) < (
+              select boundary.published_at, boundary.moment_id
+                from moment_publications boundary
+               where boundary.moment_id = $2::uuid
+            )
+          )
+        order by p.published_at desc, m.id desc
+        limit $3`,
+      [
+        input.tag,
+        input.cursor?.momentId ?? null,
+        input.limit,
+      ],
+    );
+    return result.rows.map(mapRow);
+  }
+
+  async publishedIndexCursorExists(momentId: string): Promise<boolean> {
+    const result = await this.pool.query<{ exists: boolean }>(
+      `select exists (
+         select 1
+           from moment_publications
+          where moment_id = $1 and published_at is not null
+       ) as exists`,
+      [momentId],
+    );
+    return result.rows[0]?.exists === true;
   }
 
   async getPublishedRecordBySlug(slug: string): Promise<AdminMomentRecord | null> {

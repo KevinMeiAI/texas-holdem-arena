@@ -280,8 +280,8 @@ export function MomentAdminPage({ csrfToken }: { csrfToken: string }) {
 
       {completed.length === 0 ? (
         <EmptyState
-          title={text("还没有可检测的赛事", "No tournaments ready for detection")}
-          body={text("完成一场锦标赛后，即可从完整事件流中检测和发布精彩瞬间。", "Complete a tournament to detect and publish moments from its event history.")}
+          title={text("还没有已结束的赛事", "No completed tournaments yet")}
+          body={text("赛事结束后会自动检测候选，但不会自动公开；你仍需在这里审核并发布。", "Candidates are detected automatically after a tournament ends, but are never published automatically. Review and publish them here.")}
           action={<Link className="button primary" to="/admin/tournaments/new">{text("创建赛事", "Create tournament")}</Link>}
         />
       ) : (
@@ -324,8 +324,8 @@ export function MomentAdminPage({ csrfToken }: { csrfToken: string }) {
             : moments.error ? <ErrorBlock message={moments.error} onRetry={() => void moments.refresh()} />
               : records.length === 0 ? (
                 <EmptyState
-                  title={text("尚未检测候选", "No candidates detected")}
-                  body={text("点击“检测精彩瞬间”，系统会从赛事事件流中给出候选；不会自动公开。", "Run detection to derive candidates from the event stream. Nothing is published automatically.")}
+                  title={text("暂未发现候选", "No candidates found yet")}
+                  body={text("赛事结束后会自动检测，且不会自动公开。若这里仍为空，可手动检测或稍后重新检测。", "Detection runs automatically after the tournament ends and never publishes by itself. If this remains empty, run detection manually or detect again later.")}
                 />
               ) : (
                 <section className="moment-grid" aria-label={text("精彩瞬间候选", "Moment candidates")}>

@@ -253,7 +253,14 @@ export function TournamentsPage() {
   const tournaments = data?.tournaments ?? [];
   return (
     <main className="page-shell">
-      <SectionHeading title={text("赛事档案", "Tournament archive")} />
+      <SectionHeading
+        title={text("赛事档案", "Tournament archive")}
+        aside={(
+          <Link className="archive-highlights-link" to="/moments">
+            <span aria-hidden="true">A♠</span>{text("精彩瞬间", "Highlights")}<i aria-hidden="true">↗</i>
+          </Link>
+        )}
+      />
       {tournaments.length === 0 ? <EmptyState title={text("还没有历史赛事", "No tournaments yet")} body={text("创建一场锦标赛后，赛程会出现在这里。", "Create a tournament to start the archive.")} action={<Link className="button primary" to="/admin/tournaments/new">{text("创建赛事", "Create tournament")}</Link>} /> : (
         <div className="tournament-list">
           {tournaments.map((tournament, index) => {
@@ -604,6 +611,7 @@ export function ReplayPage() {
           tournamentId={state.tournamentId}
           players={state.players}
           playerBrands={performance.data?.playerBrands ?? {}}
+          playerCompetitorIds={performance.data?.playerCompetitorIds ?? {}}
         />
       )}
       {state.status === "COMPLETED" && (

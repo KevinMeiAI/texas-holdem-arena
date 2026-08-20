@@ -18,10 +18,15 @@ import { BROADCAST_EQUITY_VERSION } from "../broadcast-equity.js";
 import { BROADCAST_VIEW_VERSION, type BroadcastView } from "../broadcast-view.js";
 import {
   momentEditorialUpdateSchema,
+  momentIndexQuerySchema,
   momentReplayWindow,
   registerMomentRoutes,
 } from "./moment-routes.js";
-import { MomentServiceError, type MomentService } from "./moment-service.js";
+import {
+  InvalidMomentIndexCursorError,
+  MomentServiceError,
+  type MomentService,
+} from "./moment-service.js";
 
 const TOURNAMENT_ID = "00000000-0000-4000-8000-000000000001";
 const MOMENT_ID = "00000000-0000-5000-8000-000000000001";
@@ -144,11 +149,16 @@ async function appWith(options: {
   } as unknown as AuthService;
   const arena = {
     publicState: vi.fn(async () => ({ tournamentId: TOURNAMENT_ID, status: "COMPLETED" })),
+    publicIdentityContext: vi.fn(async () => ({
+      tournament: { id: TOURNAMENT_ID, name: "Arena final" },
+      players: [],
+    })),
     ...options.arena,
   } as unknown as ArenaService;
   const moments = {
     listAdmin: vi.fn(async () => []),
     listPublic: vi.fn(async () => []),
+    listPublicIndex: vi.fn(async () => ({ moments: [], nextCursor: null })),
     getPublicBySlug: vi.fn(async () => null),
     ...options.moments,
   } as unknown as MomentService;
@@ -173,6 +183,14 @@ describe("moment route boundaries", () => {
     expect(momentEditorialUpdateSchema.safeParse({ expectedRevision: null }).success).toBe(false);
     expect(momentEditorialUpdateSchema.safeParse({ expectedRevision: null, status: "PUBLISHED" }).success).toBe(false);
     expect(momentEditorialUpdateSchema.safeParse({ expectedRevision: null, createdByAdminUserId: ADMIN_ID }).success).toBe(false);
+  });
+
+  it("bounds the public moment index query and accepts only one known tag", () => {
+    expect(momentIndexQuerySchema.parse({})).toEqual({ limit: 12 });
+    expect(momentIndexQuerySchema.safeParse({ limit: "24", tag: "FINAL_HAND" }).success).toBe(true);
+    expect(momentIndexQuerySchema.safeParse({ limit: "25" }).success).toBe(false);
+    expect(momentIndexQuerySchema.safeParse({ tag: ["FINAL_HAND", "ALL_IN"] }).success).toBe(false);
+    expect(momentIndexQuerySchema.safeParse({ tag: "UNKNOWN" }).success).toBe(false);
   });
 
   it("rejects mutation without CSRF before calling the service", async () => {
@@ -264,6 +282,73 @@ describe("moment route boundaries", () => {
 
     expect(detail.statusCode).toBe(404);
     expect(replay.statusCode).toBe(404);
+  });
+
+  it("returns 400 for an invalid opaque public-index cursor", async () => {
+    const listPublicIndex = vi.fn(async () => {
+      throw new InvalidMomentIndexCursorError();
+    });
+    const { app } = await appWith({ moments: { listPublicIndex } });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/public/moments?cursor=not-a-valid-cursor",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "invalid_moment_index_cursor" });
+  });
+
+  it("returns only the allowlisted published moment index shape", async () => {
+    const competitorId = "11111111-1111-4111-8111-111111111111";
+    const listPublicIndex = vi.fn(async () => ({
+      moments: [publicMoment()],
+      nextCursor: "opaque-next-cursor",
+    }));
+    const publicIdentityContext = vi.fn(async () => ({
+      tournament: { id: TOURNAMENT_ID, name: "Arena final" },
+      players: [
+        { id: "a", displayName: "Alpha", seat: 0, competitorId, providerBrand: "claude" as const },
+        { id: "b", displayName: "Beta", seat: 1, competitorId: null, providerBrand: null },
+        { id: "spectator", displayName: "Not in hand", seat: 2, competitorId: null, providerBrand: null },
+      ],
+      configuration: { apiKey: "must-not-leak" },
+    }));
+    const { app } = await appWith({
+      arena: { publicIdentityContext },
+      moments: { listPublicIndex },
+    });
+
+    const response = await app.inject({ method: "GET", url: "/api/public/moments?limit=12&tag=FINAL_HAND" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      items: [{
+        moment: publicMoment(),
+        tournament: { id: TOURNAMENT_ID, name: "Arena final" },
+        players: [
+          { id: "a", displayName: "Alpha", seat: 0, competitorId, providerBrand: "claude" },
+          { id: "b", displayName: "Beta", seat: 1, competitorId: null, providerBrand: null },
+        ],
+      }],
+      nextCursor: "opaque-next-cursor",
+    });
+    expect(response.body).not.toContain("apiKey");
+    expect(listPublicIndex).toHaveBeenCalledWith(12, "FINAL_HAND", null);
+  });
+
+  it("never silently drops a published moment when tournament identity is unavailable", async () => {
+    const { app } = await appWith({
+      arena: { publicIdentityContext: vi.fn(async () => null) },
+      moments: {
+        listPublicIndex: vi.fn(async () => ({ moments: [publicMoment()], nextCursor: null })),
+      },
+    });
+
+    const response = await app.inject({ method: "GET", url: "/api/public/moments" });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({ error: "moment_index_failed" });
   });
 });
 

@@ -1,6 +1,6 @@
 import type { PublicMomentDto } from "../../../packages/contracts/src/moments";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useApiResource } from "./api";
 import { useBroadcastReplayPlayer } from "./broadcast-replay-player";
 import {
@@ -22,6 +22,7 @@ import {
   publicMomentTagLabel,
   sortMomentPlayersBySeat,
 } from "./moment-presentation";
+import { momentBackLink } from "./moments-index-model";
 import {
   buildMomentStoryCardModel,
   canonicalMomentUrl,
@@ -106,6 +107,7 @@ export function MomentPage() {
   const { locale, text } = useUiPreferences();
   const { slug = "" } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const normalizedSlug = slug.trim().toLocaleLowerCase("en-US");
   const [playbackRequested, setPlaybackRequested] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copying" | "copied" | "error">("idle");
@@ -170,8 +172,8 @@ export function MomentPage() {
   }, [response]);
   useEffect(() => {
     if (!response || slug === response.moment.slug) return;
-    navigate(`/moments/${response.moment.slug}`, { replace: true });
-  }, [navigate, response, slug]);
+    navigate(`/moments/${response.moment.slug}`, { replace: true, state: location.state });
+  }, [location.state, navigate, response, slug]);
   useEffect(() => {
     if (!copy) return;
     const previousTitle = document.title;
@@ -186,7 +188,7 @@ export function MomentPage() {
     return (
       <main className="page-shell moment-page">
         <nav className="analysis-back-nav" aria-label={text("精彩瞬间导航", "Highlight navigation")}>
-          <Link className="analysis-back-link" to="/tournaments"><span aria-hidden="true">←</span>{text("返回赛事列表", "Back to events")}</Link>
+          <Link className="analysis-back-link" to="/moments"><span aria-hidden="true">←</span>{text("返回精彩瞬间", "Back to highlights")}</Link>
         </nav>
         <ErrorBlock message={text("无法找到或载入这个精彩瞬间。", "This highlight could not be found or loaded.")} onRetry={() => void resource.refresh()} />
       </main>
@@ -194,6 +196,7 @@ export function MomentPage() {
   }
 
   const { moment, state, playerBrands } = response;
+  const backLink = momentBackLink(location.state, moment);
   const replayEnded = replayPlayer.status === "ended";
   const outcome = momentOutcomeProjection(moment, state.players, replayEnded);
   const displayFrame = replayPlayer.active ? replayPlayer.frame : response.coverFrame;
@@ -249,8 +252,10 @@ export function MomentPage() {
   return (
     <main className="page-shell moment-page">
       <nav className="analysis-back-nav" aria-label={text("精彩瞬间导航", "Highlight navigation")}>
-        <Link className="analysis-back-link" to={`/tournaments/${moment.tournamentId}/replay/${moment.handNo}`}>
-          <span aria-hidden="true">←</span>{text(`返回第 ${String(moment.handNo).padStart(3, "0")} 手牌解析`, `Back to hand ${String(moment.handNo).padStart(3, "0")}`)}
+        <Link className="analysis-back-link" to={backLink.to}>
+          <span aria-hidden="true">←</span>{backLink.kind === "TOURNAMENT_HAND"
+            ? text(`返回第 ${String(moment.handNo).padStart(3, "0")} 手牌解析`, `Back to hand ${String(moment.handNo).padStart(3, "0")}`)
+            : text("返回精彩瞬间", "Back to highlights")}
         </Link>
       </nav>
 

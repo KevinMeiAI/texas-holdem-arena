@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { providerBrandSchema } from "./provider-brand.js";
 
 // Historical IDs are immutable. Current aliases may advance only alongside a
 // newly registered schema or algorithm implementation.
@@ -321,3 +322,29 @@ export const publicMomentDtoSchema = z.object({
 }).strict();
 
 export type PublicMomentDto = z.infer<typeof publicMomentDtoSchema>;
+
+export const publicMomentIndexPlayerSchema = z.object({
+  id: z.string().min(1).max(200),
+  displayName: z.string().min(1).max(120),
+  seat: z.number().int().min(0).max(8),
+  competitorId: z.string().uuid().nullable(),
+  providerBrand: providerBrandSchema.nullable(),
+}).strict();
+
+export const publicMomentIndexItemSchema = z.object({
+  moment: publicMomentDtoSchema,
+  tournament: z.object({
+    id: z.string().uuid(),
+    name: z.string().min(1).max(120),
+  }).strict(),
+  players: z.array(publicMomentIndexPlayerSchema).max(9),
+}).strict();
+
+export const publicMomentIndexResponseSchema = z.object({
+  items: z.array(publicMomentIndexItemSchema),
+  nextCursor: z.string().min(1).max(512).nullable(),
+}).strict();
+
+export type PublicMomentIndexPlayer = z.infer<typeof publicMomentIndexPlayerSchema>;
+export type PublicMomentIndexItem = z.infer<typeof publicMomentIndexItemSchema>;
+export type PublicMomentIndexResponse = z.infer<typeof publicMomentIndexResponseSchema>;

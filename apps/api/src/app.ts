@@ -86,6 +86,8 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
   let arena: ArenaService | null = null;
   let consistency: ConsistencyTestService | null = null;
   let handForks: HandForkService | null = null;
+  let moments: MomentService | null = null;
+  let momentBacklog: Promise<void> | null = null;
   if (pool) {
     await runMigrations(pool);
     const auth = new AuthService(pool);
@@ -108,7 +110,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
       });
       handForks = forkService;
       const forkCatalog = pgHandForkSourceCatalog(pool, forkSourceResolver);
-      const moments = new MomentService(new PgMomentRepository(pool), async ({
+      const momentService = new MomentService(new PgMomentRepository(pool), async ({
         tournamentId,
         handNo,
         coverSequence,
@@ -122,11 +124,18 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
           events: replay.events,
         }).safe;
       });
+      moments = momentService;
+      arenaService.setTournamentCompletedHandler(async (tournamentId) => {
+        const input = await arenaService.momentDetectionInput(tournamentId);
+        if (input) await momentService.rebuildAutomatically(input);
+      }, (tournamentId, error) => {
+        app.log.error({ err: error, tournamentId }, "automatic moment detection failed");
+      });
       const competitorProfiles = new CompetitorProfileService(
         pool,
         new CompetitorIdentityService(pool),
         arenaService,
-        moments,
+        momentService,
       );
       await registerAuthRoutes(app, authContext);
       await registerAdminModelRoutes(app, {
@@ -143,11 +152,21 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
         catalog: forkCatalog,
         handForks: forkService,
       });
-      await registerMomentRoutes(app, { ...authContext, arena, moments });
+      await registerMomentRoutes(app, { ...authContext, arena, moments: momentService });
       await registerCompetitorRoutes(app, { competitorProfiles });
       await consistency.restorePending();
       await forkService.restorePending();
       await arena.restoreActive();
+      // Recover the authoritative Arena worker first, then start the
+      // rebuildable content-index scan in the background.
+      momentBacklog = momentService.restoreMissingCompletedTournaments(
+        (tournamentId) => arenaService.momentDetectionInput(tournamentId),
+        (tournamentId, error) => {
+          app.log.error({ err: error, tournamentId }, "moment detection backlog item failed");
+        },
+      ).then(() => undefined).catch((error) => {
+        app.log.error({ err: error }, "moment detection backlog scan failed");
+      });
     }
   }
 
@@ -203,6 +222,8 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
     await consistency?.shutdown();
     await handForks?.shutdown();
     await arena?.shutdown();
+    await momentBacklog;
+    await moments?.waitForAutomaticRuns();
     await pool?.end();
   });
   return { app, pool, masterKey };
