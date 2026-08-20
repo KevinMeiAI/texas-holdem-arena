@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  adminHandForkSchema,
   createHandForkRequestSchema,
   handForkLegalActionsSchema,
   type ActionResponse,
@@ -52,6 +51,7 @@ import {
   handForkSourceIntegrity,
   handForkSourcePayload,
 } from "./hand-fork-source-catalog.js";
+import { adminHandForkFromPersistence } from "./hand-fork-view.js";
 
 const GLOBAL_WORKER_LIMIT = 3;
 const DEFAULT_LEASE_MS = 660_000;
@@ -374,61 +374,6 @@ function trailingInfrastructureFailures(target: HandForkPersistenceRecord["targe
   return count;
 }
 
-function publicFork(
-  record: HandForkPersistenceRecord,
-  payload: HandForkSourcePayloadV1,
-): AdminHandFork {
-  return adminHandForkSchema.parse({
-    id: record.id,
-    status: record.status,
-    source: {
-      tournamentId: record.sourceTournamentId,
-      tournamentName: payload.source.tournamentName,
-      handNo: record.sourceHandNo,
-      decisionId: record.sourceDecisionId,
-      playerId: record.sourcePlayerId,
-      playerDisplayName: payload.source.playerDisplayName,
-      street: payload.source.street,
-      heroPosition: payload.source.heroPosition,
-      holeCards: payload.source.holeCards,
-      legalActions: payload.source.legalActions,
-      originalAction: payload.source.originalAction,
-      originalAmountTo: payload.source.originalAmountTo,
-      originalDecisionSummary: payload.source.originalDecisionSummary,
-      originalUsedFallback: payload.source.originalUsedFallback,
-      actionEventSequence: record.sourceActionEventSequence,
-    },
-    sourceIntegrity: {
-      expectedAggregateVersion: record.sourceExpectedAggregateVersion,
-      sourceEventHash: record.sourceEventHash,
-      sourceRequestHash: record.sourceRequestHash,
-      sourcePayloadHash: record.sourcePayloadHash,
-      visibleInputHash: record.visibleInputHash,
-      legalContractHash: record.legalContractHash,
-      protocolBundleId: record.protocolBundleId,
-      rulesetVersion: record.rulesetVersion,
-      contextVersion: record.contextVersion,
-      systemPromptHash: record.systemPromptHash,
-      outputSchemaHash: record.outputSchemaHash,
-      parserPolicyVersion: record.parserPolicyVersion,
-      adapterProtocolVersion: record.adapterProtocolVersion,
-      historyProtocolVersion: record.historyProtocolVersion,
-      correctionProtocolVersion: record.correctionProtocolVersion,
-    },
-    sampleCount: record.sampleCount,
-    timeoutMs: record.timeoutMs,
-    maxParallelTargets: record.maxParallelTargets,
-    summary: record.summary,
-    errorMessage: record.errorMessage,
-    createdByAdminUserId: record.createdByAdminUserId,
-    startedAt: record.startedAt,
-    completedAt: record.completedAt,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    targets: record.targets,
-  });
-}
-
 export function handForkCreateRequestHash(input: CreateHandForkRequest): string {
   const request = Object.fromEntries(
     Object.entries(input).filter(([key]) => key !== "clientRequestId"),
@@ -496,7 +441,7 @@ export class HandForkService {
       createRequestHash,
     );
     if (existing) {
-      return publicFork(existing, await this.#repository.loadSourcePayload(existing.id));
+      return adminHandForkFromPersistence(existing, await this.#repository.loadSourcePayload(existing.id));
     }
     const source = await this.#sourceResolver.resolve(input.sourceDecisionId);
     const payload = clone(handForkSourcePayload(source));
@@ -556,27 +501,27 @@ export class HandForkService {
       createdByAdminUserId: adminUserId,
     });
     this.#requestPump();
-    return publicFork(record, payload);
+    return adminHandForkFromPersistence(record, payload);
   }
 
   async list(limit = 50): Promise<AdminHandFork[]> {
     const records = await this.#repository.listForks(limit);
     return Promise.all(records.map(async (record) => (
-      publicFork(record, await this.#repository.loadSourcePayload(record.id))
+      adminHandForkFromPersistence(record, await this.#repository.loadSourcePayload(record.id))
     )));
   }
 
   async get(id: string): Promise<AdminHandFork | null> {
     const record = await this.#repository.getFork(id, true);
     if (!record) return null;
-    return publicFork(record, await this.#repository.loadSourcePayload(id));
+    return adminHandForkFromPersistence(record, await this.#repository.loadSourcePayload(id));
   }
 
   async cancel(id: string): Promise<AdminHandFork | null> {
     const record = await this.#repository.cancelFork(id);
     if (!record) return null;
     this.#requestPump();
-    return publicFork(record, await this.#repository.loadSourcePayload(id));
+    return adminHandForkFromPersistence(record, await this.#repository.loadSourcePayload(id));
   }
 
   async restorePending(): Promise<string[]> {
