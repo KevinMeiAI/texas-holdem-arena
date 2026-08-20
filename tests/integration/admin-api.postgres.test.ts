@@ -383,6 +383,27 @@ describePostgres("administrator auth and model configuration API", () => {
       expect(frozenTournament.rows[0]?.prompt_hash).toBe(customPrompt.sha256);
       expect(frozenTournament.rows[0]?.configuration.benchmarkTrack.systemPromptHash).toBe(customPrompt.sha256);
 
+      const tournamentEntries = await maintenancePool!.query<{
+        competitor_revision_id: string;
+        seat: number;
+        display_name_at_entry: string;
+      }>(
+        `select competitor_revision_id, seat, display_name_at_entry
+           from tournament_entries where tournament_id = $1 order by seat`,
+        [tournamentId],
+      );
+      expect(tournamentEntries.rows).toHaveLength(2);
+      expect(tournamentEntries.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          competitor_revision_id: alphaRevisionId,
+          display_name_at_entry: "Policy Alpha Prime",
+        }),
+        expect.objectContaining({
+          competitor_revision_id: betaRevisionId,
+          display_name_at_entry: "Policy Beta",
+        }),
+      ]));
+
       const handsResponse = await app.inject({
         method: "GET",
         url: `/api/public/tournaments/${tournamentId}/hands`,

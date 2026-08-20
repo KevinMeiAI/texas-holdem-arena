@@ -55,6 +55,11 @@ export interface ArenaTournamentSetup {
   providerIdByPlayer: Record<string, string>;
   frozenModelConfigByPlayer?: Record<string, FrozenModelConfig>;
   playerLabels?: Record<string, string>;
+  competitorEntries?: readonly {
+    competitorRevisionId: string;
+    seat: number;
+    displayNameAtEntry: string;
+  }[];
   masterSeed?: Uint8Array;
   managedByArena?: boolean;
   decisionTimeoutMs?: number;
@@ -317,6 +322,7 @@ export class TournamentOrchestrator {
       ...(setup.systemPromptVersionId ? { systemPromptVersionId: setup.systemPromptVersionId } : {}),
       ...(setup.benchmarkSeriesId ? { benchmarkSeriesId: setup.benchmarkSeriesId } : {}),
       ...(setup.benchmarkRotation !== undefined ? { benchmarkRotation: setup.benchmarkRotation } : {}),
+      ...(setup.competitorEntries ? { competitorEntries: setup.competitorEntries } : {}),
     });
     runtime = await this.#append(runtime, [
       publicArenaEvent("TOURNAMENT_CONFIG_FROZEN", {

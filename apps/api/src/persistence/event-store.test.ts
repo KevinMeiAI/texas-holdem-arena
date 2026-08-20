@@ -1,9 +1,68 @@
 import { createHash } from "node:crypto";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalJson } from "../../../../packages/fairness/src/canonical-json.js";
 import { encryptJson } from "../security/encryption.js";
 import { PgEventStore } from "./event-store.js";
+
+describe("tournament competitor entries", () => {
+  it("stores the tournament and its immutable seat identities atomically", async () => {
+    const query = vi.fn(async (_sql: string, _values?: unknown[]) => ({ rows: [], rowCount: 1 }));
+    const release = vi.fn();
+    const store = new PgEventStore({
+      connect: vi.fn(async () => ({ query, release } as unknown as PoolClient)),
+    } as unknown as Pool, new Uint8Array(32));
+    const tournamentId = "11111111-1111-4111-8111-111111111111";
+    const entries = [
+      {
+        competitorRevisionId: "22222222-2222-4222-8222-222222222222",
+        seat: 0,
+        displayNameAtEntry: "Alpha",
+      },
+      {
+        competitorRevisionId: "33333333-3333-4333-8333-333333333333",
+        seat: 1,
+        displayNameAtEntry: "Beta",
+      },
+    ];
+
+    await store.createTournament({
+      id: tournamentId,
+      name: "Identity snapshot",
+      rulesetVersion: "rules-v1",
+      configuration: {},
+      competitorEntries: entries,
+    });
+
+    const entryCalls = query.mock.calls.filter(([sql]) => String(sql).includes("insert into tournament_entries"));
+    expect(entryCalls).toEqual([
+      [expect.any(String), [tournamentId, entries[0]!.competitorRevisionId, 0, "Alpha"]],
+      [expect.any(String), [tournamentId, entries[1]!.competitorRevisionId, 1, "Beta"]],
+    ]);
+    expect(query.mock.calls.findIndex(([sql]) => sql === "begin"))
+      .toBeLessThan(query.mock.calls.findIndex(([sql]) => String(sql).includes("insert into tournaments")));
+    expect(query.mock.calls.findIndex(([sql]) => String(sql).includes("insert into tournament_entries")))
+      .toBeLessThan(query.mock.calls.findIndex(([sql]) => sql === "commit"));
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("rejects duplicate seats before opening a database transaction", async () => {
+    const connect = vi.fn();
+    const store = new PgEventStore({ connect } as unknown as Pool, new Uint8Array(32));
+
+    await expect(store.createTournament({
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Duplicate seat",
+      rulesetVersion: "rules-v1",
+      configuration: {},
+      competitorEntries: [
+        { competitorRevisionId: "22222222-2222-4222-8222-222222222222", seat: 0, displayNameAtEntry: "Alpha" },
+        { competitorRevisionId: "33333333-3333-4333-8333-333333333333", seat: 0, displayNameAtEntry: "Beta" },
+      ],
+    })).rejects.toThrow("unique revisions and seats");
+    expect(connect).not.toHaveBeenCalled();
+  });
+});
 
 describe("decision leases", () => {
   it("renews a lease only while the same worker still owns the decision", async () => {

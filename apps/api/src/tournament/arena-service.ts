@@ -290,6 +290,11 @@ export class ArenaService {
         frozenConfigByRevisionId[model.revisionId]!,
       ])),
       playerLabels: Object.fromEntries(seated.map((model) => [model.revisionId, model.displayName])),
+      competitorEntries: seated.map((model, seat) => ({
+        competitorRevisionId: model.revisionId,
+        seat,
+        displayNameAtEntry: model.displayName,
+      })),
       decisionTimeoutMs: input.decisionTimeoutMs,
       decisionConfig: decisionConfig(historyMode),
       masterSeed,
@@ -1014,6 +1019,11 @@ export class ArenaService {
             model.revisionId,
             series.competitor_labels[model.revisionId] ?? model.displayName,
           ])),
+          competitorEntries: seated.map((model, seat) => ({
+            competitorRevisionId: model.revisionId,
+            seat,
+            displayNameAtEntry: series.competitor_labels[model.revisionId] ?? model.displayName,
+          })),
           decisionTimeoutMs: series.tournament_configuration.decisionTimeoutMs,
           decisionConfig: decisionConfig(series.tournament_configuration.historyMode ?? "query_only"),
           managedByArena: true,

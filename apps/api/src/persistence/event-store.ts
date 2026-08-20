@@ -66,6 +66,11 @@ export interface CreateTournamentRecord {
   systemPromptVersionId?: string;
   benchmarkSeriesId?: string;
   benchmarkRotation?: number;
+  competitorEntries?: readonly {
+    competitorRevisionId: string;
+    seat: number;
+    displayNameAtEntry: string;
+  }[];
 }
 
 export interface AppendSnapshot {
@@ -452,28 +457,60 @@ export class PgEventStore {
   }
 
   async createTournament(input: CreateTournamentRecord): Promise<void> {
-    await this.pool.query(
-      `insert into tournaments
-        (id, name, status, ruleset_version, prompt_hash, configuration,
-         protocol_bundle_id, benchmark_track_id, benchmark_cohort_id,
-         system_prompt_version_id, benchmark_series_id, benchmark_rotation,
-         event_class)
-       values ($1, $2, 'DRAFT', $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)`,
-      [
-        input.id,
-        input.name,
-        input.rulesetVersion,
-        input.promptHash ?? null,
-        JSON.stringify(input.configuration),
-        input.protocolBundleId ?? "legacy/native-unclassified",
-        input.benchmarkTrackId ?? "legacy/native-unclassified",
-        input.benchmarkCohortId ?? "legacy/native-unclassified",
-        input.systemPromptVersionId ?? null,
-        input.benchmarkSeriesId ?? null,
-        input.benchmarkRotation ?? null,
-        input.eventClass ?? "RATED",
-      ],
-    );
+    const entries = input.competitorEntries ?? [];
+    if (new Set(entries.map((entry) => entry.competitorRevisionId)).size !== entries.length
+      || new Set(entries.map((entry) => entry.seat)).size !== entries.length) {
+      throw new Error("Tournament competitor entries must have unique revisions and seats");
+    }
+    if (entries.some((entry) => (
+      !Number.isSafeInteger(entry.seat)
+      || entry.seat < 0
+      || entry.seat > 8
+      || entry.displayNameAtEntry.trim().length < 1
+      || entry.displayNameAtEntry.length > 120
+    ))) {
+      throw new Error("Tournament competitor entry is invalid");
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        `insert into tournaments
+          (id, name, status, ruleset_version, prompt_hash, configuration,
+           protocol_bundle_id, benchmark_track_id, benchmark_cohort_id,
+           system_prompt_version_id, benchmark_series_id, benchmark_rotation,
+           event_class)
+         values ($1, $2, 'DRAFT', $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)`,
+        [
+          input.id,
+          input.name,
+          input.rulesetVersion,
+          input.promptHash ?? null,
+          JSON.stringify(input.configuration),
+          input.protocolBundleId ?? "legacy/native-unclassified",
+          input.benchmarkTrackId ?? "legacy/native-unclassified",
+          input.benchmarkCohortId ?? "legacy/native-unclassified",
+          input.systemPromptVersionId ?? null,
+          input.benchmarkSeriesId ?? null,
+          input.benchmarkRotation ?? null,
+          input.eventClass ?? "RATED",
+        ],
+      );
+      for (const entry of entries) {
+        await client.query(
+          `insert into tournament_entries
+            (tournament_id, competitor_revision_id, seat, display_name_at_entry)
+           values ($1, $2, $3, $4)`,
+          [input.id, entry.competitorRevisionId, entry.seat, entry.displayNameAtEntry],
+        );
+      }
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async append(input: AppendEventsInput): Promise<AppendEventsResult> {
