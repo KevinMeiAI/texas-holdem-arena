@@ -30,6 +30,7 @@ import {
   SectionHeading,
   StatusBadge,
 } from "./components";
+import { decisionForkHref, isForkableDecisionTurn } from "./decision-fork-link";
 import type {
   ArenaEvent,
   ArenaBroadcast,
@@ -654,6 +655,7 @@ export function ReplayPage() {
               const player = state.players.find((item) => item.id === turn.player_id);
               const parsed = turn.response?.parsed;
               const summary = typeof parsed?.decision_summary === "string" ? parsed.decision_summary : null;
+              const forkable = isForkableDecisionTurn(turn);
               return (
                 <details key={`${turn.decision_id}:${turn.turn_index}`}>
                   <summary>
@@ -663,6 +665,7 @@ export function ReplayPage() {
                     <i>{turn.latency_ms === null ? "—" : `${(turn.latency_ms / 1000).toFixed(1)} ${text("秒", "s")}`}</i>
                   </summary>
                   {summary && <p className="decision-audit-summary">{text("决策说明", "Decision")}: {summary}</p>}
+                  {forkable && <div className="decision-audit-actions"><Link className="decision-fork-link" to={decisionForkHref(id, handNo, turn.decision_id)}>{text("从此决策分叉", "Fork this hand")}<span aria-hidden="true">↗</span></Link></div>}
                   <div className="decision-proof-grid">
                     <span>{text("请求哈希", "Request hash")} <code>{turn.request_hash}</code></span>
                     <span>{text("模型配置哈希", "Model config hash")} <code>{turn.provider_config_hash}</code></span>

@@ -2715,6 +2715,37 @@ span.hand-nav {
   font-size: var(--text-md);
 }
 
+.decision-audit-actions {
+  padding: 0 var(--space-sm) var(--space-sm);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.decision-fork-link {
+  min-height: var(--control-height);
+  padding-inline: var(--space-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-ink);
+  border: var(--rule-hair) solid var(--color-accent);
+  border-radius: var(--radius-input);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.decision-fork-link span {
+  color: var(--color-accent-strong);
+  font-family: var(--font-mono);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .decision-fork-link:hover {
+    background: var(--color-selected-surface);
+  }
+}
+
 .decision-proof-grid {
   padding: var(--space-sm);
   display: grid;
