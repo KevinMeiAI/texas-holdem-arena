@@ -25,9 +25,34 @@ const defaultPreferences: UiPreferences = {
 
 const UiPreferencesContext = createContext<UiPreferences>(defaultPreferences);
 
+export function uiLocaleFromSearch(search: string): UiLocale | null {
+  const requested = new URLSearchParams(search).get("lang");
+  if (requested === "en") return "en";
+  if (requested === "zh" || requested === "zh-CN") return "zh-CN";
+  return null;
+}
+
+export function urlWithUiLocale(href: string, locale: UiLocale): string {
+  const url = new URL(href);
+  if (locale === "en") url.searchParams.set("lang", "en");
+  else url.searchParams.delete("lang");
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 function initialLocale(): UiLocale {
   if (typeof window === "undefined") return "zh-CN";
+  const requested = uiLocaleFromSearch(window.location.search);
+  if (requested) return requested;
   return window.localStorage.getItem("arena-locale") === "en" ? "en" : "zh-CN";
+}
+
+function replaceLocaleInCurrentUrl(locale: UiLocale): void {
+  if (typeof window === "undefined") return;
+  window.history.replaceState(
+    window.history.state,
+    "",
+    urlWithUiLocale(window.location.href, locale),
+  );
 }
 
 function initialTheme(): UiTheme {
@@ -54,7 +79,11 @@ export function UiPreferencesProvider({ children }: { children: ReactNode }) {
     locale,
     theme,
     text: (zh, en) => uiText(locale, zh, en),
-    toggleLocale: () => setLocale((current) => current === "zh-CN" ? "en" : "zh-CN"),
+    toggleLocale: () => setLocale((current) => {
+      const next = current === "zh-CN" ? "en" : "zh-CN";
+      replaceLocaleInCurrentUrl(next);
+      return next;
+    }),
     toggleTheme: () => setTheme((current) => current === "dark" ? "light" : "dark"),
   }), [locale, theme]);
 

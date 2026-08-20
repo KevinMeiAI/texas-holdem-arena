@@ -26,6 +26,7 @@ services:
       ARENA_ADMIN_EMAIL: ${ARENA_ADMIN_EMAIL:-admin@localhost}
       ARENA_ADMIN_PASSWORD: ${ARENA_ADMIN_PASSWORD:-change-me-now}
       ARENA_COOKIE_SECURE: ${ARENA_COOKIE_SECURE:-false}
+      ARENA_PUBLIC_ORIGIN: ${ARENA_PUBLIC_ORIGIN:-http://127.0.0.1:4100}
     depends_on:
       db:
         condition: service_healthy

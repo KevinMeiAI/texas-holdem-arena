@@ -215,7 +215,7 @@ export function MomentPage() {
   const copyCanonicalLink = async () => {
     setCopyState("copying");
     try {
-      await copyMomentLink(canonicalMomentUrl(window.location.origin, moment.slug));
+      await copyMomentLink(canonicalMomentUrl(window.location.origin, moment.slug, locale));
       setCopyState("copied");
     } catch {
       setCopyState("error");

@@ -12,6 +12,7 @@ describe("loadConfig", () => {
       adminEmail: "admin@localhost",
       adminPassword: undefined,
       cookieSecure: false,
+      publicOrigin: "http://127.0.0.1:4100",
     });
   });
 
@@ -26,6 +27,7 @@ describe("loadConfig", () => {
         ARENA_ADMIN_EMAIL: "owner@example.com",
         ARENA_ADMIN_PASSWORD: "secret",
         ARENA_COOKIE_SECURE: "true",
+        ARENA_PUBLIC_ORIGIN: "https://arena.example.com",
       }),
     ).toEqual({
       host: "0.0.0.0",
@@ -36,6 +38,23 @@ describe("loadConfig", () => {
       adminEmail: "owner@example.com",
       adminPassword: "secret",
       cookieSecure: true,
+      publicOrigin: "https://arena.example.com",
     });
+  });
+
+  it("normalizes a trusted public origin and follows the configured local port by default", () => {
+    expect(loadConfig({ PORT: "4200" }).publicOrigin).toBe("http://127.0.0.1:4200");
+    expect(loadConfig({ ARENA_PUBLIC_ORIGIN: "https://arena.example.com:8443/" }).publicOrigin)
+      .toBe("https://arena.example.com:8443");
+  });
+
+  it.each([
+    "file:///tmp/arena",
+    "https://user:secret@arena.example.com",
+    "https://arena.example.com/path",
+    "https://arena.example.com/?preview=1",
+    "not a url",
+  ])("rejects an unsafe public origin: %s", (publicOrigin) => {
+    expect(() => loadConfig({ ARENA_PUBLIC_ORIGIN: publicOrigin })).toThrow(/ARENA_PUBLIC_ORIGIN/);
   });
 });

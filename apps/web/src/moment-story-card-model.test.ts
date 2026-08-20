@@ -277,6 +277,8 @@ describe("moment story card model", () => {
   it("builds stable canonical links and rejects unsafe origins or slugs", () => {
     expect(canonicalMomentUrl("https://arena.example/app?from=admin", "final-hand-h12"))
       .toBe("https://arena.example/moments/final-hand-h12");
+    expect(canonicalMomentUrl("https://arena.example/app", "final-hand-h12", "en"))
+      .toBe("https://arena.example/moments/final-hand-h12?lang=en");
     expect(() => canonicalMomentUrl("file:///tmp/index.html", "final-hand-h12"))
       .toThrow(/HTTP\(S\)/);
     expect(() => canonicalMomentUrl("https://arena.example", "../admin"))

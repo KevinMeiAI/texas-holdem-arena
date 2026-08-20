@@ -201,12 +201,14 @@ function assertPublicSlug(slug: string): string {
   return normalized;
 }
 
-export function canonicalMomentUrl(origin: string, slug: string): string {
+export function canonicalMomentUrl(origin: string, slug: string, locale: UiLocale = "zh-CN"): string {
   const base = new URL(origin);
   if (base.protocol !== "http:" && base.protocol !== "https:") {
     throw new TypeError("Moment links require an HTTP(S) origin");
   }
-  return new URL(`/moments/${assertPublicSlug(slug)}`, base.origin).href;
+  const url = new URL(`/moments/${assertPublicSlug(slug)}`, base.origin);
+  if (locale === "en") url.searchParams.set("lang", "en");
+  return url.href;
 }
 
 function safeFilenameSegment(value: string): string {

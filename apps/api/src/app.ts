@@ -33,6 +33,8 @@ import {
   registerMomentRoutes,
   suspenseCoverSafety,
 } from "./tournament/moments/index.js";
+import { registerMomentPageRoutes } from "./tournament/moments/moment-page-route.js";
+import { registerMomentSocialCardRoutes } from "./tournament/moments/moment-social-card-route.js";
 
 export interface BuiltApp {
   app: FastifyInstance;
@@ -61,6 +63,7 @@ export async function registerWebAssets(app: FastifyInstance, webRoot: string): 
 }
 
 export async function buildApp(config: AppConfig): Promise<BuiltApp> {
+  const webRoot = resolve(process.cwd(), "dist-web");
   const app = Fastify({
     logger: {
       level: config.nodeEnv === "production" ? "info" : "debug",
@@ -153,6 +156,14 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
         handForks: forkService,
       });
       await registerMomentRoutes(app, { ...authContext, arena, moments: momentService });
+      await registerMomentSocialCardRoutes(app, { arena, moments: momentService });
+      if (existsSync(webRoot)) {
+        await registerMomentPageRoutes(app, {
+          moments: momentService,
+          publicOrigin: config.publicOrigin,
+          webRoot,
+        });
+      }
       await registerCompetitorRoutes(app, { competitorProfiles });
       await consistency.restorePending();
       await forkService.restorePending();
@@ -213,7 +224,6 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
     status: "admin-api",
   }));
 
-  const webRoot = resolve(process.cwd(), "dist-web");
   if (existsSync(webRoot)) {
     await registerWebAssets(app, webRoot);
   }
