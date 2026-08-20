@@ -2,14 +2,16 @@ import { describe, expect, it } from "vitest";
 import { publicNavigationSection } from "./public-navigation-model";
 
 describe("public navigation model", () => {
-  it("keeps moment indexes and details inside the Events navigation section", () => {
+  it("keeps event reports and details inside the Events navigation section", () => {
     expect(publicNavigationSection("/moments")).toBe("EVENTS");
     expect(publicNavigationSection("/moments/final-hand-h087")).toBe("EVENTS");
+    expect(publicNavigationSection("/branches/river-hero-call-h087")).toBe("EVENTS");
     expect(publicNavigationSection("/tournaments/event-id/replay/87")).toBe("EVENTS");
   });
 
   it("matches only complete path segments", () => {
     expect(publicNavigationSection("/moments-old")).toBeNull();
+    expect(publicNavigationSection("/branches-old")).toBeNull();
     expect(publicNavigationSection("/tournaments-legacy")).toBeNull();
   });
 

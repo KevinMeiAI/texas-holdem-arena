@@ -142,7 +142,7 @@ export function localizedDecisionBranchCopy(
   const localizedSummary = trimmedOrNull(locale === "zh-CN" ? branch.summaryZh : branch.summaryEn);
   const hand = String(branch.snapshot.source.handNo).padStart(3, "0");
   return {
-    title: localizedTitle ?? (locale === "zh-CN" ? `第 ${hand} 手 · 决策分支` : `Hand ${hand} · Decision branch`),
+    title: localizedTitle ?? (locale === "zh-CN" ? `第 ${hand} 手 · 决策分叉` : `Hand ${hand} · Decision branch`),
     summary: localizedSummary,
   };
 }
@@ -167,12 +167,36 @@ export function decisionBranchActionWithAmountLabel(
   action: DecisionBranchAction,
   amountTo: number | null,
   locale: UiLocale,
+  allInAmountTo: number | null = null,
 ): string {
   const label = decisionBranchActionLabel(action, locale);
+  if (action === "all_in" && allInAmountTo !== null) {
+    return `${label} ${formatDecisionBranchChips(allInAmountTo)}`;
+  }
   if ((action !== "bet" && action !== "raise") || amountTo === null) return label;
   return locale === "zh-CN"
     ? `${label}至 ${formatDecisionBranchChips(amountTo)}`
     : `${label} to ${formatDecisionBranchChips(amountTo)}`;
+}
+
+export function decisionBranchForcedBetLabel(
+  kind: string | null,
+  locale: UiLocale,
+): string {
+  const fallback = locale === "zh-CN" ? "强制下注" : "Forced bet";
+  if (!kind) return fallback;
+  const labels: Record<string, [string, string]> = {
+    SMALL_BLIND: ["小盲", "Small blind"],
+    SB: ["小盲", "Small blind"],
+    BIG_BLIND: ["大盲", "Big blind"],
+    BB: ["大盲", "Big blind"],
+    BIG_BLIND_ANTE: ["大盲前注", "Big blind ante"],
+    BBA: ["大盲前注", "Big blind ante"],
+    BUTTON_ANTE: ["庄位前注", "Button ante"],
+    ANTE: ["前注", "Ante"],
+  };
+  const localized = labels[kind.trim().toLocaleUpperCase("en-US")];
+  return localized ? localized[locale === "zh-CN" ? 0 : 1] : kind;
 }
 
 export function decisionBranchLegalActionPresentations(

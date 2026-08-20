@@ -4,6 +4,7 @@ import {
   buildDecisionBranchActionMatrix,
   decisionBranchActionLabel,
   decisionBranchActionWithAmountLabel,
+  decisionBranchForcedBetLabel,
   decisionBranchLegalActionPresentations,
   decisionBranchModalActions,
   localizedDecisionBranchCopy,
@@ -78,7 +79,7 @@ describe("decision branch page model", () => {
       titleZh: "   ",
       summaryZh: null,
     }, "zh-CN")).toEqual({
-      title: "第 007 手 · 决策分支",
+      title: "第 007 手 · 决策分叉",
       summary: null,
     });
   });
@@ -93,6 +94,18 @@ describe("decision branch page model", () => {
     expect(decisionBranchActionWithAmountLabel("raise", 1_250, "zh-CN")).toBe("加注至 1,250");
     expect(decisionBranchActionWithAmountLabel("bet", 1_250, "en")).toBe("Bet to 1,250");
     expect(decisionBranchActionWithAmountLabel("call", null, "en")).toBe("Call");
+    expect(decisionBranchActionWithAmountLabel("all_in", null, "zh-CN", 2_400)).toBe("全下 2,400");
+    expect(decisionBranchActionWithAmountLabel("all_in", null, "en", 2_400)).toBe("All-in 2,400");
+    expect(decisionBranchActionWithAmountLabel("all_in", null, "en")).toBe("All-in");
+  });
+
+  it("localizes known forced bets without exposing internal enum labels", () => {
+    expect(decisionBranchForcedBetLabel("SMALL_BLIND", "zh-CN")).toBe("小盲");
+    expect(decisionBranchForcedBetLabel("big_blind", "en")).toBe("Big blind");
+    expect(decisionBranchForcedBetLabel("BIG_BLIND_ANTE", "zh-CN")).toBe("大盲前注");
+    expect(decisionBranchForcedBetLabel("ANTE", "en")).toBe("Ante");
+    expect(decisionBranchForcedBetLabel("CUSTOM", "en")).toBe("CUSTOM");
+    expect(decisionBranchForcedBetLabel(null, "zh-CN")).toBe("强制下注");
   });
 
   it("projects legal-action amounts and all-in classifications without losing semantics", () => {

@@ -6,7 +6,11 @@ function pathIsWithin(pathname: string, root: string): boolean {
 
 export function publicNavigationSection(pathname: string): PublicNavigationSection {
   if (pathname === "/") return "WATCH_ROOM";
-  if (pathIsWithin(pathname, "/tournaments") || pathIsWithin(pathname, "/moments")) {
+  if (
+    pathIsWithin(pathname, "/tournaments")
+    || pathIsWithin(pathname, "/moments")
+    || pathIsWithin(pathname, "/branches")
+  ) {
     return "EVENTS";
   }
   if (pathIsWithin(pathname, "/leaderboard") || pathIsWithin(pathname, "/players")) {
