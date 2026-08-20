@@ -21,6 +21,7 @@ import { PgEventStore } from "./persistence/event-store.js";
 import { decodeMasterKey } from "./security/encryption.js";
 import { ArenaService } from "./tournament/arena-service.js";
 import { PgDecisionBranchRepository } from "./tournament/decision-branches/decision-branch-repository.js";
+import { registerDecisionBranchPageRoutes } from "./tournament/decision-branches/decision-branch-page-route.js";
 import { registerDecisionBranchRoutes } from "./tournament/decision-branches/decision-branch-routes.js";
 import { DecisionBranchService } from "./tournament/decision-branches/decision-branch-service.js";
 import { PgDecisionBranchSourceReader } from "./tournament/decision-branches/decision-branch-source.js";
@@ -172,6 +173,11 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
       await registerMomentRoutes(app, { ...authContext, arena, moments: momentService });
       await registerMomentSocialCardRoutes(app, { arena, moments: momentService });
       if (existsSync(webRoot)) {
+        await registerDecisionBranchPageRoutes(app, {
+          decisionBranches: decisionBranchService,
+          publicOrigin: config.publicOrigin,
+          webRoot,
+        });
         await registerMomentPageRoutes(app, {
           moments: momentService,
           publicOrigin: config.publicOrigin,
