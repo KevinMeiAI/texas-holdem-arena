@@ -568,6 +568,17 @@ describe("decision branch service", () => {
     )).rejects.toBe(unavailable);
   });
 
+  it("loads an admin branch directly from its source decision rerun", async () => {
+    const existing = publication("DRAFT");
+    const repository = repositoryStub({
+      getByHandForkId: vi.fn(async () => existing),
+    });
+    const harness = serviceWith({ repository });
+
+    await expect(harness.service.getAdminByHandForkId(HAND_FORK_ID)).resolves.toBe(existing);
+    expect(repository.getByHandForkId).toHaveBeenCalledWith(HAND_FORK_ID);
+  });
+
   it("filters every non-published record out of public detail and list DTOs", async () => {
     const published = publication("PUBLISHED", { revision: 5 });
     const hidden = publication("HIDDEN", { revision: 6 });

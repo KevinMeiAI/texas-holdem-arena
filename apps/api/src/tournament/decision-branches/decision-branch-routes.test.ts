@@ -200,6 +200,7 @@ async function appWith(options: AppOptions = {}) {
     createDraft: vi.fn(async () => ({ publication: adminPublication(), created: true })),
     listAdmin: vi.fn(async () => [] as DecisionBranchPublication[]),
     getAdmin: vi.fn(async () => adminPublication()),
+    getAdminByHandForkId: vi.fn(async () => null),
     edit: vi.fn(async () => adminPublication()),
     publish: vi.fn(async () => adminPublication("PUBLISHED")),
     hide: vi.fn(async () => adminPublication("HIDDEN")),
@@ -226,6 +227,22 @@ describe("decision branch routes", () => {
     expect(response.statusCode).toBe(401);
     expect(response.headers["cache-control"]).toBe("no-store");
     expect(decisionBranches.listAdmin).not.toHaveBeenCalled();
+  });
+
+  it("looks up an optional publication directly by its source decision rerun", async () => {
+    const publication = adminPublication();
+    const getAdminByHandForkId = vi.fn(async () => publication);
+    const { app } = await appWith({ decisionBranches: { getAdminByHandForkId } });
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/admin/hand-forks/${HAND_FORK_ID}/decision-branch`,
+      headers: sessionCookie,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toEqual({ decisionBranch: publication });
+    expect(getAdminByHandForkId).toHaveBeenCalledWith(HAND_FORK_ID);
   });
 
   it.each([

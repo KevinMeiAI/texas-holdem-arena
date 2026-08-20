@@ -163,6 +163,10 @@ export class DecisionBranchService {
     return this.#repository.getById(id);
   }
 
+  getAdminByHandForkId(handForkId: string): Promise<DecisionBranchPublication | null> {
+    return this.#repository.getByHandForkId(handForkId);
+  }
+
   async edit(
     id: string,
     rawPatch: unknown,

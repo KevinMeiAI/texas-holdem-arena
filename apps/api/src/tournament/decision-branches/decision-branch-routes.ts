@@ -44,6 +44,7 @@ export interface DecisionBranchRouteService {
   ): Promise<{ publication: DecisionBranchPublication; created: boolean }>;
   listAdmin(limit?: number): Promise<DecisionBranchPublication[]>;
   getAdmin(id: string): Promise<DecisionBranchPublication | null>;
+  getAdminByHandForkId(handForkId: string): Promise<DecisionBranchPublication | null>;
   edit(
     id: string,
     patch: unknown,
@@ -159,6 +160,22 @@ export async function registerDecisionBranchRoutes(
       return sendDecisionBranchError(request, reply, error);
     }
   });
+
+  app.get<{ Params: { id: string } }>(
+    "/api/admin/hand-forks/:id/decision-branch",
+    async (request, reply) => {
+      noStore(reply);
+      if (!(await requireAdmin(request, reply, context, false))) return;
+      const params = idParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "invalid_hand_fork_id" });
+      try {
+        const publication = await context.decisionBranches.getAdminByHandForkId(params.data.id);
+        return { decisionBranch: publication };
+      } catch (error) {
+        return sendDecisionBranchError(request, reply, error);
+      }
+    },
+  );
 
   app.get<{ Params: { id: string } }>(
     "/api/admin/decision-branches/:id",
