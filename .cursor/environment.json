@@ -1,0 +1,17 @@
+{
+  "name": "Texas Hold'em Arena",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "set -a && . ./.env && set +a && npm run dev",
+      "description": "Runs the Fastify API (http://127.0.0.1:4100) and the Vite web dev server (http://127.0.0.1:5173) via `npm run dev`."
+    }
+  ],
+  "ports": [
+    { "name": "web", "port": 5173 },
+    { "name": "api", "port": 4100 }
+  ]
+}
